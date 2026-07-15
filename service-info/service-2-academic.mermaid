@@ -1,0 +1,89 @@
+%% ACADEMIC SERVICE — своя БД: study_room_academic
+%% Владеет учебным процессом: курсы, записи, занятия, посещаемость, домашка.
+%% student_id / tutor_id / created_by / branch_id — это ССЫЛКИ на записи
+%% из User Service, БЕЗ настоящего FK-констрейнта (разные базы).
+%% Локальная консистентность обеспечивается через user_refs (см. ниже) —
+%% упрощённую копию нужных полей пользователя, обновляемую по событиям.
+%%
+%% ENROLLMENTS создаётся АВТОМАТИЧЕСКИ по событию contract.created
+%% из Contracts Service (владелец указал ученика+курс при создании
+%% договора) — прямой POST /enrollments тоже есть, но только для
+%% ручных случаев без договора (например, пробное занятие).
+%%
+%% HOMEWORK максимально упрощено: репетитор выдаёт ученику просто
+%% ссылку на внешний ресурс. Сдачи/оценки нет — есть только факт
+%% перехода по ссылке (status меняется assigned → viewed).
+
+erDiagram
+    USER_REFS ||--o{ ENROLLMENTS : "ученик/репетитор (кэш)"
+    COURSES ||--o{ ENROLLMENTS : "записи на курс"
+    COURSES ||--o{ LESSONS : "занятия курса"
+    LESSONS ||--o{ LESSON_PARTICIPANTS : "участники занятия"
+    LESSONS ||--o{ ATTENDANCE : "посещаемость"
+    USER_REFS ||--o{ HOMEWORK : "выдано ученику (репетитором)"
+
+    USER_REFS {
+        int user_id PK "= users.id в User Service"
+        string full_name "денормализовано для отображения"
+        enum role
+        int branch_id
+        datetime synced_at "когда обновлено по событию"
+    }
+
+    COURSES {
+        int id PK
+        string title
+        string subject
+        enum format "individual|group"
+        string description
+        int branch_id "ссылка на BRANCHES из User Service"
+    }
+
+    ENROLLMENTS {
+        int id PK
+        int student_id "ссылка на USER_REFS"
+        int course_id FK
+        int tutor_id "ссылка на USER_REFS, nullable — назначается отдельно после создания"
+        int progress_pct
+        enum status "active|completed|paused"
+        date start_date
+        date end_date
+    }
+
+    LESSONS {
+        int id PK
+        int course_id FK
+        int tutor_id "ссылка на USER_REFS"
+        int created_by "ссылка на USER_REFS (репетитор/владелец)"
+        string topic
+        date lesson_date
+        time start_time
+        time end_time
+        enum location_type "onsite|remote"
+        enum group_type "individual|group"
+        enum status "scheduled|completed|cancelled"
+        string comment
+    }
+
+    LESSON_PARTICIPANTS {
+        int lesson_id PK
+        int student_id PK "ссылка на USER_REFS"
+    }
+
+    ATTENDANCE {
+        int id PK
+        int lesson_id FK
+        int student_id "ссылка на USER_REFS"
+        enum status "present|absent"
+        string absence_reason
+    }
+
+    HOMEWORK {
+        int id PK
+        int student_id "ссылка на USER_REFS, кому выдано"
+        int created_by "ссылка на USER_REFS, кто выдал (репетитор)"
+        string link_url "ссылка на внешний ресурс с заданием"
+        enum status "assigned|viewed"
+        datetime viewed_at "заполняется, когда ученик перешёл по ссылке"
+        datetime created_at
+    }

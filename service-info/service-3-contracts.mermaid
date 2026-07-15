@@ -1,0 +1,20 @@
+%% CONTRACTS SERVICE — своя БД: study_room_contracts
+%% Владеет договорами. Полностью независим от онлайн-оплаты —
+%% статус оплаты владелец выставляет вручную.
+
+erDiagram
+    CONTRACTS {
+        int id PK
+        int student_id "ссылка на User Service (users.id)"
+        int parent_id "ссылка на User Service"
+        int course_id "ссылка на Academic Service (courses.id)"
+        int branch_id "ссылка на User Service (branches.id)"
+        decimal amount
+        enum payment_status "paid|unpaid"
+        date start_date
+        date end_date
+        enum status "active|expired|terminated"
+        int created_by "ссылка на User Service, всегда owner/branch_owner"
+        datetime created_at
+        datetime updated_at
+    }

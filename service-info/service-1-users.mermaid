@@ -1,0 +1,55 @@
+%% USER SERVICE — своя БД: study_room_users
+%% Владеет идентификацией, ролями, филиалами и профилями.
+%% Источник правды для аутентификации: выпускает JWT, который остальные
+%% сервисы проверяют локально (по подписи), не обращаясь сюда на каждый запрос.
+
+erDiagram
+    BRANCHES ||--o{ USERS : "сотрудники и ученики филиала"
+    USERS ||--o| STUDENT_PROFILES : "профиль ученика"
+    USERS ||--o| TUTOR_PROFILES : "профиль репетитора"
+    USERS ||--o{ PARENT_STUDENT : "как родитель"
+    USERS ||--o{ PARENT_STUDENT : "как ребёнок"
+
+    USERS {
+        int id PK
+        string email UK
+        string phone UK
+        string password_hash
+        enum role "owner|branch_owner|tutor|parent|student"
+        string last_name
+        string first_name
+        string patronymic "отчество, необязательно"
+        string avatar_url
+        int branch_id FK
+        bool is_active
+        datetime created_at
+    }
+
+    BRANCHES {
+        int id PK
+        string name
+        string city
+        string address
+        string phone
+    }
+
+    STUDENT_PROFILES {
+        int user_id PK
+        string class_info
+        string school
+        decimal avg_grade
+        decimal attendance_pct
+    }
+
+    TUTOR_PROFILES {
+        int user_id PK
+        string specialization
+        int experience_years
+        decimal rating
+        enum status "active|vacation|sick_leave|inactive (inactive — только owner)"
+    }
+
+    PARENT_STUDENT {
+        int parent_id PK
+        int student_id PK
+    }

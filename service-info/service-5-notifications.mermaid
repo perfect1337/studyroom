@@ -1,0 +1,29 @@
+%% NOTIFICATION SERVICE — своя БД: study_room_notifications
+%% Не хранит ничего чужого — только очередь/лог отправленных уведомлений
+%% и предпочтения пользователя по каналам. Получает команды на отправку
+%% через события от других сервисов (см. architecture-communication.mermaid).
+
+erDiagram
+    USERS_REF ||--o| NOTIFICATION_SETTINGS : "настройки каналов"
+    USERS_REF ||--o{ NOTIFICATIONS : "получатель"
+
+    USERS_REF {
+        int user_id PK "ссылка на User Service (users.id)"
+    }
+
+    NOTIFICATION_SETTINGS {
+        int user_id PK
+        bool email_enabled
+        bool sms_enabled
+        bool messenger_enabled
+    }
+
+    NOTIFICATIONS {
+        int id PK
+        int user_id FK
+        string type "lesson_reminder|contract_expiring|new_application|..."
+        enum channel "email|sms|messenger"
+        string message
+        enum status "pending|sent|failed"
+        datetime created_at
+    }

@@ -1,0 +1,44 @@
+flowchart TB
+    subgraph Client["React-приложение (браузер)"]
+        FE[Личные кабинеты]
+    end
+
+    GW["API Gateway / BFF<br/>единая точка входа для фронта,<br/>проверяет JWT, роутит запросы,<br/>агрегирует ответы с нескольких сервисов"]
+
+    FE -->|"HTTPS REST"| GW
+
+    subgraph Services["Сервисы (каждый — свой Postgres)"]
+        US["User Service<br/>(auth, users, branches)"]
+        AS["Academic Service<br/>(courses, lessons, homework)"]
+        CS["Contracts Service<br/>(договоры)"]
+        CRM["CRM Service<br/>(заявки)"]
+        NS["Notification Service<br/>(email/SMS/мессенджер)"]
+    end
+
+    GW -->|"REST: логин, CRUD пользователей"| US
+    GW -->|"REST: расписание, курсы, дз"| AS
+    GW -->|"REST: договоры"| CS
+    GW -->|"REST: заявки"| CRM
+
+    US -. "JWT содержит role + branch_id —<br/>остальные сервисы проверяют подпись<br/>локально, без похода в User Service" .-> AS
+    US -.-> CS
+    US -.-> CRM
+
+    Broker(["Брокер событий<br/>(NATS / RabbitMQ)"])
+
+    US -->|"publish: user.created<br/>user.updated"| Broker
+    CS -->|"publish: contract.expiring_soon<br/>contract.status_changed"| Broker
+    AS -->|"publish: lesson.created<br/>attendance.marked_absent"| Broker
+    CRM -->|"publish: application.received"| Broker
+
+    Broker -->|"subscribe: user.*<br/>обновляет свой user_refs-кэш"| AS
+    Broker -->|"subscribe: user.*"| CS
+    Broker -->|"subscribe: user.*"| CRM
+
+    Broker -->|"subscribe: contract.expiring_soon,<br/>lesson.created, application.received,<br/>attendance.marked_absent"| NS
+
+    NS -->|"отправка"| Email[/"Email провайдер"/]
+    NS -->|"отправка"| SMS[/"SMS провайдер"/]
+    NS -->|"отправка"| TG[/"Telegram Bot API"/]
+
+    TildaSite["Лендинг studyroom64.ru<br/>(Tilda, форма заявки)"] -->|"webhook"| GW

@@ -1,0 +1,19 @@
+%% CRM SERVICE — своя БД: study_room_crm
+%% Владеет заявками (лидами) — с сайта Tilda через webhook
+%% и внутренними (форма "Записаться на курс" в ЛК родителя).
+
+erDiagram
+    APPLICATIONS {
+        int id PK
+        string name
+        int age
+        string phone
+        string subject_interest
+        enum format "individual|group"
+        enum source "website|internal"
+        string parent_name
+        enum status "new|in_progress|converted|rejected"
+        int branch_id "ссылка на User Service (branches.id)"
+        int handled_by "ссылка на User Service, owner/branch_owner"
+        datetime created_at
+    }
