@@ -14,14 +14,14 @@ type Notifier struct {
 	notifications *repository.NotificationRepository
 	settings      *repository.SettingsRepository
 	usersRef      *repository.UserRefRepository
-	mail          *mailer.Mailer
+	mail          mailer.Sender
 }
 
 func New(
 	notifications *repository.NotificationRepository,
 	settings *repository.SettingsRepository,
 	usersRef *repository.UserRefRepository,
-	mail *mailer.Mailer,
+	mail mailer.Sender,
 ) *Notifier {
 	return &Notifier{notifications: notifications, settings: settings, usersRef: usersRef, mail: mail}
 }

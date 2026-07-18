@@ -19,6 +19,13 @@ import (
 	"time"
 )
 
+// Sender — интерфейс отправки писем. *Mailer реализует его через настоящий SMTP;
+// в контрактных тестах используется фейковый Sender, чтобы не стучаться в реальный
+// Яндекс.SMTP и не зависеть от сетевого доступа при `go test`.
+type Sender interface {
+	Send(to, subject, body string) error
+}
+
 type Mailer struct {
 	host     string
 	port     int
