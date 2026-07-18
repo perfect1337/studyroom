@@ -45,6 +45,49 @@ services:
     networks:
       - studyroom-network
 
+  # ---------- Notification Service ----------
+  postgres-notifications:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: study_room_notifications
+      POSTGRES_USER: notification_service
+      POSTGRES_PASSWORD: ${NOTIFICATIONS_DB_PASSWORD:-devpassword123}
+    volumes:
+      - postgres_notifications_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notification_service -d study_room_notifications"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - studyroom-network
+
+  notification-service:
+    build:
+      context: ./notification-service
+    environment:
+      PORT: 8085
+      DATABASE_URL: postgres://notification_service:${NOTIFICATIONS_DB_PASSWORD:-devpassword123}@postgres-notifications:5432/study_room_notifications?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      SERVICE_TOKEN: ${NOTIFICATIONS_SERVICE_TOKEN:-change-me-service-token}
+      NATS_URL: nats://nats:4222
+      # --- Яндекс SMTP: см. notification-service/README.md как получить пароль приложения ---
+      SMTP_HOST: ${SMTP_HOST:-smtp.yandex.ru}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    ports:
+      - "8085:8085"
+    depends_on:
+      postgres-notifications:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    networks:
+      - studyroom-network
+    restart: unless-stopped
+
   # ---------- Следующие сервисы (заготовки — раскомментировать по мере реализации) ----------
   # postgres-academic:
   #   image: postgres:16-alpine
@@ -64,8 +107,7 @@ services:
   #   depends_on: [postgres-academic, nats]
   #   networks: [studyroom-network]
   #
-  # (аналогично: postgres-contracts/contracts-service,
-  #  postgres-crm/crm-service, postgres-notifications/notification-service)
+  # (аналогично: postgres-contracts/contracts-service, postgres-crm/crm-service)
 
 networks:
   studyroom-network:
@@ -73,7 +115,7 @@ networks:
 
 volumes:
   postgres_users_data:
+  postgres_notifications_data:
   # postgres_academic_data:
   # postgres_contracts_data:
   # postgres_crm_data:
-  # postgres_notifications_data:
