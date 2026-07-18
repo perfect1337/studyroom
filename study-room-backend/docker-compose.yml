@@ -1,0 +1,77 @@
+services:
+  # ---------- User Service ----------
+  postgres-users:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: study_room_users
+      POSTGRES_USER: user_service
+      POSTGRES_PASSWORD: ${USERS_DB_PASSWORD:-devpassword123}
+    volumes:
+      - postgres_users_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user_service -d study_room_users"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - studyroom-network
+
+  user-service:
+    build:
+      context: ./user-service
+    environment:
+      PORT: 8081
+      DATABASE_URL: postgres://user_service:${USERS_DB_PASSWORD:-devpassword123}@postgres-users:5432/study_room_users?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres-users:
+        condition: service_healthy
+    networks:
+      - studyroom-network
+    restart: unless-stopped
+
+  # ---------- Брокер событий (NATS) ----------
+  # Сюда будут публиковать события user.created, contract.created и т.д.
+  # (см. architecture-communication.mermaid) — остальные сервисы, когда появятся,
+  # подключаются к nats:4222 в этой же сети.
+  nats:
+    image: nats:2-alpine
+    ports:
+      - "4222:4222"
+    networks:
+      - studyroom-network
+
+  # ---------- Следующие сервисы (заготовки — раскомментировать по мере реализации) ----------
+  # postgres-academic:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_DB: study_room_academic
+  #     POSTGRES_USER: academic_service
+  #     POSTGRES_PASSWORD: ${ACADEMIC_DB_PASSWORD:-devpassword123}
+  #   volumes:
+  #     - postgres_academic_data:/var/lib/postgresql/data
+  #   networks: [studyroom-network]
+  #
+  # academic-service:
+  #   build: { context: ./academic-service }
+  #   environment:
+  #     DATABASE_URL: postgres://academic_service:${ACADEMIC_DB_PASSWORD:-devpassword123}@postgres-academic:5432/study_room_academic?sslmode=disable
+  #     NATS_URL: nats://nats:4222
+  #   depends_on: [postgres-academic, nats]
+  #   networks: [studyroom-network]
+  #
+  # (аналогично: postgres-contracts/contracts-service,
+  #  postgres-crm/crm-service, postgres-notifications/notification-service)
+
+networks:
+  studyroom-network:
+    driver: bridge
+
+volumes:
+  postgres_users_data:
+  # postgres_academic_data:
+  # postgres_contracts_data:
+  # postgres_crm_data:
+  # postgres_notifications_data:
