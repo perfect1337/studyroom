@@ -6,6 +6,8 @@ services:
       POSTGRES_DB: study_room_users
       POSTGRES_USER: user_service
       POSTGRES_PASSWORD: ${USERS_DB_PASSWORD:-devpassword123}
+    ports:
+      - "5433:5432" # для локальных контрактных тестов (TEST_DATABASE_URL)
     volumes:
       - postgres_users_data:/var/lib/postgresql/data
     healthcheck:

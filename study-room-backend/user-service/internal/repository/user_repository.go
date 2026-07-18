@@ -71,16 +71,26 @@ func (r *UserRepository) Update(ctx context.Context, id int64, fields map[string
 	if len(fields) == 0 {
 		return r.GetByID(ctx, id)
 	}
+	allowedCols := map[string]bool{
+		"first_name": true, "last_name": true, "patronymic": true, "avatar_url": true,
+		"password_hash": true, "is_active": true, "phone": true, "branch_id": true,
+	}
 	setClauses := ""
 	args := []any{}
 	i := 1
 	for col, val := range fields {
+		if !allowedCols[col] {
+			continue
+		}
 		if i > 1 {
 			setClauses += ", "
 		}
 		setClauses += col + " = $" + itoa(i)
 		args = append(args, val)
 		i++
+	}
+	if len(args) == 0 {
+		return r.GetByID(ctx, id)
 	}
 	setClauses += ", updated_at = now()"
 	args = append(args, id)
@@ -89,8 +99,65 @@ func (r *UserRepository) Update(ctx context.Context, id int64, fields map[string
 	return scanUser(r.pool.QueryRow(ctx, query, args...))
 }
 
+// CreateStudentWithParent создаёт ученика, профиль и связь с родителем в одной транзакции.
+func (r *UserRepository) CreateStudentWithParent(
+	ctx context.Context,
+	u *models.User,
+	parentID int64,
+	classInfo, school *string,
+) (*models.User, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	var parentRole models.Role
+	err = tx.QueryRow(ctx, `SELECT role FROM users WHERE id = $1`, parentID).Scan(&parentRole)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if parentRole != models.RoleParent {
+		return nil, ErrNotFound
+	}
+
+	query := `INSERT INTO users (email, phone, password_hash, role, last_name, first_name,
+		patronymic, avatar_url, branch_id, is_active)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		RETURNING ` + userColumns
+	created, err := scanUser(tx.QueryRow(ctx, query, u.Email, u.Phone, u.PasswordHash, u.Role,
+		u.LastName, u.FirstName, u.Patronymic, u.AvatarURL, u.BranchID, u.IsActive))
+	if err != nil {
+		if isPgUniqueViolation(err) {
+			return nil, ErrDuplicate
+		}
+		return nil, err
+	}
+
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO parent_student (parent_id, student_id) VALUES ($1,$2)`,
+		parentID, created.ID); err != nil {
+		return nil, err
+	}
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO student_profiles (user_id, class_info, school) VALUES ($1,$2,$3)
+	`, created.ID, classInfo, school); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return created, nil
+}
+
 type ListFilter struct {
 	Role     *models.Role
+	Roles    []models.Role // если задан — OR по нескольким ролям (Role игнорируется)
 	BranchID *int64
 	Search   string
 	Page     int
@@ -101,14 +168,22 @@ func (r *UserRepository) List(ctx context.Context, f ListFilter) ([]*models.User
 	if f.Page < 1 {
 		f.Page = 1
 	}
-	if f.PerPage < 1 || f.PerPage > 100 {
+	if f.PerPage < 1 || f.PerPage > 500 {
 		f.PerPage = 20
 	}
 
 	where := "WHERE 1=1"
 	args := []any{}
 	i := 1
-	if f.Role != nil {
+	if len(f.Roles) > 0 {
+		roleStrs := make([]string, len(f.Roles))
+		for idx, role := range f.Roles {
+			roleStrs[idx] = string(role)
+		}
+		where += " AND role = ANY($" + itoa(i) + ")"
+		args = append(args, roleStrs)
+		i++
+	} else if f.Role != nil {
 		where += " AND role = $" + itoa(i)
 		args = append(args, *f.Role)
 		i++
@@ -149,6 +224,14 @@ func (r *UserRepository) List(ctx context.Context, f ListFilter) ([]*models.User
 		users = append(users, u)
 	}
 	return users, total, rows.Err()
+}
+
+// ListAll — без пагинации (для справочника «мои люди»), лимит 500.
+func (r *UserRepository) ListAll(ctx context.Context, f ListFilter) ([]*models.User, error) {
+	f.Page = 1
+	f.PerPage = 500
+	users, _, err := r.List(ctx, f)
+	return users, err
 }
 
 func itoa(i int) string {

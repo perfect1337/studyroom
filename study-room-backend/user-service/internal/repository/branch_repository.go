@@ -27,8 +27,8 @@ func (r *BranchRepository) Create(ctx context.Context, b *models.Branch) (*model
 	return &created, nil
 }
 
-// List — owner видит все, branch_owner передаёт свой onlyID (сервер сам решает,
-// какой id подставить, исходя из claims, а не из query-параметра).
+// List — без onlyID возвращает все филиалы (для owner).
+// onlyID оставлен на случай точечной выборки внутри сервиса.
 func (r *BranchRepository) List(ctx context.Context, onlyID *int64) ([]*models.Branch, error) {
 	query := `SELECT id, name, city, address, phone, created_at FROM branches`
 	args := []any{}

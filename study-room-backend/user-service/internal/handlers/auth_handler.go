@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"time"
 
@@ -13,9 +12,9 @@ import (
 )
 
 type AuthHandler struct {
-	users *repository.UserRepository
+	users    *repository.UserRepository
 	authRepo *repository.AuthRepository
-	tm    *auth.TokenManager
+	tm       *auth.TokenManager
 }
 
 func NewAuthHandler(users *repository.UserRepository, authRepo *repository.AuthRepository, tm *auth.TokenManager) *AuthHandler {
@@ -49,7 +48,6 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Самостоятельная регистрация всегда создаёт роль parent — см. контракт 1.1
 	u := &models.User{
 		Email: req.Email, Phone: req.Phone, PasswordHash: hash,
 		Role: models.RoleParent, LastName: req.LastName, FirstName: req.FirstName,
@@ -66,10 +64,15 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.issueTokenPair(w, r, created)
-
-	// TODO: опубликовать событие user.created в брокер — Notification Service
-	// пришлёт приветственное письмо, Academic/Contracts/CRM обновят user_refs.
+	access, refresh, err := h.createTokenPair(r, created)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	// Контракт 1.1: user_id + tokens (без вложенного user).
+	writeJSON(w, http.StatusOK, map[string]any{
+		"user_id": created.ID, "access_token": access, "refresh_token": refresh,
+	})
 }
 
 // --- 1.2. POST /auth/login ---
@@ -87,8 +90,6 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	u, err := h.users.GetByLogin(r.Context(), req.Login)
 	if err != nil {
-		// Намеренно одинаковая ошибка что для "нет юзера", что для "неверный пароль" —
-		// иначе через код ответа можно перебором узнавать, какие email зарегистрированы.
 		writeError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", "invalid login or password")
 		return
 	}
@@ -101,7 +102,17 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.issueTokenPair(w, r, u)
+	access, refresh, err := h.createTokenPair(r, u)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"access_token": access, "refresh_token": refresh,
+		"user": map[string]any{
+			"id": u.ID, "role": u.Role, "first_name": u.FirstName, "last_name": u.LastName,
+		},
+	})
 }
 
 // --- 1.3. POST /auth/refresh ---
@@ -128,37 +139,37 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "INVALID_TOKEN", "user not found")
 		return
 	}
+	if !u.IsActive {
+		_ = h.authRepo.RevokeAllRefreshTokens(r.Context(), u.ID)
+		writeError(w, http.StatusForbidden, "ACCOUNT_DISABLED", "account is deactivated")
+		return
+	}
 
-	// Ротация: старый refresh-токен гасим, выдаём новую пару.
 	_ = h.authRepo.RevokeRefreshToken(r.Context(), hash)
-	h.issueTokenPair(w, r, u)
+	access, refresh, err := h.createTokenPair(r, u)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	// Контракт 1.3: только пара токенов.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"access_token": access, "refresh_token": refresh,
+	})
 }
 
-// issueTokenPair — общая логика выдачи access+refresh, используется в register/login/refresh.
-func (h *AuthHandler) issueTokenPair(w http.ResponseWriter, r *http.Request, u *models.User) {
-	access, err := h.tm.GenerateAccessToken(u)
+func (h *AuthHandler) createTokenPair(r *http.Request, u *models.User) (access, refresh string, err error) {
+	access, err = h.tm.GenerateAccessToken(u)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL", "token generation failed")
-		return
+		return "", "", errors.New("token generation failed")
 	}
-
 	refreshPlain, err := auth.GenerateOpaqueToken()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL", "token generation failed")
-		return
+		return "", "", errors.New("token generation failed")
 	}
 	if err := h.authRepo.SaveRefreshToken(r.Context(), u.ID, auth.HashToken(refreshPlain), h.tm.RefreshTokenExpiry()); err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL", "could not persist refresh token")
-		return
+		return "", "", errors.New("could not persist refresh token")
 	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"access_token":  access,
-		"refresh_token": refreshPlain,
-		"user": map[string]any{
-			"id": u.ID, "role": u.Role, "first_name": u.FirstName, "last_name": u.LastName,
-		},
-	})
+	return access, refreshPlain, nil
 }
 
 // --- 1.4. POST /auth/forgot-password ---
@@ -173,8 +184,7 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Всегда 200, даже если email не найден — иначе через код ответа можно
-	// перебором узнавать, какие адреса зарегистрированы (см. контракт 1.4).
+	// Всегда 200 — не палим наличие email (контракт 1.4).
 	u, err := h.users.GetByLogin(r.Context(), req.Email)
 	if err != nil {
 		w.WriteHeader(http.StatusOK)
@@ -183,20 +193,14 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 
 	resetPlain, err := auth.GenerateOpaqueToken()
 	if err != nil {
-		w.WriteHeader(http.StatusOK) // не палим внутреннюю ошибку через код ответа
-		return
-	}
-	expiresAt := time.Now().Add(1 * time.Hour)
-	if err := h.authRepo.SavePasswordResetToken(r.Context(), u.ID, auth.HashToken(resetPlain), expiresAt); err != nil {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+	expiresAt := time.Now().Add(1 * time.Hour)
+	_ = h.authRepo.SavePasswordResetToken(r.Context(), u.ID, auth.HashToken(resetPlain), expiresAt)
 
-	// TODO: заменить на публикацию события password_reset_requested в NATS,
-	// как только появится Notification Service — он отправит письмо со ссылкой
-	// вида https://app.studyroom.ru/reset-password?token=<resetPlain>.
-	// Пока — просто лог на сервере, чтобы можно было тестировать флоу руками.
-	log.Printf("[DEV] password reset token for %s: %s (expires %s)", u.Email, resetPlain, expiresAt.Format(time.RFC3339))
+	// TODO: опубликовать password_reset_requested в NATS → Notification Service отправит ссылку с токеном.
+	// Plaintext-токен в логи не пишем.
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -215,7 +219,7 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tokenHash := auth.HashToken(req.ResetToken)
-	userID, err := h.authRepo.FindValidPasswordResetToken(r.Context(), tokenHash)
+	userID, err := h.authRepo.ConsumePasswordResetToken(r.Context(), tokenHash)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_TOKEN", "reset token is invalid, expired or already used")
 		return
@@ -230,9 +234,7 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
 		return
 	}
-
-	// Токен одноразовый — гасим сразу после использования.
-	_ = h.authRepo.MarkPasswordResetTokenUsed(r.Context(), tokenHash)
+	_ = h.authRepo.RevokeAllRefreshTokens(r.Context(), userID)
 
 	w.WriteHeader(http.StatusOK)
 }
