@@ -3,8 +3,10 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"studyroom/user-service/internal/auth"
@@ -96,39 +98,143 @@ func (h *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// --- 1.9. GET /users ---
+// --- 1.9. GET /users — справочник «мои люди» по роли вызывающего ---
+//
+// Фронт всегда получает один и тот же shape; нерелевантные для роли ключи — [].
+type usersDirectoryResponse struct {
+	Children     []*models.User `json:"children"`
+	Students     []*models.User `json:"students"`
+	Tutors       []*models.User `json:"tutors"`
+	BranchOwners []*models.User `json:"branch_owners"`
+	Parents      []*models.User `json:"parents"`
+}
+
+func emptyDirectory() usersDirectoryResponse {
+	return usersDirectoryResponse{
+		Children:     []*models.User{},
+		Students:     []*models.User{},
+		Tutors:       []*models.User{},
+		BranchOwners: []*models.User{},
+		Parents:      []*models.User{},
+	}
+}
+
 func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 	claims, _ := middleware.FromContext(r.Context())
 	q := r.URL.Query()
+	search := q.Get("search")
 
-	filter := repository.ListFilter{Search: q.Get("search")}
-	if roleStr := q.Get("role"); roleStr != "" {
-		role := models.Role(roleStr)
-		filter.Role = &role
-	}
-	if page, err := strconv.Atoi(q.Get("page")); err == nil {
-		filter.Page = page
-	}
-	if filter.Page < 1 {
-		filter.Page = 1
-	}
-
-	// branch_owner не может обойти ограничение своим фильтром — сервер
-	// принудительно подставляет его собственный branch_id (см. контракт 1.9).
-	if claims.Role == models.RoleBranchOwner {
-		filter.BranchID = claims.BranchID
-	} else if bidStr := q.Get("branch_id"); bidStr != "" {
-		if bid, err := strconv.ParseInt(bidStr, 10, 64); err == nil {
-			filter.BranchID = &bid
+	// branch_id из query — только owner может сузить; branch_owner всегда свой филиал.
+	var branchFilter *int64
+	switch claims.Role {
+	case models.RoleBranchOwner, models.RoleTutor:
+		branchFilter = claims.BranchID
+	case models.RoleOwner:
+		if bidStr := q.Get("branch_id"); bidStr != "" {
+			if bid, err := strconv.ParseInt(bidStr, 10, 64); err == nil {
+				branchFilter = &bid
+			}
 		}
 	}
 
-	users, total, err := h.users.List(r.Context(), filter)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
-		return
+	out := emptyDirectory()
+	ctx := r.Context()
+
+	switch claims.Role {
+	case models.RoleParent:
+		children, err := h.parentChild.ListChildren(ctx, claims.UserID, search)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
+			return
+		}
+		if children != nil {
+			out.Children = children
+		}
+
+	case models.RoleTutor:
+		// Пока нет enrollments в User Service — ученики того же филиала.
+		// TODO: заменить на связку tutor↔student из Academic Service.
+		students, err := h.users.ListAll(ctx, repository.ListFilter{
+			Role: rolePtr(models.RoleStudent), BranchID: branchFilter, Search: search,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
+			return
+		}
+		if students != nil {
+			out.Students = students
+		}
+
+	case models.RoleBranchOwner:
+		students, err := h.users.ListAll(ctx, repository.ListFilter{
+			Role: rolePtr(models.RoleStudent), BranchID: branchFilter, Search: search,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
+			return
+		}
+		tutors, err := h.users.ListAll(ctx, repository.ListFilter{
+			Role: rolePtr(models.RoleTutor), BranchID: branchFilter, Search: search,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
+			return
+		}
+		if students != nil {
+			out.Students = students
+		}
+		if tutors != nil {
+			out.Tutors = tutors
+		}
+
+	case models.RoleOwner:
+		students, err := h.users.ListAll(ctx, repository.ListFilter{
+			Role: rolePtr(models.RoleStudent), BranchID: branchFilter, Search: search,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
+			return
+		}
+		tutors, err := h.users.ListAll(ctx, repository.ListFilter{
+			Role: rolePtr(models.RoleTutor), BranchID: branchFilter, Search: search,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
+			return
+		}
+		branchOwners, err := h.users.ListAll(ctx, repository.ListFilter{
+			Role: rolePtr(models.RoleBranchOwner), BranchID: branchFilter, Search: search,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
+			return
+		}
+		parents, err := h.users.ListAll(ctx, repository.ListFilter{
+			Role: rolePtr(models.RoleParent), Search: search,
+			// родители обычно без branch_id — фильтр филиала на них не вешаем
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
+			return
+		}
+		if students != nil {
+			out.Students = students
+		}
+		if tutors != nil {
+			out.Tutors = tutors
+		}
+		if branchOwners != nil {
+			out.BranchOwners = branchOwners
+		}
+		if parents != nil {
+			out.Parents = parents
+		}
+
+	case models.RoleStudent:
+		// справочник пустой — ученику чужие списки не нужны
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": users, "total": total, "page": filter.Page})
+
+	writeJSON(w, http.StatusOK, out)
 }
 
 // --- 1.10. GET /users/{id} ---
@@ -261,9 +367,9 @@ func (h *UserHandler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// email/логин ученика генерируется автоматически — у младших школьников
-	// обычно нет своей почты; используем служебный псевдо-email на базе id.
+	// обычно нет своей почты; используем служебный псевдо-email.
 	// Настоящую отправку данных для входа делает Notification Service по email родителя.
-	placeholderEmail := "student+pending@studyroom.internal"
+	placeholderEmail := fmt.Sprintf("student+%d@studyroom.internal", time.Now().UnixNano())
 
 	u := &models.User{
 		Email: placeholderEmail, PasswordHash: hash, Role: models.RoleStudent,
@@ -396,19 +502,13 @@ func (h *UserHandler) ListChildren(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Упрощённая реализация через List: в реальности лучше отдельным JOIN-запросом
-	// repository.ParentChildRepository, здесь для краткости фильтруем по списку.
-	students, _, err := h.users.List(r.Context(), repository.ListFilter{Role: rolePtr(models.RoleStudent), PerPage: 100})
+	children, err := h.parentChild.ListChildren(r.Context(), parentID, "")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
 		return
 	}
-	var children []*models.User
-	for _, s := range students {
-		isChild, err := h.parentChild.IsParentOf(r.Context(), parentID, s.ID)
-		if err == nil && isChild {
-			children = append(children, s)
-		}
+	if children == nil {
+		children = []*models.User{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": children})
 }

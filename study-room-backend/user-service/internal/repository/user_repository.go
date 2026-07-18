@@ -91,6 +91,7 @@ func (r *UserRepository) Update(ctx context.Context, id int64, fields map[string
 
 type ListFilter struct {
 	Role     *models.Role
+	Roles    []models.Role // если задан — OR по нескольким ролям (Role игнорируется)
 	BranchID *int64
 	Search   string
 	Page     int
@@ -101,14 +102,22 @@ func (r *UserRepository) List(ctx context.Context, f ListFilter) ([]*models.User
 	if f.Page < 1 {
 		f.Page = 1
 	}
-	if f.PerPage < 1 || f.PerPage > 100 {
+	if f.PerPage < 1 || f.PerPage > 500 {
 		f.PerPage = 20
 	}
 
 	where := "WHERE 1=1"
 	args := []any{}
 	i := 1
-	if f.Role != nil {
+	if len(f.Roles) > 0 {
+		roleStrs := make([]string, len(f.Roles))
+		for idx, role := range f.Roles {
+			roleStrs[idx] = string(role)
+		}
+		where += " AND role = ANY($" + itoa(i) + ")"
+		args = append(args, roleStrs)
+		i++
+	} else if f.Role != nil {
 		where += " AND role = $" + itoa(i)
 		args = append(args, *f.Role)
 		i++
@@ -149,6 +158,14 @@ func (r *UserRepository) List(ctx context.Context, f ListFilter) ([]*models.User
 		users = append(users, u)
 	}
 	return users, total, rows.Err()
+}
+
+// ListAll — без пагинации (для справочника «мои люди»), лимит 500.
+func (r *UserRepository) ListAll(ctx context.Context, f ListFilter) ([]*models.User, error) {
+	f.Page = 1
+	f.PerPage = 500
+	users, _, err := r.List(ctx, f)
+	return users, err
 }
 
 func itoa(i int) string {

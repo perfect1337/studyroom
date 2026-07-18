@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"studyroom/user-service/internal/models"
 )
 
 type AuthRepository struct {
@@ -98,4 +99,35 @@ func (r *ParentChildRepository) IsParentOf(ctx context.Context, parentID, studen
 		`SELECT EXISTS(SELECT 1 FROM parent_student WHERE parent_id=$1 AND student_id=$2)`,
 		parentID, studentID).Scan(&exists)
 	return exists, err
+}
+
+// ListChildren возвращает учеников, привязанных к родителю через parent_student.
+func (r *ParentChildRepository) ListChildren(ctx context.Context, parentID int64, search string) ([]*models.User, error) {
+	where := `WHERE ps.parent_id = $1`
+	args := []any{parentID}
+	if search != "" {
+		where += ` AND (u.last_name ILIKE $2 OR u.first_name ILIKE $2)`
+		args = append(args, "%"+search+"%")
+	}
+	query := `SELECT u.id, u.email, u.phone, u.password_hash, u.role, u.last_name, u.first_name,
+		u.patronymic, u.avatar_url, u.branch_id, u.is_active, u.created_at, u.updated_at
+		FROM users u
+		INNER JOIN parent_student ps ON ps.student_id = u.id
+		` + where + ` ORDER BY u.id`
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []*models.User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
 }
