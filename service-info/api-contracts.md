@@ -622,6 +622,43 @@
 
 ---
 
+## События NATS (User Service → Notification Service)
+
+User Service публикует (best-effort после успешного commit в БД). Notification Service подписан.
+
+### `user.created` / `user.updated`
+```json
+{
+  "id": 482910,
+  "email": "elena@example.com",
+  "first_name": "Елена",
+  "last_name": "Смирнова",
+  "role": "parent",
+  "branch_id": null,
+  "temp_password": "Ab12cd34ef56",
+  "notify_email": "parent@example.com"
+}
+```
+- `temp_password` / `notify_email` — только при создании tutor/student.
+- NS: upsert `users_ref`; для `user.created` дополнительно письмо:
+  - `parent` → welcome
+  - `tutor` → credentials на email tutor’а
+  - `student` → credentials на `notify_email` (родитель)
+
+### `password_reset_requested`
+```json
+{
+  "user_id": 482910,
+  "email": "elena@example.com",
+  "reset_token": "...",
+  "reset_url": "http://localhost:3000/reset-password?token=...",
+  "expires_at": "2026-07-18T18:00:00Z"
+}
+```
+NS отправляет письмо со ссылкой (`type: password_reset`).
+
+---
+
 # Сводка по количеству методов
 
 | Сервис | Методов |

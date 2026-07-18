@@ -4,21 +4,34 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"studyroom/user-service/internal/auth"
+	"studyroom/user-service/internal/events"
 	"studyroom/user-service/internal/models"
 	"studyroom/user-service/internal/repository"
 )
 
 type AuthHandler struct {
-	users    *repository.UserRepository
-	authRepo *repository.AuthRepository
-	tm       *auth.TokenManager
+	users        *repository.UserRepository
+	authRepo     *repository.AuthRepository
+	tm           *auth.TokenManager
+	events       events.Publisher
+	appPublicURL string
 }
 
-func NewAuthHandler(users *repository.UserRepository, authRepo *repository.AuthRepository, tm *auth.TokenManager) *AuthHandler {
-	return &AuthHandler{users: users, authRepo: authRepo, tm: tm}
+func NewAuthHandler(
+	users *repository.UserRepository,
+	authRepo *repository.AuthRepository,
+	tm *auth.TokenManager,
+	pub events.Publisher,
+	appPublicURL string,
+) *AuthHandler {
+	if pub == nil {
+		pub = events.NoopPublisher{}
+	}
+	return &AuthHandler{users: users, authRepo: authRepo, tm: tm, events: pub, appPublicURL: appPublicURL}
 }
 
 // --- 1.1. POST /auth/register ---
@@ -64,12 +77,13 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.events.UserCreated(created, "", "")
+
 	access, refresh, err := h.createTokenPair(r, created)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
 		return
 	}
-	// Контракт 1.1: user_id + tokens (без вложенного user).
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user_id": created.ID, "access_token": access, "refresh_token": refresh,
 	})
@@ -151,7 +165,6 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
 		return
 	}
-	// Контракт 1.3: только пара токенов.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"access_token": access, "refresh_token": refresh,
 	})
@@ -184,7 +197,6 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Всегда 200 — не палим наличие email (контракт 1.4).
 	u, err := h.users.GetByLogin(r.Context(), req.Email)
 	if err != nil {
 		w.WriteHeader(http.StatusOK)
@@ -197,10 +209,14 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	expiresAt := time.Now().Add(1 * time.Hour)
-	_ = h.authRepo.SavePasswordResetToken(r.Context(), u.ID, auth.HashToken(resetPlain), expiresAt)
+	if err := h.authRepo.SavePasswordResetToken(r.Context(), u.ID, auth.HashToken(resetPlain), expiresAt); err != nil {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 
-	// TODO: опубликовать password_reset_requested в NATS → Notification Service отправит ссылку с токеном.
-	// Plaintext-токен в логи не пишем.
+	base := strings.TrimRight(h.appPublicURL, "/")
+	resetURL := base + "/reset-password?token=" + resetPlain
+	h.events.PasswordResetRequested(u.ID, u.Email, resetPlain, resetURL, expiresAt)
 
 	w.WriteHeader(http.StatusOK)
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"studyroom/user-service/internal/auth"
+	"studyroom/user-service/internal/events"
 	"studyroom/user-service/internal/middleware"
 	"studyroom/user-service/internal/models"
 	"studyroom/user-service/internal/repository"
@@ -21,6 +22,7 @@ type UserHandler struct {
 	parentChild   *repository.ParentChildRepository
 	authRepo      *repository.AuthRepository
 	tutorProfiles *repository.TutorProfileRepository
+	events        events.Publisher
 }
 
 func NewUserHandler(
@@ -29,10 +31,14 @@ func NewUserHandler(
 	pc *repository.ParentChildRepository,
 	authRepo *repository.AuthRepository,
 	tutorProfiles *repository.TutorProfileRepository,
+	pub events.Publisher,
 ) *UserHandler {
+	if pub == nil {
+		pub = events.NoopPublisher{}
+	}
 	return &UserHandler{
 		users: users, branches: branches, parentChild: pc,
-		authRepo: authRepo, tutorProfiles: tutorProfiles,
+		authRepo: authRepo, tutorProfiles: tutorProfiles, events: pub,
 	}
 }
 
@@ -78,6 +84,7 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
 		return
 	}
+	h.events.UserUpdated(updated)
 	writeJSON(w, http.StatusOK, updated)
 }
 
@@ -342,6 +349,7 @@ func (h *UserHandler) CreateTutor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.events.UserCreated(created, tempPassword, "")
 	writeJSON(w, http.StatusCreated, map[string]any{"user": created, "temp_password": tempPassword})
 }
 
@@ -406,6 +414,11 @@ func (h *UserHandler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	notifyEmail := ""
+	if parent, err := h.users.GetByID(r.Context(), req.ParentID); err == nil {
+		notifyEmail = parent.Email
+	}
+	h.events.UserCreated(created, tempPassword, notifyEmail)
 	writeJSON(w, http.StatusCreated, created)
 }
 
@@ -448,6 +461,7 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
 		return
 	}
+	h.events.UserUpdated(updated)
 	writeJSON(w, http.StatusOK, updated)
 }
 
@@ -465,13 +479,15 @@ func (h *UserHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid body")
 		return
 	}
-	if _, err := h.users.Update(r.Context(), id, map[string]any{"is_active": body.IsActive}); err != nil {
+	updated, err := h.users.Update(r.Context(), id, map[string]any{"is_active": body.IsActive})
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
 		return
 	}
 	if !body.IsActive {
 		_ = h.authRepo.RevokeAllRefreshTokens(r.Context(), id)
 	}
+	h.events.UserUpdated(updated)
 	w.WriteHeader(http.StatusOK)
 }
 

@@ -111,7 +111,7 @@ func getEnv(t *testing.T) *env {
 		}
 
 		tm := auth.NewTokenManager("test-jwt-secret-for-contracts", 60, 30)
-		deps := app.NewDeps(pool, tm)
+		deps := app.NewDeps(pool, tm, nil, "http://localhost:3000")
 		shared = &env{
 			pool:   pool,
 			deps:   deps,

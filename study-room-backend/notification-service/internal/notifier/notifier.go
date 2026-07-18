@@ -1,6 +1,3 @@
-// Package notifier — общая логика "создать уведомление в БД + отправить его",
-// используется и HTTP-хендлером POST /internal/notifications/send, и
-// подписчиком на события NATS (internal/events), чтобы не дублировать код.
 package notifier
 
 import (
@@ -29,10 +26,8 @@ func New(
 	return &Notifier{notifications: notifications, settings: settings, usersRef: usersRef, mail: mail}
 }
 
-// Send создаёт запись в notifications и, если у пользователя включён
-// email-канал (по умолчанию включён), отправляет письмо через SMTP Яндекса.
-// email — необязательный override: если передан, используется он, иначе
-// адрес берётся из локальной копии users_ref.
+// Send создаёт запись в notifications и отправляет email.
+// При ошибке SMTP возвращает error (после пометки записи failed).
 func (n *Notifier) Send(ctx context.Context, userID int64, notifType, message, emailOverride string) (*models.Notification, error) {
 	created, err := n.notifications.Create(ctx, &models.Notification{
 		UserID:  userID,
@@ -53,7 +48,7 @@ func (n *Notifier) Send(ctx context.Context, userID int64, notifType, message, e
 	if !settings.EmailEnabled {
 		errMsg := "email channel disabled for user"
 		_ = n.notifications.UpdateStatus(ctx, created.ID, models.StatusFailed, &errMsg)
-		return created, nil
+		return created, fmt.Errorf("%s", errMsg)
 	}
 
 	to := emailOverride
@@ -62,7 +57,7 @@ func (n *Notifier) Send(ctx context.Context, userID int64, notifType, message, e
 		if err != nil {
 			errMsg := "no known email for user (users_ref empty — sync via user.created event or POST /internal/users/sync)"
 			_ = n.notifications.UpdateStatus(ctx, created.ID, models.StatusFailed, &errMsg)
-			return created, nil
+			return created, fmt.Errorf("%s", errMsg)
 		}
 		to = ref.Email
 	}
@@ -72,7 +67,7 @@ func (n *Notifier) Send(ctx context.Context, userID int64, notifType, message, e
 		errMsg := err.Error()
 		log.Printf("notifier: send email to %s failed: %v", to, err)
 		_ = n.notifications.UpdateStatus(ctx, created.ID, models.StatusFailed, &errMsg)
-		return created, nil
+		return created, fmt.Errorf("smtp send: %w", err)
 	}
 
 	if err := n.notifications.UpdateStatus(ctx, created.ID, models.StatusSent, nil); err != nil {
@@ -92,6 +87,12 @@ func subjectFor(notifType string) string {
 		return "Study Room — новая заявка"
 	case "attendance_marked_absent":
 		return "Study Room — отсутствие на занятии"
+	case "welcome":
+		return "Study Room — добро пожаловать"
+	case "account_credentials":
+		return "Study Room — данные для входа"
+	case "password_reset":
+		return "Study Room — сброс пароля"
 	default:
 		return "Study Room — уведомление"
 	}

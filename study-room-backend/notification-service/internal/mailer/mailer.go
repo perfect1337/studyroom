@@ -84,12 +84,19 @@ func (m *Mailer) sendImplicitTLS(addr string, auth smtp.Auth, to string, msg []b
 
 func buildMessage(from, to, subject, body string) []byte {
 	var b strings.Builder
-	b.WriteString("From: " + from + "\r\n")
-	b.WriteString("To: " + to + "\r\n")
-	b.WriteString("Subject: " + subject + "\r\n")
+	b.WriteString("From: " + sanitizeHeader(from) + "\r\n")
+	b.WriteString("To: " + sanitizeHeader(to) + "\r\n")
+	b.WriteString("Subject: " + sanitizeHeader(subject) + "\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/plain; charset=\"UTF-8\"\r\n")
 	b.WriteString("\r\n")
 	b.WriteString(body)
 	return []byte(b.String())
+}
+
+// sanitizeHeader убирает CR/LF, чтобы нельзя было инъектировать заголовки.
+func sanitizeHeader(s string) string {
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "\n", "")
+	return s
 }

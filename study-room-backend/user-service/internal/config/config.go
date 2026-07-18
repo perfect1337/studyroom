@@ -9,8 +9,10 @@ type Config struct {
 	Port            string
 	DatabaseURL     string
 	JWTSecret       string
-	AccessTokenTTL  int // минут
-	RefreshTokenTTL int // дней
+	NATSURL         string // опционально: без него события не публикуются
+	AppPublicURL    string // база для ссылок в письмах (reset-password)
+	AccessTokenTTL  int    // минут
+	RefreshTokenTTL int    // дней
 }
 
 func Load() (*Config, error) {
@@ -18,6 +20,8 @@ func Load() (*Config, error) {
 		Port:            getEnv("PORT", "8081"),
 		DatabaseURL:     getEnv("DATABASE_URL", ""),
 		JWTSecret:       getEnv("JWT_SECRET", ""),
+		NATSURL:         getEnv("NATS_URL", ""),
+		AppPublicURL:    getEnv("APP_PUBLIC_URL", "http://localhost:3000"),
 		AccessTokenTTL:  15,
 		RefreshTokenTTL: 30,
 	}

@@ -25,11 +25,15 @@ services:
       PORT: 8081
       DATABASE_URL: postgres://user_service:${USERS_DB_PASSWORD:-devpassword123}@postgres-users:5432/study_room_users?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      NATS_URL: nats://nats:4222
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:3000}
     ports:
       - "8081:8081"
     depends_on:
       postgres-users:
         condition: service_healthy
+      nats:
+        condition: service_started
     networks:
       - studyroom-network
     restart: unless-stopped

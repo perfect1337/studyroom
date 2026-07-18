@@ -13,6 +13,7 @@ import (
 	"studyroom/user-service/internal/auth"
 	"studyroom/user-service/internal/config"
 	"studyroom/user-service/internal/db"
+	"studyroom/user-service/internal/events"
 	"studyroom/user-service/internal/migrate"
 )
 
@@ -35,8 +36,23 @@ func main() {
 	}
 	log.Println("migrations up to date")
 
+	var pub events.Publisher = events.NoopPublisher{}
+	if cfg.NATSURL != "" {
+		nc, err := events.Connect(cfg.NATSURL)
+		if err != nil {
+			log.Printf("events: could not connect to NATS at %s: %v (continuing without publish)", cfg.NATSURL, err)
+		} else {
+			natsPub := events.NewNATSPublisher(nc)
+			pub = natsPub
+			defer natsPub.Close()
+			log.Printf("events: publishing to NATS at %s", cfg.NATSURL)
+		}
+	} else {
+		log.Println("events: NATS_URL not set, event publish disabled")
+	}
+
 	tm := auth.NewTokenManager(cfg.JWTSecret, cfg.AccessTokenTTL, cfg.RefreshTokenTTL)
-	deps := app.NewDeps(pool, tm)
+	deps := app.NewDeps(pool, tm, pub, cfg.AppPublicURL)
 	handler := app.NewRouter(deps)
 
 	srv := &http.Server{
