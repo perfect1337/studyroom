@@ -44,20 +44,22 @@ func (h *TutorHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 
 	claims, _ := middleware.FromContext(r.Context())
 
-	// Ключевое правило контракта 1.15: значение "inactive" может ставить
-	// только owner. branch_owner получает 403, даже если это репетитор его филиала.
+	target, err := h.users.GetByID(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "tutor not found")
+		return
+	}
+	if target.Role != models.RoleTutor {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "user is not a tutor")
+		return
+	}
+
 	if body.Status == models.TutorStatusInactive && claims.Role != models.RoleOwner {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "only owner can set status to inactive")
 		return
 	}
 
-	// branch_owner может менять статус только репетиторам своего филиала
 	if claims.Role == models.RoleBranchOwner {
-		target, err := h.users.GetByID(r.Context(), id)
-		if err != nil {
-			writeError(w, http.StatusNotFound, "NOT_FOUND", "tutor not found")
-			return
-		}
 		if target.BranchID == nil || claims.BranchID == nil || *target.BranchID != *claims.BranchID {
 			writeError(w, http.StatusForbidden, "FORBIDDEN", "not allowed to edit tutors of another branch")
 			return

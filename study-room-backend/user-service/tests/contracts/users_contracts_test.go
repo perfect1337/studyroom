@@ -376,15 +376,8 @@ func TestContract_1_16_ListBranches(t *testing.T) {
 		t.Fatalf("owner items=%v", all.Body["items"])
 	}
 
-	mine := e.do("GET", "/api/v1/branches", nil, e.accessToken(bo))
-	e.mustOK(mine, 200)
-	items := asSlice(mine.Body["items"])
-	if len(items) != 1 {
-		t.Fatalf("bo items=%v", items)
-	}
-	if int64(userMap(items[0])["id"].(float64)) != b1.ID {
-		t.Fatalf("expected only own branch")
-	}
+	// branch_owner — 403: свой филиал уже в JWT / me
+	e.mustOK(e.do("GET", "/api/v1/branches", nil, e.accessToken(bo)), 403)
 }
 
 func TestContract_1_17_CreateBranch_OwnerOnly(t *testing.T) {
@@ -420,12 +413,22 @@ func TestContract_1_18_ListChildren(t *testing.T) {
 	if len(items) != 1 || int64(userMap(items[0])["id"].(float64)) != child.ID {
 		t.Fatalf("items=%v", items)
 	}
+	if userMap(items[0])["first_name"] != "Алексей" {
+		t.Fatalf("expected slim child DTO, got %v", items[0])
+	}
+	if _, hasEmail := userMap(items[0])["email"]; hasEmail {
+		t.Fatal("children must not expose full user email")
+	}
 
 	// чужой parentId для parent — 403
 	e.mustOK(e.do("GET", fmt.Sprintf("/api/v1/parents/%d/children", parent.ID), nil, e.accessToken(other)), 403)
 
 	// owner может смотреть
 	e.mustOK(e.do("GET", fmt.Sprintf("/api/v1/parents/%d/children", parent.ID), nil, e.accessToken(owner)), 200)
+
+	// tutor/student — 403
+	tutor := e.seedUser(seedOpts{Email: "t18@t.l", Role: models.RoleTutor})
+	e.mustOK(e.do("GET", fmt.Sprintf("/api/v1/parents/%d/children", parent.ID), nil, e.accessToken(tutor)), 403)
 }
 
 func TestContract_AuthRequiredOnProtectedRoutes(t *testing.T) {
@@ -444,4 +447,11 @@ func TestContract_AuthRequiredOnProtectedRoutes(t *testing.T) {
 			t.Fatalf("%s %s => %d want 401", p.method, p.path, res.Status)
 		}
 	}
+}
+
+func TestContract_1_16_Branches_ForbiddenForParent(t *testing.T) {
+	e := getEnv(t)
+	_ = e.seedBranch("A", "A")
+	parent := e.seedUser(seedOpts{Email: "p16f@t.l", Role: models.RoleParent})
+	e.mustOK(e.do("GET", "/api/v1/branches", nil, e.accessToken(parent)), 403)
 }

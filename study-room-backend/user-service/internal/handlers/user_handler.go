@@ -16,13 +16,24 @@ import (
 )
 
 type UserHandler struct {
-	users        *repository.UserRepository
-	branches     *repository.BranchRepository
-	parentChild  *repository.ParentChildRepository
+	users         *repository.UserRepository
+	branches      *repository.BranchRepository
+	parentChild   *repository.ParentChildRepository
+	authRepo      *repository.AuthRepository
+	tutorProfiles *repository.TutorProfileRepository
 }
 
-func NewUserHandler(users *repository.UserRepository, branches *repository.BranchRepository, pc *repository.ParentChildRepository) *UserHandler {
-	return &UserHandler{users: users, branches: branches, parentChild: pc}
+func NewUserHandler(
+	users *repository.UserRepository,
+	branches *repository.BranchRepository,
+	pc *repository.ParentChildRepository,
+	authRepo *repository.AuthRepository,
+	tutorProfiles *repository.TutorProfileRepository,
+) *UserHandler {
+	return &UserHandler{
+		users: users, branches: branches, parentChild: pc,
+		authRepo: authRepo, tutorProfiles: tutorProfiles,
+	}
 }
 
 // --- 1.6. GET /users/me ---
@@ -95,12 +106,11 @@ func (h *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
 		return
 	}
+	_ = h.authRepo.RevokeAllRefreshTokens(r.Context(), claims.UserID)
 	w.WriteHeader(http.StatusOK)
 }
 
-// --- 1.9. GET /users — справочник «мои люди» по роли вызывающего ---
-//
-// Фронт всегда получает один и тот же shape; нерелевантные для роли ключи — [].
+// --- 1.9. GET /users — справочник «мои люди» ---
 type usersDirectoryResponse struct {
 	Children     []*models.User `json:"children"`
 	Students     []*models.User `json:"students"`
@@ -124,10 +134,14 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	search := q.Get("search")
 
-	// branch_id из query — только owner может сузить; branch_owner всегда свой филиал.
 	var branchFilter *int64
 	switch claims.Role {
 	case models.RoleBranchOwner, models.RoleTutor:
+		if claims.BranchID == nil {
+			// Без филиала — пустой справочник, а не утечка всех учеников.
+			writeJSON(w, http.StatusOK, emptyDirectory())
+			return
+		}
 		branchFilter = claims.BranchID
 	case models.RoleOwner:
 		if bidStr := q.Get("branch_id"); bidStr != "" {
@@ -152,8 +166,6 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case models.RoleTutor:
-		// Пока нет enrollments в User Service — ученики того же филиала.
-		// TODO: заменить на связку tutor↔student из Academic Service.
 		students, err := h.users.ListAll(ctx, repository.ListFilter{
 			Role: rolePtr(models.RoleStudent), BranchID: branchFilter, Search: search,
 		})
@@ -211,7 +223,6 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 		parents, err := h.users.ListAll(ctx, repository.ListFilter{
 			Role: rolePtr(models.RoleParent), Search: search,
-			// родители обычно без branch_id — фильтр филиала на них не вешаем
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
@@ -229,9 +240,6 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 		if parents != nil {
 			out.Parents = parents
 		}
-
-	case models.RoleStudent:
-		// справочник пустой — ученику чужие списки не нужны
 	}
 
 	writeJSON(w, http.StatusOK, out)
@@ -259,11 +267,6 @@ func (h *UserHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, target)
 }
 
-// canViewUser реализует правила из контракта 1.10: owner — все; branch_owner —
-// только свой филиал; parent — только свои дети; сам пользователь — себя.
-// (Проверку "tutor -> свой ученик" здесь сделать нельзя: это знает только
-// Academic Service, у User Service такой информации нет — TODO: синхронный
-// вызов в Academic Service или локальный кэш enrollments, когда он появится.)
 func canViewUser(r *http.Request, h *UserHandler, claims *auth.Claims, target *models.User) bool {
 	if claims.Role == models.RoleOwner {
 		return true
@@ -277,6 +280,10 @@ func canViewUser(r *http.Request, h *UserHandler, claims *auth.Claims, target *m
 	if claims.Role == models.RoleParent {
 		isParent, err := h.parentChild.IsParentOf(r.Context(), claims.UserID, target.ID)
 		return err == nil && isParent
+	}
+	// Пока нет enrollments: tutor видит учеников своего филиала (как в GET /users).
+	if claims.Role == models.RoleTutor && target.Role == models.RoleStudent {
+		return target.BranchID != nil && claims.BranchID != nil && *target.BranchID == *claims.BranchID
 	}
 	return false
 }
@@ -298,12 +305,16 @@ func (h *UserHandler) CreateTutor(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid body")
 		return
 	}
+	if req.Email == "" || req.LastName == "" || req.FirstName == "" {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "email, last_name, first_name required")
+		return
+	}
 	tempPassword, err := auth.GenerateOpaqueToken()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "token generation failed")
 		return
 	}
-	tempPassword = tempPassword[:12] // временный пароль покороче токена
+	tempPassword = tempPassword[:12]
 
 	hash, err := auth.HashPassword(tempPassword)
 	if err != nil {
@@ -326,9 +337,10 @@ func (h *UserHandler) CreateTutor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: создать строку в tutor_profiles (specialization и т.д.) —
-	// вынесено отдельным шагом, т.к. профиль — таблица 1-к-1, отдельная от users.
-	// TODO: опубликовать user.created, Notification Service отправит tempPassword на email.
+	if err := h.tutorProfiles.Upsert(r.Context(), created.ID, req.Specialization, models.TutorStatusActive); err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "could not create tutor profile")
+		return
+	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{"user": created, "temp_password": tempPassword})
 }
@@ -351,14 +363,21 @@ func (h *UserHandler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid body")
 		return
 	}
+	if req.LastName == "" || req.FirstName == "" || req.ParentID == 0 {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "last_name, first_name, parent_id required")
+		return
+	}
 
-	// parent может создать ребёнка только себе — см. контракт 1.12
 	if claims.Role == models.RoleParent && req.ParentID != claims.UserID {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "parent_id must be your own id")
 		return
 	}
 
-	tempPassword, _ := auth.GenerateOpaqueToken()
+	tempPassword, err := auth.GenerateOpaqueToken()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "token generation failed")
+		return
+	}
 	tempPassword = tempPassword[:12]
 	hash, err := auth.HashPassword(tempPassword)
 	if err != nil {
@@ -366,30 +385,26 @@ func (h *UserHandler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// email/логин ученика генерируется автоматически — у младших школьников
-	// обычно нет своей почты; используем служебный псевдо-email.
-	// Настоящую отправку данных для входа делает Notification Service по email родителя.
 	placeholderEmail := fmt.Sprintf("student+%d@studyroom.internal", time.Now().UnixNano())
-
 	u := &models.User{
 		Email: placeholderEmail, PasswordHash: hash, Role: models.RoleStudent,
 		LastName: req.LastName, FirstName: req.FirstName, Patronymic: req.Patronymic,
 		BranchID: req.BranchID, IsActive: true,
 	}
-	created, err := h.users.Create(r.Context(), u)
+
+	created, err := h.users.CreateStudentWithParent(r.Context(), u, req.ParentID, req.ClassInfo, req.School)
 	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "parent_id must be an existing parent")
+			return
+		}
+		if errors.Is(err, repository.ErrDuplicate) {
+			writeError(w, http.StatusConflict, "ALREADY_EXISTS", "could not create student")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "could not create student")
 		return
 	}
-
-	if err := h.parentChild.Link(r.Context(), req.ParentID, created.ID); err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL", "could not link parent")
-		return
-	}
-
-	// TODO: создать student_profiles (class_info, school), обновить email на
-	// реальный сгенерированный (id-based) теперь, когда known ID, и отправить
-	// событие user.created с temp_password на email родителя через Notification Service.
 
 	writeJSON(w, http.StatusCreated, created)
 }
@@ -420,8 +435,6 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid body")
 		return
 	}
-	// Разрешаем редактировать только эти поля — чтобы через PATCH нельзя было
-	// незаметно подменить role/email/is_active в обход выделенных под это методов.
 	allowed := map[string]bool{"first_name": true, "last_name": true, "patronymic": true, "avatar_url": true}
 	fields := map[string]any{}
 	for k, v := range body {
@@ -456,17 +469,17 @@ func (h *UserHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
 		return
 	}
+	if !body.IsActive {
+		_ = h.authRepo.RevokeAllRefreshTokens(r.Context(), id)
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
 // --- 1.16. GET /branches ---
+// Доступ только owner — RestrictRoles на роутере. Branch_owner свой филиал
+// берёт из JWT /users/me, список сети ему не нужен.
 func (h *UserHandler) ListBranches(w http.ResponseWriter, r *http.Request) {
-	claims, _ := middleware.FromContext(r.Context())
-	var onlyID *int64
-	if claims.Role == models.RoleBranchOwner {
-		onlyID = claims.BranchID
-	}
-	branches, err := h.branches.List(r.Context(), onlyID)
+	branches, err := h.branches.List(r.Context(), nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
 		return
@@ -479,6 +492,10 @@ func (h *UserHandler) CreateBranch(w http.ResponseWriter, r *http.Request) {
 	var body models.Branch
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid body")
+		return
+	}
+	if body.Name == "" || body.City == "" {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "name and city required")
 		return
 	}
 	created, err := h.branches.Create(r.Context(), &body)
@@ -497,20 +514,55 @@ func (h *UserHandler) ListChildren(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	claims, _ := middleware.FromContext(r.Context())
-	if claims.Role == models.RoleParent && claims.UserID != parentID {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "can only view your own children")
+
+	switch claims.Role {
+	case models.RoleParent:
+		if claims.UserID != parentID {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "can only view your own children")
+			return
+		}
+	case models.RoleOwner:
+		// ok
+	case models.RoleBranchOwner:
+		if claims.BranchID == nil {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "branch_owner has no branch")
+			return
+		}
+	default:
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "role not permitted for this action")
 		return
 	}
 
-	children, err := h.parentChild.ListChildren(r.Context(), parentID, "")
+	views, err := h.parentChild.ListChildrenViews(r.Context(), parentID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
 		return
 	}
-	if children == nil {
-		children = []*models.User{}
+	if views == nil {
+		views = []repository.ChildView{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": children})
+
+	if claims.Role == models.RoleBranchOwner {
+		filtered := make([]repository.ChildView, 0, len(views))
+		for _, c := range views {
+			if c.BranchID != nil && *c.BranchID == *claims.BranchID {
+				filtered = append(filtered, c)
+			}
+		}
+		views = filtered
+	}
+
+	items := make([]map[string]any, 0, len(views))
+	for _, c := range views {
+		item := map[string]any{
+			"id": c.ID, "first_name": c.FirstName, "last_name": c.LastName,
+		}
+		if c.ClassInfo != nil {
+			item["class_info"] = *c.ClassInfo
+		}
+		items = append(items, item)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func rolePtr(r models.Role) *models.Role { return &r }

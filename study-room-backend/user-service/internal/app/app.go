@@ -3,23 +3,24 @@ package app
 import (
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"studyroom/user-service/internal/auth"
 	"studyroom/user-service/internal/handlers"
 	"studyroom/user-service/internal/middleware"
 	"studyroom/user-service/internal/models"
 	"studyroom/user-service/internal/repository"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Deps struct {
 	Pool *pgxpool.Pool
 	TM   *auth.TokenManager
 
-	Users       *repository.UserRepository
-	Branches    *repository.BranchRepository
-	Auth        *repository.AuthRepository
-	ParentChild *repository.ParentChildRepository
+	Users         *repository.UserRepository
+	Branches      *repository.BranchRepository
+	Auth          *repository.AuthRepository
+	ParentChild   *repository.ParentChildRepository
 	TutorProfiles *repository.TutorProfileRepository
 }
 
@@ -38,7 +39,7 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager) *Deps {
 // NewRouter собирает HTTP-роутер user-service (общий для main и тестов).
 func NewRouter(d *Deps) http.Handler {
 	authHandler := handlers.NewAuthHandler(d.Users, d.Auth, d.TM)
-	userHandler := handlers.NewUserHandler(d.Users, d.Branches, d.ParentChild)
+	userHandler := handlers.NewUserHandler(d.Users, d.Branches, d.ParentChild, d.Auth, d.TutorProfiles)
 	tutorHandler := handlers.NewTutorHandler(d.TutorProfiles, d.Users)
 
 	r := chi.NewRouter()
@@ -61,14 +62,13 @@ func NewRouter(d *Deps) http.Handler {
 			r.Get("/users", userHandler.List)
 			r.Get("/users/{id}", userHandler.GetByID)
 			r.Patch("/users/{id}", userHandler.Update)
-
-			r.Get("/branches", userHandler.ListBranches)
 			r.Get("/parents/{parentId}/children", userHandler.ListChildren)
 
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRoles(models.RoleOwner))
 				r.Post("/users/tutors", userHandler.CreateTutor)
 				r.Patch("/users/{id}/status", userHandler.SetStatus)
+				r.Get("/branches", userHandler.ListBranches)
 				r.Post("/branches", userHandler.CreateBranch)
 			})
 

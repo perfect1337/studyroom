@@ -22,9 +22,16 @@ func TestContract_1_1_RegisterParent(t *testing.T) {
 	if res.Body["refresh_token"] == nil || res.Body["refresh_token"] == "" {
 		t.Fatal("expected refresh_token")
 	}
-	u := userMap(res.Body["user"])
-	if u["role"] != string(models.RoleParent) {
-		t.Fatalf("register must create parent, got role=%v", u["role"])
+	if res.Body["user_id"] == nil {
+		t.Fatal("expected user_id per contract 1.1")
+	}
+	// регистрация всегда parent — проверяем через login / me
+	login := e.do("POST", "/api/v1/auth/login", map[string]any{
+		"login": "elena@example.com", "password": "min8chars",
+	}, "")
+	e.mustOK(login, 200)
+	if userMap(login.Body["user"])["role"] != string(models.RoleParent) {
+		t.Fatalf("register must create parent, got %v", login.Body["user"])
 	}
 
 	// повторная регистрация — conflict
