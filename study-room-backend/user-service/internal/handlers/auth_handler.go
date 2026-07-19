@@ -77,7 +77,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.events.UserCreated(created, "", "")
+	h.events.UserCreated(created, "", "", nil)
 
 	access, refresh, err := h.createTokenPair(r, created)
 	if err != nil {

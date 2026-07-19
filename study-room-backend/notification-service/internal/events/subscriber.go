@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/nats-io/nats.go"
 	"studyroom/notification-service/internal/models"
@@ -34,6 +35,7 @@ type userEvent struct {
 	Role         string `json:"role"`
 	TempPassword string `json:"temp_password"`
 	NotifyEmail  string `json:"notify_email"`
+	ParentID     *int64 `json:"parent_id"`
 }
 
 type passwordResetEvent struct {
@@ -50,15 +52,26 @@ type contractExpiringEvent struct {
 	EndDate  string `json:"end_date"`
 }
 
-type lessonReminderEvent struct {
-	UserID int64  `json:"user_id"`
-	Text   string `json:"message"`
+// lessonCreatedEvent — реальный payload Academic Service (см. event-schema.md,
+// "v1.lesson.created", вариант А: Notification Service сам собирает текст
+// сообщения, Academic Service не обязан знать формат уведомления).
+type lessonCreatedEvent struct {
+	LessonID   int64  `json:"lesson_id"`
+	TutorID    int64  `json:"tutor_id"`
+	StudentID  int64  `json:"student_id"`
+	Topic      string `json:"topic"`
+	LessonDate string `json:"lesson_date"`
+	StartTime  string `json:"start_time"`
 }
 
+// attendanceAbsentEvent — реальный payload Academic Service (см.
+// event-schema.md, "v1.attendance.marked_absent", вариант А). Получателя
+// (родителя) Notification Service резолвит сам через users_ref.parent_id,
+// наполняемый из user.created/user.updated (см. userEvent.ParentID выше).
 type attendanceAbsentEvent struct {
-	ParentUserID int64  `json:"parent_user_id"`
-	StudentName  string `json:"student_name"`
-	LessonDate   string `json:"lesson_date"`
+	LessonID      int64   `json:"lesson_id"`
+	StudentID     int64   `json:"student_id"`
+	AbsenceReason *string `json:"absence_reason"`
 }
 
 type applicationReceivedEvent struct {
@@ -169,6 +182,7 @@ func (s *Subscriber) upsertUserRef(evt userEvent) bool {
 	}
 	if err := s.usersRef.Upsert(context.Background(), &models.UserRef{
 		ID: evt.ID, Email: evt.Email, FirstName: evt.FirstName, LastName: evt.LastName,
+		ParentID: evt.ParentID,
 	}); err != nil {
 		log.Printf("events: upsert users_ref failed: %v", err)
 		return false
@@ -186,23 +200,60 @@ func (s *Subscriber) handleContractExpiring(msg *nats.Msg) {
 	s.send(evt.UserID, "contract_expiring", message, "")
 }
 
+// handleLessonReminder — событие публикуется на каждого участника занятия
+// отдельно (см. event-schema.md), получатель уведомления — student_id.
 func (s *Subscriber) handleLessonReminder(msg *nats.Msg) {
-	var evt lessonReminderEvent
+	var evt lessonCreatedEvent
 	if err := json.Unmarshal(msg.Data, &evt); err != nil {
 		log.Printf("events: bad lesson.created payload: %v", err)
 		return
 	}
-	s.send(evt.UserID, "lesson_reminder", evt.Text, "")
+	if evt.StudentID == 0 {
+		return
+	}
+	message := fmt.Sprintf(
+		"Напоминание: занятие «%s» %s в %s",
+		evt.Topic, evt.LessonDate, evt.StartTime,
+	)
+	s.send(evt.StudentID, "lesson_reminder", message, "")
 }
 
+// handleAttendanceAbsent — Academic Service публикует только lesson_id/
+// student_id/absence_reason (не знает родителя, см. event-schema.md).
+// Получателя (родителя) и текст собирает сама Notification Service, резолвя
+// student_id -> parent_id через users_ref (наполняется из user.created/
+// user.updated, поле parent_id). Если резолв не удался (users_ref ещё не
+// синхронизирован, либо это не ученик) — уведомление тихо не отправляется,
+// как и раньше, но теперь по прозрачной причине, а не из-за неверных полей.
 func (s *Subscriber) handleAttendanceAbsent(msg *nats.Msg) {
 	var evt attendanceAbsentEvent
 	if err := json.Unmarshal(msg.Data, &evt); err != nil {
 		log.Printf("events: bad attendance.marked_absent payload: %v", err)
 		return
 	}
-	message := evt.StudentName + " отсутствовал(а) на занятии " + evt.LessonDate
-	s.send(evt.ParentUserID, "attendance_marked_absent", message, "")
+	if evt.StudentID == 0 {
+		return
+	}
+
+	student, err := s.usersRef.GetByID(context.Background(), evt.StudentID)
+	if err != nil {
+		log.Printf("events: attendance.marked_absent: unknown student_id=%d in users_ref: %v", evt.StudentID, err)
+		return
+	}
+	if student.ParentID == nil {
+		log.Printf("events: attendance.marked_absent: student_id=%d has no parent_id in users_ref", evt.StudentID)
+		return
+	}
+
+	studentName := strings.TrimSpace(student.FirstName + " " + student.LastName)
+	if studentName == "" {
+		studentName = fmt.Sprintf("Ученик #%d", evt.StudentID)
+	}
+	message := studentName + " отсутствовал(а) на занятии"
+	if evt.AbsenceReason != nil && *evt.AbsenceReason != "" {
+		message += " (причина: " + *evt.AbsenceReason + ")"
+	}
+	s.send(*student.ParentID, "attendance_marked_absent", message, "")
 }
 
 func (s *Subscriber) handleApplicationReceived(msg *nats.Msg) {

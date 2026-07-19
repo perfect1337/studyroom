@@ -46,4 +46,7 @@ type UserRef struct {
 	Email     string `json:"email"`
 	FirstName string `json:"first_name,omitempty"`
 	LastName  string `json:"last_name,omitempty"`
+	// ParentID — id родителя, если этот UserRef — ученик (из user.created.parent_id).
+	// Нужен, чтобы резолвить получателя attendance.marked_absent локально.
+	ParentID *int64 `json:"parent_id,omitempty"`
 }

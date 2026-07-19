@@ -349,7 +349,7 @@ func (h *UserHandler) CreateTutor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.events.UserCreated(created, tempPassword, "")
+	h.events.UserCreated(created, tempPassword, "", nil)
 	writeJSON(w, http.StatusCreated, map[string]any{"user": created, "temp_password": tempPassword})
 }
 
@@ -418,7 +418,8 @@ func (h *UserHandler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 	if parent, err := h.users.GetByID(r.Context(), req.ParentID); err == nil {
 		notifyEmail = parent.Email
 	}
-	h.events.UserCreated(created, tempPassword, notifyEmail)
+	parentID := req.ParentID
+	h.events.UserCreated(created, tempPassword, notifyEmail, &parentID)
 	writeJSON(w, http.StatusCreated, created)
 }
 

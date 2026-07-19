@@ -19,7 +19,7 @@ const (
 
 // Publisher — best-effort: ошибка публикации логируется, HTTP-запрос не валится.
 type Publisher interface {
-	UserCreated(u *models.User, tempPassword, notifyEmail string)
+	UserCreated(u *models.User, tempPassword, notifyEmail string, parentID *int64)
 	UserUpdated(u *models.User)
 	PasswordResetRequested(userID int64, email, resetToken, resetURL string, expiresAt time.Time)
 	Close()
@@ -34,6 +34,11 @@ type UserEvent struct {
 	BranchID     *int64  `json:"branch_id,omitempty"`
 	TempPassword string  `json:"temp_password,omitempty"`
 	NotifyEmail  string  `json:"notify_email,omitempty"` // куда слать credentials (родитель ученика)
+	// ParentID — только для role=student, id родителя (parent_student.parent_id).
+	// Добавлено, чтобы Notification Service мог резолвить
+	// student_id → parent_id локально при attendance.marked_absent,
+	// не дёргая User Service синхронно (см. event-schema.md, п. attendance.marked_absent).
+	ParentID *int64 `json:"parent_id,omitempty"`
 }
 
 type PasswordResetEvent struct {
@@ -71,7 +76,7 @@ func (p *NATSPublisher) publish(subject string, v any) {
 	}
 }
 
-func (p *NATSPublisher) UserCreated(u *models.User, tempPassword, notifyEmail string) {
+func (p *NATSPublisher) UserCreated(u *models.User, tempPassword, notifyEmail string, parentID *int64) {
 	if u == nil {
 		return
 	}
@@ -79,6 +84,7 @@ func (p *NATSPublisher) UserCreated(u *models.User, tempPassword, notifyEmail st
 		ID: u.ID, Email: u.Email, FirstName: u.FirstName, LastName: u.LastName,
 		Role: string(u.Role), BranchID: u.BranchID,
 		TempPassword: tempPassword, NotifyEmail: notifyEmail,
+		ParentID: parentID,
 	})
 }
 
@@ -109,7 +115,7 @@ func (p *NATSPublisher) Close() {
 // NoopPublisher — для тестов и локального запуска без NATS.
 type NoopPublisher struct{}
 
-func (NoopPublisher) UserCreated(*models.User, string, string)                          {}
+func (NoopPublisher) UserCreated(*models.User, string, string, *int64)                  {}
 func (NoopPublisher) UserUpdated(*models.User)                                          {}
 func (NoopPublisher) PasswordResetRequested(int64, string, string, string, time.Time) {}
 func (NoopPublisher) Close()                                                            {}
