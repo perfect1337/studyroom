@@ -1,0 +1,242 @@
+package handlers
+
+import (
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"io"
+	"log"
+	"net/http"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
+	"studyroom/crm-service/internal/events"
+	"studyroom/crm-service/internal/middleware"
+	"studyroom/crm-service/internal/models"
+	"studyroom/crm-service/internal/repository"
+)
+
+type ApplicationHandler struct {
+	repo          *repository.ApplicationRepository
+	userRefs      *repository.UserRefRepository
+	events        events.Publisher
+	webhookSecret string
+}
+
+func NewApplicationHandler(repo *repository.ApplicationRepository, userRefs *repository.UserRefRepository, pub events.Publisher, webhookSecret string) *ApplicationHandler {
+	return &ApplicationHandler{repo: repo, userRefs: userRefs, events: pub, webhookSecret: webhookSecret}
+}
+
+type webhookRequest struct {
+	Name            string  `json:"name"`
+	Age             *int    `json:"age"`
+	Phone           *string `json:"phone"`
+	SubjectInterest *string `json:"subject_interest"`
+	ParentName      *string `json:"parent_name"`
+}
+
+// Webhook — POST /applications/webhook (api-contracts.md 4.1). auth: false —
+// вместо JWT проверяется подпись в заголовке X-Tilda-Signature: HMAC-SHA256
+// от сырого тела запроса, ключ — TILDA_WEBHOOK_SECRET, hex-encoded.
+//
+// ВАЖНО: реальный алгоритм подписи Tilda нужно свериться с их документацией
+// вебхуков при интеграции — здесь заложена стандартная HMAC-SHA256-схема
+// как наиболее распространённая, а не заявленный самой Tilda контракт
+// (в api-contracts.md 4.1 сказано только "проверка подписи webhook по
+// секретному ключу в заголовке", без указания алгоритма).
+func (h *ApplicationHandler) Webhook(w http.ResponseWriter, r *http.Request) {
+	rawBody, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "cannot read body")
+		return
+	}
+
+	if h.webhookSecret == "" {
+		// Только для локальной разработки/тестов, см. config.TildaWebhookSecret.
+		log.Printf("[crm] WARNING: TILDA_WEBHOOK_SECRET is not set, skipping signature check — do not run like this in production")
+	} else if !validSignature(rawBody, r.Header.Get("X-Tilda-Signature"), h.webhookSecret) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid webhook signature")
+		return
+	}
+
+	var req webhookRequest
+	if err := json.Unmarshal(rawBody, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
+		return
+	}
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "name is required")
+		return
+	}
+
+	app, err := h.repo.CreateFromWebhook(r.Context(), req.Name, req.Age, req.Phone, req.SubjectInterest, req.ParentName)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to create application")
+		return
+	}
+
+	h.notifyReceived(r.Context(), app)
+	w.WriteHeader(http.StatusOK)
+}
+
+func validSignature(body []byte, signature, secret string) bool {
+	if signature == "" {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	expected := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(expected), []byte(signature))
+}
+
+type createInternalRequest struct {
+	StudentID       int64   `json:"student_id"`
+	SubjectInterest *string `json:"subject_interest"`
+	Format          *string `json:"format"`
+}
+
+// CreateInternal — POST /applications (api-contracts.md 4.2), roles: parent
+// (проверяется в роутере). Имя заявки берётся из локального кэша
+// user_refs по student_id (наполняется событиями user.*) — если событие
+// ещё не дошло, используется заглушка "Ученик #id", заявка всё равно
+// создаётся (не блокируем родителя из-за задержки доставки события).
+func (h *ApplicationHandler) CreateInternal(w http.ResponseWriter, r *http.Request) {
+	var req createInternalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
+		return
+	}
+	if req.StudentID == 0 {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student_id is required")
+		return
+	}
+
+	claims, _ := middleware.FromContext(r.Context())
+
+	studentName := ""
+	branchID := claims.BranchID
+	if ref, err := h.userRefs.GetByID(r.Context(), req.StudentID); err == nil {
+		studentName = ref.FullName
+		if ref.BranchID != nil {
+			branchID = ref.BranchID
+		}
+	}
+	if studentName == "" {
+		studentName = studentPlaceholder(req.StudentID)
+	}
+
+	app, err := h.repo.CreateInternal(r.Context(), studentName, req.StudentID, req.SubjectInterest, req.Format, branchID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to create application")
+		return
+	}
+
+	h.notifyReceived(r.Context(), app)
+	writeJSON(w, http.StatusCreated, app)
+}
+
+func studentPlaceholder(id int64) string {
+	return "Ученик #" + strconv.FormatInt(id, 10)
+}
+
+// List — GET /applications?status= (api-contracts.md 4.3), roles: owner.
+func (h *ApplicationHandler) List(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	apps, err := h.repo.List(r.Context(), status)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list applications")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": nonNilApplications(apps)})
+}
+
+func nonNilApplications(a []*models.Application) []*models.Application {
+	if a == nil {
+		return []*models.Application{}
+	}
+	return a
+}
+
+type updateStatusRequest struct {
+	Status    string `json:"status"`
+	HandledBy *int64 `json:"handled_by"`
+}
+
+var validStatuses = map[string]bool{
+	string(models.StatusNew):        true,
+	string(models.StatusInProgress): true,
+	string(models.StatusConverted):  true,
+	string(models.StatusRejected):   true,
+}
+
+// UpdateStatus — PATCH /applications/{id} (api-contracts.md 4.4), roles: owner.
+func (h *ApplicationHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
+	id, err := parseIntPath(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid application id")
+		return
+	}
+
+	var req updateStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
+		return
+	}
+	if req.Status == "" || !validStatuses[req.Status] {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "status must be one of new/in_progress/converted/rejected")
+		return
+	}
+
+	app, err := h.repo.UpdateStatus(r.Context(), id, req.Status, req.HandledBy)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "application not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to update application")
+		return
+	}
+	writeJSON(w, http.StatusOK, app)
+}
+
+// Delete — DELETE /applications/{id} (api-contracts.md 4.5), roles: owner.
+func (h *ApplicationHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id, err := parseIntPath(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid application id")
+		return
+	}
+	if err := h.repo.Delete(r.Context(), id); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "application not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to delete application")
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// notifyReceived — резолвит получателя (branch_owner филиала заявки, либо
+// owner как фолбэк — см. event-schema.md, "v1.application.received") и
+// публикует событие. Best-effort: ошибка резолва/публикации не блокирует
+// ответ пользователю, только логируется (см. events/publisher.go).
+func (h *ApplicationHandler) notifyReceived(ctx context.Context, app *models.Application) {
+	ownerID := h.resolveNotifyTarget(ctx, app.BranchID)
+	h.events.ApplicationReceived(ownerID, string(app.Source), app.Name)
+}
+
+func (h *ApplicationHandler) resolveNotifyTarget(ctx context.Context, branchID *int64) int64 {
+	if branchID != nil {
+		if owner, err := h.userRefs.FindBranchOwner(ctx, *branchID); err == nil {
+			return owner.UserID
+		}
+	}
+	if owner, err := h.userRefs.FindAnyOwner(ctx); err == nil {
+		return owner.UserID
+	}
+	return 0
+}
