@@ -33,8 +33,14 @@ healthz-user: ## Проверить user-service
 healthz-notifications: ## Проверить notification-service
 	curl -sf http://localhost:8085/healthz && echo " notification-service OK"
 
+healthz-academic: ## Проверить academic-service
+	curl -sf http://localhost:8082/healthz && echo " academic-service OK"
+
 test-user: ## Контрактные тесты user-service
 	cd user-service && $(MAKE) test
+
+test-academic: ## Контрактные тесты academic-service
+	cd academic-service && $(MAKE) test
 
 help:
 	@awk 'BEGIN {FS = ":.*##"; printf "\033[36m%-25s\033[0m %s\n", "Target", "Description"} \
