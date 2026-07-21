@@ -138,6 +138,50 @@ services:
       - studyroom-network
     restart: unless-stopped
 
+  # ---------- Contracts Service ----------
+  postgres-contracts:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: study_room_contracts
+      POSTGRES_USER: contracts_service
+      POSTGRES_PASSWORD: ${CONTRACTS_DB_PASSWORD:-devpassword123}
+    ports:
+      - "5437:5432" # для локальных контрактных тестов (TEST_DATABASE_URL)
+    volumes:
+      - postgres_contracts_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contracts_service -d study_room_contracts"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - studyroom-network
+
+  contracts-service:
+    build:
+      context: ./contracts-service
+    environment:
+      PORT: 8083
+      DATABASE_URL: postgres://contracts_service:${CONTRACTS_DB_PASSWORD:-devpassword123}@postgres-contracts:5432/study_room_contracts?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      NATS_URL: nats://nats:4222
+      # Единственный синхронный HTTP-вызов Contracts Service — проверка
+      # "чьи дети" у parent (GET /parents/{id}/children) для
+      # GET /contracts/{id}/expiry, см. internal/userclient.
+      USER_SERVICE_URL: http://user-service:8081
+    ports:
+      - "8083:8083"
+    depends_on:
+      postgres-contracts:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      user-service:
+        condition: service_started
+    networks:
+      - studyroom-network
+    restart: unless-stopped
+
   # ---------- CRM Service ----------
   postgres-crm:
     image: postgres:16-alpine
@@ -180,8 +224,8 @@ services:
       - studyroom-network
     restart: unless-stopped
 
-  # ---------- Следующие сервисы (заготовки — раскомментировать по мере реализации) ----------
-  # (аналогично: postgres-contracts/contracts-service)
+  # ---------- Следующие сервисы (пока не реализованы) ----------
+  # (Gateway/BFF — см. microservices-plan.md, п.10)
 
 networks:
   studyroom-network:
@@ -192,4 +236,4 @@ volumes:
   postgres_notifications_data:
   postgres_academic_data:
   postgres_crm_data:
-  # postgres_contracts_data:
+  postgres_contracts_data:

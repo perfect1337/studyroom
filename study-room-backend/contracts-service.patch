@@ -1,0 +1,2747 @@
+diff --git a/service-info/event-schema.md b/service-info/event-schema.md
+index 3886905..452a1ca 100644
+--- a/service-info/event-schema.md
++++ b/service-info/event-schema.md
+@@ -24,7 +24,7 @@
+ 
+ **Версия:** v1
+ **Публикует:** User Service, `internal/events/publisher.go` → `SubjectUserCreated`
+-**Подписаны:** Academic Service (наполняет `user_refs`), CRM Service (наполняет `user_refs`), Notification Service (шлёт welcome/credentials, наполняет `users_ref`)
++**Подписаны:** Academic Service (наполняет `user_refs`), Contracts Service (наполняет `user_refs`), CRM Service (наполняет `user_refs`), Notification Service (шлёт welcome/credentials, наполняет `users_ref`)
+ **Статус:** ✅ implemented
+ 
+ ```json
+@@ -185,19 +185,17 @@ Academic Service публикует:
+ ## v1.contract.created
+ 
+ **Версия:** v1
+-**Публикует:** Contracts Service — 🚧 **сервис ещё не реализован**
++**Публикует:** Contracts Service, `internal/events/publisher.go` → `ContractCreated` — ✅ реализован
+ **Подписаны:** Academic Service, `internal/events/subscriber.go` → `handleContractCreated` (основной путь наполнения `enrollments`)
+-**Статус:** 🚧 planned — форма ниже реконструирована Academic Service из
+-`POST /contracts` (см. `api-contracts.md`, 3.1), не подтверждена реальным
+-publisher'ом. Когда Contracts Service будет писаться — **сначала сверить
+-это событие с этим файлом**, а не с REST-телом `POST /contracts` заново.
++**Статус:** ✅ implemented — payload совпадает по обеим сторонам без изменений
++(сверено с уже написанным `handleContractCreated`, а не реконструировано заново).
+ 
+ ```json
+ {
+   "id": 77,
+   "student_id": 100,
+   "course_id": 12,
+-  "tutor_id": 15,
++  "tutor_id": null,
+   "start_date": "2026-09-01",
+   "end_date": "2027-05-31"
+ }
+@@ -208,24 +206,29 @@ publisher'ом. Когда Contracts Service будет писаться — **
+ | `id` | int64 | да — id договора |
+ | `student_id` | int64 | да |
+ | `course_id` | int64 | да |
+-| `tutor_id` | int64\|null | нет |
++| `tutor_id` | int64\|null | нет — Contracts Service публикует всегда `null`, `POST /contracts` не принимает `tutor_id` (см. `api-contracts.md`, 3.1); назначение репетитора — отдельное действие в Academic Service |
+ | `start_date` | string (YYYY-MM-DD)\|null | нет |
+ | `end_date` | string (YYYY-MM-DD)\|null | нет |
+ 
+ Обработчик в Academic Service намеренно нестрогий (не роняет подписку при
+-несовпадении полей) — но это защита на время, пока контракта нет, а не
+-повод не задавать здесь окончательную форму.
++несовпадении полей) — это осталось верным и после реализации Contracts
++Service, но полезно как защита от будущих breaking-изменений, а не как
++компенсация текущего рассогласования (его больше нет).
+ 
+ ---
+ 
+ ## v1.contract.expiring_soon
+ 
+ **Версия:** v1
+-**Публикует:** Contracts Service — 🚧 не реализован
++**Публикует:** Contracts Service, `internal/events/publisher.go` → `ContractExpiringSoon` — ✅ реализован
+ **Подписаны:** Notification Service, `internal/events/subscriber.go` → `handleContractExpiring`
+-**Статус:** 🚧 planned — форма реконструирована из уже написанного
+-подписчика (обратный порядок от идеального — Contracts Service должен
+-публиковать ровно это).
++**Статус:** ✅ implemented — payload совпадает без изменений. Триггер
++(периодическая фоновая проверка раз в 24 часа, договоры с `end_date` в
++ближайшие 14 дней) не был описан здесь заранее и реализован по решению
++Contracts Service — см. `contracts-service/README.md`, раздел "Фоновая
++джоба". `user_id` в событии — это `parent_id` самого договора (получатель
++всегда родитель, не `owner`/`branch_owner` — ограничение отмечено как
++незакрытое в README).
+ 
+ ```json
+ {
+diff --git a/study-room-backend/contracts-service/Dockerfile b/study-room-backend/contracts-service/Dockerfile
+new file mode 100644
+index 0000000..2665f24
+--- /dev/null
++++ b/study-room-backend/contracts-service/Dockerfile
+@@ -0,0 +1,17 @@
++# --- Build stage ---
++FROM golang:1.22-alpine AS builder
++
++ENV CGO_ENABLED=0
++
++WORKDIR /app
++COPY go.mod go.sum* ./
++RUN go mod download
++COPY . .
++RUN go mod tidy && go build -o /out/contracts-service ./cmd/api
++
++# --- Final stage ---
++FROM alpine:3.19
++RUN apk add --no-cache ca-certificates
++COPY --from=builder /out/contracts-service /contracts-service
++EXPOSE 8083
++ENTRYPOINT ["/contracts-service"]
+diff --git a/study-room-backend/contracts-service/Makefile b/study-room-backend/contracts-service/Makefile
+new file mode 100644
+index 0000000..34feb7d
+--- /dev/null
++++ b/study-room-backend/contracts-service/Makefile
+@@ -0,0 +1,31 @@
++.PHONY: test test-unit clean build dev prod build-docker help run-docker
++
++.DEFAULT_GOAL := help
++
++test: ## Запустить контрактные тесты (нужен TEST_DATABASE_URL или postgres-contracts на 5437)
++	go test -v ./tests/contracts/...
++
++test-unit: ## Юнит-тесты auth/middleware, без БД
++	go test -v ./internal/auth/... ./internal/middleware/...
++
++clean: ## Очистить результаты тестов
++	rm -rf tests/contracts/results
++
++build: ## Собрать бинарник contracts-service
++	go build -o contracts-service ./cmd/api
++
++dev: ## Запустить в режиме разработки
++	go run ./cmd/api
++
++prod: ## Запустить продакшен через docker compose
++	docker compose up -d
++
++build-docker: ## Собрать Docker-образ
++	docker build -t contracts-service .
++
++run-docker: ## Запустить Docker-образ
++	docker run -p 8083:8083 contracts-service
++
++help:
++	@awk 'BEGIN {FS = ":.*##"; printf "\033[36m%-20s\033[0m %s\n", "Target", "Description"} \
++	       /^[a-zA-Z_-]+:.*##/ { printf "\033[36m%-20s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+diff --git a/study-room-backend/contracts-service/README.md b/study-room-backend/contracts-service/README.md
+new file mode 100644
+index 0000000..67ae892
+--- /dev/null
++++ b/study-room-backend/contracts-service/README.md
+@@ -0,0 +1,102 @@
++# Contracts Service
++
++Договоры на обучение: создание, продление, отслеживание оплаты и срока
++действия. См. `service-info/api-contracts.md` (раздел 3) — источник истины
++по контракту; здесь только заметки по реализации.
++
++## Своя БД
++
++`study_room_contracts` — отдельная база, ничего общего с User/Academic/CRM
++Service. Ссылки на пользователей и курсы (`student_id`, `parent_id`,
++`course_id`, `branch_id`) — просто числа, без настоящего foreign key на
++чужую базу.
++
++- **`user_refs`** — облегчённая локальная копия (id, ФИО, роль, `branch_id`),
++  наполняется событиями `user.created`/`user.updated` из NATS. Используется
++  **только для мягкой валидации** при создании договора — если `student_id`/
++  `parent_id` уже встречались в `user.*` и роль не совпадает (например,
++  `student_id` на самом деле tutor), запрос отклоняется. Если записи ещё нет
++  (событие не дошло) — не блокируем создание договора, это eventual
++  consistency, а не гарантия.
++
++## Связь с другими сервисами
++
++| Subject/вызов | Направление | Что происходит |
++|---|---|---|
++| `user.created` / `user.updated` (NATS) | User Service → Contracts | upsert `user_refs` |
++| `contract.created` (NATS) | Contracts → Academic Service | основной путь наполнения `enrollments` (см. `academic-service/internal/events/subscriber.go`, `handleContractCreated`) |
++| `contract.expiring_soon` (NATS) | Contracts → Notification Service | см. ниже, "Фоновая джоба" |
++| `GET /parents/{id}/children` (HTTP) | Contracts → User Service | единственный синхронный вызов, только для `GET /contracts/{id}/expiry` с `role=parent` (см. `internal/userclient`) |
++
++`tutor_id` в `contract.created` всегда `null` — `POST /contracts` не
++принимает `tutor_id` (см. `api-contracts.md`, 3.1), назначение репетитора на
++`enrollment` — отдельное действие уже в Academic Service
++(`PATCH /enrollments/{id}/assign-tutor`).
++
++## Права доступа
++
++- `POST/GET/PATCH/DELETE /contracts*` (3.1–3.2, 3.4–3.7) — только `owner`.
++- `GET /contracts/{id}` (3.3) — только `owner`, полный объект договора.
++- `GET /contracts/{id}/expiry` (3.3a) — облегчённая версия (только
++  `contract_id`/`end_date`, без суммы и статуса оплаты) для:
++  - `branch_owner` — только договоры своего филиала (`claims.branch_id ==
++    contract.branch_id`, без похода куда-либо);
++  - `parent` — только договоры своих детей, резолвится через
++    `internal/userclient` (`GET /parents/{id}/children`), тот же паттерн,
++    что в `academic-service`.
++
++## Фоновая джоба: `contract.expiring_soon`
++
++Ни `api-contracts.md`, ни `event-schema.md` не описывают, **чем** триггерится
++это событие — только его форму (`user_id`, `contract_number`, `end_date`).
++Реализовано как периодическая проверка в `cmd/api/main.go`:
++
++- раз в 24 часа (плюс сразу при старте) выбираются договоры со статусом
++  `active`, у которых `end_date` наступает в ближайшие 14 дней и уведомление
++  ещё не отправлялось (`expiry_notified_at IS NULL`);
++- получатель (`user_id` в событии) — `parent_id` самого договора (он уже
++  известен с момента создания, отдельный запрос в User Service не нужен);
++- после публикации помечается `expiry_notified_at = now()`, чтобы не слать
++  повторно каждые сутки.
++
++Если понадобится другой триггер (например, честный cron вместо тикера
++внутри процесса, либо уведомление ещё и `owner`/`branch_owner`, не только
++`parent`) — это решение стоит сначала отразить здесь и в `event-schema.md`,
++а не менять код молча.
++
++## Локальный запуск
++
++```bash
++cd study-room-backend
++docker compose up --build nats user-service postgres-contracts contracts-service
++```
++
++Проверка:
++```bash
++curl http://localhost:8083/healthz
++```
++
++## Тесты
++
++```bash
++cd contracts-service
++docker compose up -d postgres-contracts   # из корня репозитория
++make test        # контрактные тесты, HTTP + реальный Postgres на :5437
++make test-unit   # auth/middleware, без БД
++```
++
++## Что ещё не сделано
++
++- `contract_number` генерируется как `SR-{год start_date}-{id}` — формат
++  придуман (нигде не задокументирован точно), проверьте перед реальной
++  интеграцией с любой внешней системой, которая может парсить этот номер
++- Нет проверки, что `course_id` при создании договора существует в Academic
++  Service — Contracts Service его не резолвит вообще (ни синхронно, ни через
++  кэш), просто передаёт дальше в `contract.created`
++- `contract.expiring_soon` уведомляет только `parent_id` — `owner`/
++  `branch_owner` не получают напоминание о продлении, хотя по логике бизнеса
++  это тоже может быть нужно (см. "Фоновая джоба" выше)
++- Повторная генерация `contract.created`, если Academic Service был недоступен
++  в момент публикации (NATS at-most-once без персистентного стрима) — событие
++  безвозвратно теряется, `enrollment` придётся создавать вручную через
++  `POST /enrollments` (см. `academic-service/README.md`)
+diff --git a/study-room-backend/contracts-service/cmd/api/main.go b/study-room-backend/contracts-service/cmd/api/main.go
+new file mode 100644
+index 0000000..dd3bc22
+--- /dev/null
++++ b/study-room-backend/contracts-service/cmd/api/main.go
+@@ -0,0 +1,136 @@
++package main
++
++import (
++	"context"
++	"log"
++	"net/http"
++	"os"
++	"os/signal"
++	"syscall"
++	"time"
++
++	"studyroom/contracts-service/internal/app"
++	"studyroom/contracts-service/internal/auth"
++	"studyroom/contracts-service/internal/config"
++	"studyroom/contracts-service/internal/db"
++	"studyroom/contracts-service/internal/events"
++	"studyroom/contracts-service/internal/migrate"
++)
++
++// expiringSoonWithinDays — за сколько дней до окончания договора публиковать
++// contract.expiring_soon. Значение и сам механизм периодической проверки не
++// описаны в api-contracts.md/event-schema.md — см. README.md.
++const expiringSoonWithinDays = 14
++const expiringSoonCheckInterval = 24 * time.Hour
++
++func main() {
++	ctx := context.Background()
++
++	cfg, err := config.Load()
++	if err != nil {
++		log.Fatalf("config error: %v", err)
++	}
++
++	pool, err := db.NewPool(ctx, cfg.DatabaseURL)
++	if err != nil {
++		log.Fatalf("db connection error: %v", err)
++	}
++	defer pool.Close()
++
++	if err := migrate.Run(ctx, pool); err != nil {
++		log.Fatalf("migration error: %v", err)
++	}
++	log.Println("migrations up to date")
++
++	tm := auth.NewTokenManager(cfg.JWTSecret)
++	deps := app.NewDeps(pool, tm, cfg.UserServiceURL, events.NoopPublisher{})
++
++	if cfg.NATSURL != "" {
++		nc, err := events.Connect(cfg.NATSURL)
++		if err != nil {
++			log.Printf("events: could not connect to NATS at %s: %v (continuing without events)", cfg.NATSURL, err)
++		} else {
++			defer nc.Close()
++			deps.Events = events.NewNATSPublisher(nc)
++
++			sub := events.NewSubscriber(nc, deps.UserRefs)
++			if err := sub.Start(ctx); err != nil {
++				log.Printf("events: subscribe failed: %v", err)
++			}
++
++			stopExpiryJob := startExpiringSoonJob(ctx, deps)
++			defer stopExpiryJob()
++		}
++	} else {
++		log.Println("events: NATS_URL not set, skipping event subscription and contract.expiring_soon job")
++	}
++
++	if cfg.UserServiceURL == "" {
++		log.Println("WARNING: USER_SERVICE_URL is not set — GET /contracts/{id}/expiry for role=parent will fail (403/502)")
++	}
++
++	r := app.NewRouter(deps)
++	srv := app.NewServer(":"+cfg.Port, r)
++
++	go func() {
++		log.Printf("contracts-service listening on :%s", cfg.Port)
++		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
++			log.Fatalf("server error: %v", err)
++		}
++	}()
++
++	stop := make(chan os.Signal, 1)
++	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
++	<-stop
++
++	log.Println("shutting down...")
++	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
++	defer cancel()
++	srv.Shutdown(shutdownCtx)
++}
++
++// startExpiringSoonJob — раз в expiringSoonCheckInterval публикует
++// contract.expiring_soon для договоров, у которых end_date наступает в
++// ближайшие expiringSoonWithinDays дней (см.
++// internal/repository.ContractRepository.ListExpiringSoon). Получатель —
++// parent_id самого договора (он уже указан при создании, отдельный
++// синхронный запрос в User Service не нужен).
++func startExpiringSoonJob(ctx context.Context, deps *app.Deps) func() {
++	ticker := time.NewTicker(expiringSoonCheckInterval)
++	done := make(chan struct{})
++
++	go func() {
++		// Первая проверка сразу при старте, не через сутки.
++		checkExpiringSoon(ctx, deps)
++		for {
++			select {
++			case <-ticker.C:
++				checkExpiringSoon(ctx, deps)
++			case <-done:
++				return
++			}
++		}
++	}()
++
++	return func() {
++		ticker.Stop()
++		close(done)
++	}
++}
++
++func checkExpiringSoon(ctx context.Context, deps *app.Deps) {
++	contracts, err := deps.Contracts.ListExpiringSoon(ctx, expiringSoonWithinDays)
++	if err != nil {
++		log.Printf("[expiring-soon-job] list error: %v", err)
++		return
++	}
++	for _, c := range contracts {
++		deps.Events.ContractExpiringSoon(c.ParentID, c.ContractNumber, c.EndDate.Format("2006-01-02"))
++		if err := deps.Contracts.MarkExpiryNotified(ctx, c.ID); err != nil {
++			log.Printf("[expiring-soon-job] mark notified contract=%d error: %v", c.ID, err)
++		}
++	}
++	if len(contracts) > 0 {
++		log.Printf("[expiring-soon-job] notified %d contract(s)", len(contracts))
++	}
++}
+diff --git a/study-room-backend/contracts-service/go.mod b/study-room-backend/contracts-service/go.mod
+new file mode 100644
+index 0000000..546021f
+--- /dev/null
++++ b/study-room-backend/contracts-service/go.mod
+@@ -0,0 +1,37 @@
++module studyroom/contracts-service
++
++go 1.22.2
++
++replace golang.org/x/crypto => github.com/golang/crypto v0.23.0
++
++replace golang.org/x/sys => github.com/golang/sys v0.20.0
++
++replace golang.org/x/text => github.com/golang/text v0.15.0
++
++replace golang.org/x/net => github.com/golang/net v0.25.0
++
++replace golang.org/x/sync => github.com/golang/sync v0.7.0
++
++require (
++	github.com/go-chi/chi/v5 v5.1.0
++	github.com/golang-jwt/jwt/v5 v5.2.1
++	github.com/jackc/pgx/v5 v5.6.0
++	github.com/nats-io/nats.go v1.36.0
++)
++
++require (
++	github.com/jackc/pgpassfile v1.0.0 // indirect
++	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
++	github.com/jackc/puddle/v2 v2.2.1 // indirect
++	github.com/klauspost/compress v1.17.9 // indirect
++	github.com/nats-io/nkeys v0.4.7 // indirect
++	github.com/nats-io/nuid v1.0.1 // indirect
++	golang.org/x/crypto v0.18.0 // indirect
++	golang.org/x/sync v0.1.0 // indirect
++	golang.org/x/sys v0.20.0 // indirect
++	golang.org/x/text v0.15.0 // indirect
++)
++
++replace gopkg.in/yaml.v3 => github.com/go-yaml/yaml/v3 v3.0.1
++
++replace gopkg.in/check.v1 => github.com/go-check/check v0.0.0-20200902074654-038fdea0a05b
+diff --git a/study-room-backend/contracts-service/go.sum b/study-room-backend/contracts-service/go.sum
+new file mode 100644
+index 0000000..7c5617c
+--- /dev/null
++++ b/study-room-backend/contracts-service/go.sum
+@@ -0,0 +1,41 @@
++github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
++github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
++github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
++github.com/go-check/check v0.0.0-20200902074654-038fdea0a05b/go.mod h1:9ES+weclKsC9YodN5RgxqK/VD9HM9JsCSh7rNhMZE98=
++github.com/go-chi/chi/v5 v5.1.0 h1:acVI1TYaD+hhedDJ3r54HyA6sExp3HfXq7QWEEY/xMw=
++github.com/go-chi/chi/v5 v5.1.0/go.mod h1:DslCQbL2OYiznFReuXYUmQ2hGd1aDpCnlMNITLSKoi8=
++github.com/go-yaml/yaml/v3 v3.0.1 h1:lLakvY+lWMEToth2+yyGyq9wAa91oSm971MQysWD8Q4=
++github.com/go-yaml/yaml/v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
++github.com/golang-jwt/jwt/v5 v5.2.1 h1:OuVbFODueb089Lh128TAcimifWaLhJwVflnrgM17wHk=
++github.com/golang-jwt/jwt/v5 v5.2.1/go.mod h1:pqrtFR0X4osieyHYxtmOUWsAWrfe1Q5UVIyoH402zdk=
++github.com/golang/crypto v0.23.0 h1:RShXj2uPTe4hHfGGjtFi5oIlDx7rF677+p5uAYM5izU=
++github.com/golang/crypto v0.23.0/go.mod h1:CKFgDieR+mRhux2Lsu27y0fO304Db0wZe70UKqHu0v8=
++github.com/golang/sync v0.7.0 h1:LrQ0FXlIEEEqmu6eSUpFHl0/eFnEfspNr3v19MzIttk=
++github.com/golang/sync v0.7.0/go.mod h1:Czt+wKu1gCyEFDUtn0jG5QVvpJ6rzVqr5aXyt9drQfk=
++github.com/golang/sys v0.20.0 h1:s6f6MpCY0CE+A62kAS9FiDNmD3rpVbd+OISylPY45NQ=
++github.com/golang/sys v0.20.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
++github.com/golang/text v0.15.0 h1:Hr6Y5cbI9MiTMnLQhMfqQzC3smwk0O9n6gYp78JNYJ4=
++github.com/golang/text v0.15.0/go.mod h1:18ZOQIKpY8NJVqYksKHtTdi31H5itFRjB5/qKTNYzSU=
++github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
++github.com/jackc/pgpassfile v1.0.0/go.mod h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg=
++github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a h1:bbPeKD0xmW/Y25WS6cokEszi5g+S0QxI/d45PkRi7Nk=
++github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a/go.mod h1:5TJZWKEWniPve33vlWYSoGYefn3gLQRzjfDlhSJ9ZKM=
++github.com/jackc/pgx/v5 v5.6.0 h1:SWJzexBzPL5jb0GEsrPMLIsi/3jOo7RHlzTjcAeDrPY=
++github.com/jackc/pgx/v5 v5.6.0/go.mod h1:DNZ/vlrUnhWCoFGxHAG8U2ljioxukquj7utPDgtQdTw=
++github.com/jackc/puddle/v2 v2.2.1 h1:RhxXJtFG022u4ibrCSMSiu5aOq1i77R3OHKNJj77OAk=
++github.com/jackc/puddle/v2 v2.2.1/go.mod h1:vriiEXHvEE654aYKXXjOvZM39qJ0q+azkZFrfEOc3H4=
++github.com/klauspost/compress v1.17.9 h1:6KIumPrER1LHsvBVuDa0r5xaG0Es51mhhB9BQB2qeMA=
++github.com/klauspost/compress v1.17.9/go.mod h1:Di0epgTjJY877eYKx5yC51cX2A2Vl2ibi7bDH9ttBbw=
++github.com/nats-io/nats.go v1.36.0 h1:suEUPuWzTSse/XhESwqLxXGuj8vGRuPRoG7MoRN/qyU=
++github.com/nats-io/nats.go v1.36.0/go.mod h1:Ubdu4Nh9exXdSz0RVWRFBbRfrbSxOYd26oF0wkWclB8=
++github.com/nats-io/nkeys v0.4.7 h1:RwNJbbIdYCoClSDNY7QVKZlyb/wfT6ugvFCiKy6vDvI=
++github.com/nats-io/nkeys v0.4.7/go.mod h1:kqXRgRDPlGy7nGaEDMuYzmiJCIAAWDK0IMBtDmGD0nc=
++github.com/nats-io/nuid v1.0.1 h1:5iA8DT8V7q8WK2EScv2padNa/rTESc1KdnPw4TC2paw=
++github.com/nats-io/nuid v1.0.1/go.mod h1:19wcPz3Ph3q0Jbyiqsd0kePYG7A95tJPxeL+1OSON2c=
++github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
++github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
++github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
++github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
++github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
++github.com/stretchr/testify v1.8.1 h1:w7B6lhMri9wdJUVmEZPGGhZzrYTPvgJArz7wNPgYKsk=
++github.com/stretchr/testify v1.8.1/go.mod h1:w2LPCIKwWwSfY2zedu0+kehJoqGctiVI29o6fzry7u4=
+diff --git a/study-room-backend/contracts-service/internal/app/app.go b/study-room-backend/contracts-service/internal/app/app.go
+new file mode 100644
+index 0000000..9153787
+--- /dev/null
++++ b/study-room-backend/contracts-service/internal/app/app.go
+@@ -0,0 +1,89 @@
++package app
++
++import (
++	"net/http"
++	"time"
++
++	"studyroom/contracts-service/internal/auth"
++	"studyroom/contracts-service/internal/events"
++	"studyroom/contracts-service/internal/handlers"
++	"studyroom/contracts-service/internal/middleware"
++	"studyroom/contracts-service/internal/models"
++	"studyroom/contracts-service/internal/repository"
++	"studyroom/contracts-service/internal/userclient"
++
++	"github.com/go-chi/chi/v5"
++	"github.com/jackc/pgx/v5/pgxpool"
++)
++
++type Deps struct {
++	Pool *pgxpool.Pool
++	TM   *auth.TokenManager
++
++	Contracts *repository.ContractRepository
++	UserRefs  *repository.UserRefRepository
++
++	// UserClient — GET /parents/{id}/children, единственный синхронный
++	// HTTP-вызов (см. internal/userclient и api-contracts.md 3.3a).
++	// Интерфейс handlers.ChildrenResolver — тесты подставляют фейк вместо
++	// реального userclient.Client (см. tests/contracts/setup_test.go).
++	UserClient handlers.ChildrenResolver
++
++	Events events.Publisher
++}
++
++func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, userServiceURL string, pub events.Publisher) *Deps {
++	if pub == nil {
++		pub = events.NoopPublisher{}
++	}
++	return &Deps{
++		Pool:       pool,
++		TM:         tm,
++		Contracts:  repository.NewContractRepository(pool),
++		UserRefs:   repository.NewUserRefRepository(pool),
++		UserClient: userclient.New(userServiceURL),
++		Events:     pub,
++	}
++}
++
++// NewRouter собирает HTTP-роутер contracts-service. Публичный префикс —
++// /api/v1/contracts (см. api-contracts.md, раздел 3).
++func NewRouter(d *Deps) http.Handler {
++	h := handlers.NewContractHandler(d.Contracts, d.UserRefs, d.UserClient, d.Events)
++
++	r := chi.NewRouter()
++	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
++
++	r.Route("/api/v1/contracts", func(r chi.Router) {
++		r.Use(middleware.RequireAuth(d.TM))
++
++		// 3.1-3.2, 3.3-3.7 — owner-only.
++		r.Group(func(r chi.Router) {
++			r.Use(middleware.RequireRoles(models.RoleOwner))
++			r.Post("/", h.Create)
++			r.Get("/", h.List)
++			r.Get("/{id}", h.GetByID)
++			r.Patch("/{id}", h.UpdateFields)
++			r.Patch("/{id}/status", h.UpdateStatus)
++			r.Patch("/{id}/payment-status", h.UpdatePaymentStatus)
++			r.Delete("/{id}", h.Delete)
++		})
++
++		// 3.3a — branch_owner (свой филиал) / parent (свои дети),
++		// тонкая проверка внутри самого хендлера (ContractHandler.Expiry).
++		r.Group(func(r chi.Router) {
++			r.Use(middleware.RequireRoles(models.RoleBranchOwner, models.RoleParent))
++			r.Get("/{id}/expiry", h.Expiry)
++		})
++	})
++
++	return r
++}
++
++func NewServer(addr string, handler http.Handler) *http.Server {
++	return &http.Server{
++		Addr:              addr,
++		Handler:           handler,
++		ReadHeaderTimeout: 5 * time.Second,
++	}
++}
+diff --git a/study-room-backend/contracts-service/internal/auth/jwt.go b/study-room-backend/contracts-service/internal/auth/jwt.go
+new file mode 100644
+index 0000000..ab3a1f2
+--- /dev/null
++++ b/study-room-backend/contracts-service/internal/auth/jwt.go
+@@ -0,0 +1,46 @@
++// Package auth — проверка JWT, выпущенного User Service. Contracts Service
++// не выпускает токены сам, только проверяет подпись локально по общему
++// секрету (JWT_SECRET) — см. п. 2.2 microservices-plan.md. Нужны role и
++// branch_id из токена: матрица прав (owner/branch_owner/parent, см. 2.6
++// microservices-plan.md) для /contracts проверяется на их основе локально,
++// без похода в User Service на каждый запрос.
++package auth
++
++import (
++	"errors"
++
++	"github.com/golang-jwt/jwt/v5"
++	"studyroom/contracts-service/internal/models"
++)
++
++type Claims struct {
++	UserID   int64       `json:"user_id"`
++	Role     models.Role `json:"role"`
++	BranchID *int64      `json:"branch_id"`
++	jwt.RegisteredClaims
++}
++
++type TokenManager struct {
++	secret []byte
++}
++
++func NewTokenManager(secret string) *TokenManager {
++	return &TokenManager{secret: []byte(secret)}
++}
++
++func (tm *TokenManager) ParseAccessToken(tokenStr string) (*Claims, error) {
++	claims := &Claims{}
++	token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
++		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
++			return nil, errors.New("unexpected signing method")
++		}
++		return tm.secret, nil
++	})
++	if err != nil {
++		return nil, err
++	}
++	if !token.Valid {
++		return nil, errors.New("invalid token")
++	}
++	return claims, nil
++}
+diff --git a/study-room-backend/contracts-service/internal/auth/jwt_test.go b/study-room-backend/contracts-service/internal/auth/jwt_test.go
+new file mode 100644
+index 0000000..e916261
+--- /dev/null
++++ b/study-room-backend/contracts-service/internal/auth/jwt_test.go
+@@ -0,0 +1,105 @@
++package auth
++
++import (
++	"testing"
++	"time"
++
++	"github.com/golang-jwt/jwt/v5"
++	"studyroom/contracts-service/internal/models"
++)
++
++func signToken(t *testing.T, secret string, userID int64, role models.Role, branchID *int64, expiresAt time.Time) string {
++	t.Helper()
++	claims := Claims{
++		UserID: userID, Role: role, BranchID: branchID,
++		RegisteredClaims: jwt.RegisteredClaims{
++			ExpiresAt: jwt.NewNumericDate(expiresAt),
++			IssuedAt:  jwt.NewNumericDate(time.Now()),
++		},
++	}
++	tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
++	if err != nil {
++		t.Fatalf("sign token: %v", err)
++	}
++	return tok
++}
++
++// TestParseAccessToken_Valid — токен, подписанный тем же секретом, что и
++// User Service, должен успешно распарситься со всеми claims (role/branch_id
++// нужны Contracts Service для матрицы прав, см. internal/auth/jwt.go).
++func TestParseAccessToken_Valid(t *testing.T) {
++	tm := NewTokenManager("shared-secret")
++	branchID := int64(7)
++	tok := signToken(t, "shared-secret", 42, models.RoleTutor, &branchID, time.Now().Add(time.Hour))
++
++	claims, err := tm.ParseAccessToken(tok)
++	if err != nil {
++		t.Fatalf("ParseAccessToken: %v", err)
++	}
++	if claims.UserID != 42 || claims.Role != models.RoleTutor {
++		t.Fatalf("claims=%+v", claims)
++	}
++	if claims.BranchID == nil || *claims.BranchID != 7 {
++		t.Fatalf("BranchID=%v want=7", claims.BranchID)
++	}
++}
++
++// TestParseAccessToken_NilBranchID — owner/parent не привязаны к филиалу.
++func TestParseAccessToken_NilBranchID(t *testing.T) {
++	tm := NewTokenManager("shared-secret")
++	tok := signToken(t, "shared-secret", 1, models.RoleOwner, nil, time.Now().Add(time.Hour))
++
++	claims, err := tm.ParseAccessToken(tok)
++	if err != nil {
++		t.Fatalf("ParseAccessToken: %v", err)
++	}
++	if claims.BranchID != nil {
++		t.Fatalf("expected nil BranchID, got %v", *claims.BranchID)
++	}
++}
++
++func TestParseAccessToken_WrongSecret(t *testing.T) {
++	tm := NewTokenManager("shared-secret")
++	tok := signToken(t, "different-secret", 1, models.RoleOwner, nil, time.Now().Add(time.Hour))
++
++	if _, err := tm.ParseAccessToken(tok); err == nil {
++		t.Fatal("expected error for token signed with a different secret")
++	}
++}
++
++func TestParseAccessToken_Expired(t *testing.T) {
++	tm := NewTokenManager("shared-secret")
++	tok := signToken(t, "shared-secret", 1, models.RoleOwner, nil, time.Now().Add(-time.Hour))
++
++	if _, err := tm.ParseAccessToken(tok); err == nil {
++		t.Fatal("expected error for expired token")
++	}
++}
++
++// TestParseAccessToken_UnexpectedSigningMethod — защита от "alg confusion":
++// токен, подписанный alg=none, должен отклоняться независимо от секрета.
++func TestParseAccessToken_UnexpectedSigningMethod(t *testing.T) {
++	tm := NewTokenManager("shared-secret")
++	claims := Claims{
++		UserID: 1, Role: models.RoleOwner,
++		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))},
++	}
++	unsafeToken := jwt.NewWithClaims(jwt.SigningMethodNone, claims)
++	tok, err := unsafeToken.SignedString(jwt.UnsafeAllowNoneSignatureType)
++	if err != nil {
++		t.Fatalf("sign none-alg token: %v", err)
++	}
++	if _, err := tm.ParseAccessToken(tok); err == nil {
++		t.Fatal("expected error for alg=none token")
++	}
++}
++
++func TestParseAccessToken_Malformed(t *testing.T) {
++	tm := NewTokenManager("shared-secret")
++	if _, err := tm.ParseAccessToken("garbage"); err == nil {
++		t.Fatal("expected error for malformed token")
++	}
++	if _, err := tm.ParseAccessToken(""); err == nil {
++		t.Fatal("expected error for empty token")
++	}
++}
+diff --git a/study-room-backend/contracts-service/internal/config/config.go b/study-room-backend/contracts-service/internal/config/config.go
+new file mode 100644
+index 0000000..871cffb
+--- /dev/null
++++ b/study-room-backend/contracts-service/internal/config/config.go
+@@ -0,0 +1,48 @@
++package config
++
++import (
++	"fmt"
++	"os"
++)
++
++type Config struct {
++	Port        string
++	DatabaseURL string
++	JWTSecret   string
++
++	// NATSURL — брокер событий. Не обязателен: если пуст, сервис поднимается
++	// и работает через HTTP API, просто без подписки на user.* и без
++	// публикации contract.*.
++	NATSURL string
++
++	// UserServiceURL — единственный синхронный HTTP-вызов Contracts Service:
++	// GET /parents/{id}/children для GET /contracts/{id}/expiry с role=parent
++	// (см. api-contracts.md, 3.3a и internal/userclient).
++	UserServiceURL string
++}
++
++func Load() (*Config, error) {
++	cfg := &Config{
++		Port:           getEnv("PORT", "8083"),
++		DatabaseURL:    getEnv("DATABASE_URL", ""),
++		JWTSecret:      getEnv("JWT_SECRET", ""),
++		NATSURL:        getEnv("NATS_URL", ""),
++		UserServiceURL: getEnv("USER_SERVICE_URL", ""),
++	}
++
++	if cfg.DatabaseURL == "" {
++		return nil, fmt.Errorf("DATABASE_URL is required")
++	}
++	if cfg.JWTSecret == "" {
++		return nil, fmt.Errorf("JWT_SECRET is required")
++	}
++
++	return cfg, nil
++}
++
++func getEnv(key, fallback string) string {
++	if v, ok := os.LookupEnv(key); ok && v != "" {
++		return v
++	}
++	return fallback
++}
+diff --git a/study-room-backend/contracts-service/internal/db/db.go b/study-room-backend/contracts-service/internal/db/db.go
+new file mode 100644
+index 0000000..0697387
+--- /dev/null
++++ b/study-room-backend/contracts-service/internal/db/db.go
+@@ -0,0 +1,31 @@
++package db
++
++import (
++	"context"
++	"fmt"
++	"time"
++
++	"github.com/jackc/pgx/v5/pgxpool"
++)
++
++func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
++	poolCfg, err := pgxpool.ParseConfig(databaseURL)
++	if err != nil {
++		return nil, fmt.Errorf("parse database url: %w", err)
++	}
++	poolCfg.MaxConns = 10
++	poolCfg.MaxConnLifetime = time.Hour
++
++	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
++	if err != nil {
++		return nil, fmt.Errorf("create pool: %w", err)
++	}
++
++	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
++	defer cancel()
++	if err := pool.Ping(pingCtx); err != nil {
++		return nil, fmt.Errorf("ping database: %w", err)
++	}
++
++	return pool, nil
++}
+diff --git a/study-room-backend/contracts-service/internal/events/publisher.go b/study-room-backend/contracts-service/internal/events/publisher.go
+new file mode 100644
+index 0000000..888ce1a
+--- /dev/null
++++ b/study-room-backend/contracts-service/internal/events/publisher.go
+@@ -0,0 +1,85 @@
++// Package events — публикация contract.created и contract.expiring_soon
++// (см. event-schema.md — это источник истины по форме payload, сверено
++// перед реализацией, а не реконструировано заново из REST-тела).
++package events
++
++import (
++	"encoding/json"
++	"log"
++
++	"github.com/nats-io/nats.go"
++)
++
++const (
++	SubjectContractCreated      = "contract.created"
++	SubjectContractExpiringSoon = "contract.expiring_soon"
++)
++
++type Publisher interface {
++	ContractCreated(id, studentID, courseID int64, tutorID *int64, startDate, endDate *string)
++	ContractExpiringSoon(userID int64, contractNumber, endDate string)
++}
++
++type NoopPublisher struct{}
++
++func (NoopPublisher) ContractCreated(int64, int64, int64, *int64, *string, *string) {}
++func (NoopPublisher) ContractExpiringSoon(int64, string, string)                     {}
++
++type contractCreatedPayload struct {
++	ID        int64   `json:"id"`
++	StudentID int64   `json:"student_id"`
++	CourseID  int64   `json:"course_id"`
++	TutorID   *int64  `json:"tutor_id"`
++	StartDate *string `json:"start_date"`
++	EndDate   *string `json:"end_date"`
++}
++
++type contractExpiringSoonPayload struct {
++	UserID         int64  `json:"user_id"`
++	ContractNumber string `json:"contract_number"`
++	EndDate        string `json:"end_date"`
++}
++
++type NATSPublisher struct {
++	nc *nats.Conn
++}
++
++func NewNATSPublisher(nc *nats.Conn) *NATSPublisher {
++	return &NATSPublisher{nc: nc}
++}
++
++// ContractCreated — основной путь наполнения enrollments в Academic
++// Service (см. academic-service/internal/events/subscriber.go,
++// handleContractCreated). tutor_id всегда nil — POST /contracts не
++// принимает tutor_id (см. api-contracts.md 3.1), назначение репетитора на
++// enrollment — отдельное действие уже на стороне Academic Service.
++func (p *NATSPublisher) ContractCreated(id, studentID, courseID int64, tutorID *int64, startDate, endDate *string) {
++	data, err := json.Marshal(contractCreatedPayload{
++		ID: id, StudentID: studentID, CourseID: courseID,
++		TutorID: tutorID, StartDate: startDate, EndDate: endDate,
++	})
++	if err != nil {
++		log.Printf("[events] marshal contract.created error: %v", err)
++		return
++	}
++	if err := p.nc.Publish(SubjectContractCreated, data); err != nil {
++		log.Printf("[events] publish contract.created error: %v", err)
++	}
++}
++
++func (p *NATSPublisher) ContractExpiringSoon(userID int64, contractNumber, endDate string) {
++	if userID == 0 {
++		log.Printf("[events] contract.expiring_soon: empty user_id, skip publish (contract=%s)", contractNumber)
++		return
++	}
++	data, err := json.Marshal(contractExpiringSoonPayload{
++		UserID: userID, ContractNumber: contractNumber, EndDate: endDate,
++	})
++	if err != nil {
++		log.Printf("[events] marshal contract.expiring_soon error: %v", err)
++		return
++	}
++	if err := p.nc.Publish(SubjectContractExpiringSoon, data); err != nil {
++		log.Printf("[events] publish contract.expiring_soon error: %v", err)
++	}
++}
+diff --git a/study-room-backend/contracts-service/internal/events/subscriber.go b/study-room-backend/contracts-service/internal/events/subscriber.go
+new file mode 100644
+index 0000000..f0b1282
+--- /dev/null
++++ b/study-room-backend/contracts-service/internal/events/subscriber.go
+@@ -0,0 +1,64 @@
++package events
++
++import (
++	"context"
++	"encoding/json"
++	"log"
++
++	"github.com/nats-io/nats.go"
++	"studyroom/contracts-service/internal/models"
++	"studyroom/contracts-service/internal/repository"
++)
++
++type UserEvent struct {
++	ID        int64       `json:"id"`
++	FirstName string      `json:"first_name"`
++	LastName  string      `json:"last_name"`
++	Role      models.Role `json:"role"`
++	BranchID  *int64      `json:"branch_id"`
++}
++
++func Connect(url string) (*nats.Conn, error) {
++	return nats.Connect(url, nats.MaxReconnects(-1), nats.Name("contracts-service"))
++}
++
++type Subscriber struct {
++	nc          *nats.Conn
++	userRefRepo *repository.UserRefRepository
++}
++
++func NewSubscriber(nc *nats.Conn, userRefRepo *repository.UserRefRepository) *Subscriber {
++	return &Subscriber{nc: nc, userRefRepo: userRefRepo}
++}
++
++func (s *Subscriber) Start(ctx context.Context) error {
++	if _, err := s.nc.QueueSubscribe("user.created", "contracts-service", s.handleUserEvent(ctx)); err != nil {
++		return err
++	}
++	if _, err := s.nc.QueueSubscribe("user.updated", "contracts-service", s.handleUserEvent(ctx)); err != nil {
++		return err
++	}
++	return nil
++}
++
++func (s *Subscriber) handleUserEvent(ctx context.Context) nats.MsgHandler {
++	return func(msg *nats.Msg) {
++		var ev UserEvent
++		if err := json.Unmarshal(msg.Data, &ev); err != nil {
++			log.Printf("[events] user.* unmarshal error: %v", err)
++			return
++		}
++		if ev.ID == 0 {
++			return
++		}
++		ref := &models.UserRef{
++			UserID:   ev.ID,
++			FullName: (ev.FirstName + " " + ev.LastName),
++			Role:     ev.Role,
++			BranchID: ev.BranchID,
++		}
++		if err := s.userRefRepo.Upsert(ctx, ref); err != nil {
++			log.Printf("[events] upsert user_ref %d error: %v", ev.ID, err)
++		}
++	}
++}
+diff --git a/study-room-backend/contracts-service/internal/handlers/contract_handler.go b/study-room-backend/contracts-service/internal/handlers/contract_handler.go
+new file mode 100644
+index 0000000..b9733e6
+--- /dev/null
++++ b/study-room-backend/contracts-service/internal/handlers/contract_handler.go
+@@ -0,0 +1,312 @@
++package handlers
++
++import (
++	"encoding/json"
++	"errors"
++	"net/http"
++	"time"
++
++	"github.com/go-chi/chi/v5"
++	"studyroom/contracts-service/internal/events"
++	"studyroom/contracts-service/internal/middleware"
++	"studyroom/contracts-service/internal/models"
++	"studyroom/contracts-service/internal/repository"
++)
++
++const dateLayout = "2006-01-02"
++
++type ContractHandler struct {
++	repo       *repository.ContractRepository
++	userRefs   *repository.UserRefRepository
++	userClient ChildrenResolver
++	events     events.Publisher
++}
++
++func NewContractHandler(repo *repository.ContractRepository, userRefs *repository.UserRefRepository, userClient ChildrenResolver, pub events.Publisher) *ContractHandler {
++	return &ContractHandler{repo: repo, userRefs: userRefs, userClient: userClient, events: pub}
++}
++
++type createContractRequest struct {
++	StudentID int64   `json:"student_id"`
++	ParentID  int64   `json:"parent_id"`
++	CourseID  int64   `json:"course_id"`
++	BranchID  int64   `json:"branch_id"`
++	Amount    float64 `json:"amount"`
++	StartDate string  `json:"start_date"`
++	EndDate   string  `json:"end_date"`
++}
++
++// Create — POST /contracts (api-contracts.md 3.1), roles: owner.
++//
++// Мягкая валидация student_id/parent_id по user_refs: если запись уже
++// синхронизирована событием user.* и роль не совпадает — 400. Если записи
++// ещё нет (событие не дошло) — не блокируем создание договора, потому что
++// это eventual consistency, а не гарантия (см. README.md).
++func (h *ContractHandler) Create(w http.ResponseWriter, r *http.Request) {
++	var req createContractRequest
++	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
++		return
++	}
++	if req.StudentID == 0 || req.ParentID == 0 || req.CourseID == 0 || req.BranchID == 0 {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student_id, parent_id, course_id, branch_id are required")
++		return
++	}
++	if req.Amount <= 0 {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "amount must be positive")
++		return
++	}
++	startDate, err := time.Parse(dateLayout, req.StartDate)
++	if err != nil {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "start_date must be YYYY-MM-DD")
++		return
++	}
++	endDate, err := time.Parse(dateLayout, req.EndDate)
++	if err != nil {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "end_date must be YYYY-MM-DD")
++		return
++	}
++	if !endDate.After(startDate) {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "end_date must be after start_date")
++		return
++	}
++
++	if ref, err := h.userRefs.GetByID(r.Context(), req.StudentID); err == nil && ref.Role != models.RoleStudent {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student_id does not refer to a student")
++		return
++	}
++	if ref, err := h.userRefs.GetByID(r.Context(), req.ParentID); err == nil && ref.Role != models.RoleParent {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "parent_id does not refer to a parent")
++		return
++	}
++
++	contract, err := h.repo.Create(r.Context(), req.StudentID, req.ParentID, req.CourseID, req.BranchID, req.Amount, startDate, endDate)
++	if err != nil {
++		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to create contract")
++		return
++	}
++
++	startStr, endStr := req.StartDate, req.EndDate
++	h.events.ContractCreated(contract.ID, contract.StudentID, contract.CourseID, nil, &startStr, &endStr)
++
++	writeJSON(w, http.StatusCreated, contract)
++}
++
++// List — GET /contracts?branch_id=&student_id=&status= (api-contracts.md 3.2), roles: owner.
++func (h *ContractHandler) List(w http.ResponseWriter, r *http.Request) {
++	filter := repository.ListFilter{Status: r.URL.Query().Get("status")}
++	if v, ok := parseIntQuery(r, "branch_id"); ok {
++		filter.BranchID = v
++	}
++	if v, ok := parseIntQuery(r, "student_id"); ok {
++		filter.StudentID = v
++	}
++
++	contracts, err := h.repo.List(r.Context(), filter)
++	if err != nil {
++		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list contracts")
++		return
++	}
++	writeJSON(w, http.StatusOK, map[string]any{"items": nonNilContracts(contracts)})
++}
++
++func nonNilContracts(c []*models.Contract) []*models.Contract {
++	if c == nil {
++		return []*models.Contract{}
++	}
++	return c
++}
++
++// GetByID — GET /contracts/{id} (api-contracts.md 3.3), roles: owner.
++func (h *ContractHandler) GetByID(w http.ResponseWriter, r *http.Request) {
++	id, err := parseIntPath(chi.URLParam(r, "id"))
++	if err != nil {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid contract id")
++		return
++	}
++	contract, err := h.repo.GetByID(r.Context(), id)
++	if err != nil {
++		if errors.Is(err, repository.ErrNotFound) {
++			writeError(w, http.StatusNotFound, "NOT_FOUND", "contract not found")
++			return
++		}
++		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to get contract")
++		return
++	}
++	writeJSON(w, http.StatusOK, contract)
++}
++
++// Expiry — GET /contracts/{id}/expiry (api-contracts.md 3.3a), roles:
++// branch_owner (только своего филиала), parent (только своих детей).
++// Owner сюда не заходит — у него уже есть полный 3.3.
++func (h *ContractHandler) Expiry(w http.ResponseWriter, r *http.Request) {
++	id, err := parseIntPath(chi.URLParam(r, "id"))
++	if err != nil {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid contract id")
++		return
++	}
++	contract, err := h.repo.GetByID(r.Context(), id)
++	if err != nil {
++		if errors.Is(err, repository.ErrNotFound) {
++			writeError(w, http.StatusNotFound, "NOT_FOUND", "contract not found")
++			return
++		}
++		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to get contract")
++		return
++	}
++
++	claims, _ := middleware.FromContext(r.Context())
++	switch claims.Role {
++	case models.RoleBranchOwner:
++		if claims.BranchID == nil || *claims.BranchID != contract.BranchID {
++			writeError(w, http.StatusForbidden, "FORBIDDEN", "contract belongs to a different branch")
++			return
++		}
++	case models.RoleParent:
++		children, err := h.userClient.Children(r.Context(), bearerToken(r), claims.UserID)
++		if err != nil {
++			writeError(w, http.StatusBadGateway, "UPSTREAM_ERROR", "failed to resolve children")
++			return
++		}
++		if !contains(children, contract.StudentID) {
++			writeError(w, http.StatusForbidden, "FORBIDDEN", "contract belongs to a different family")
++			return
++		}
++	default:
++		writeError(w, http.StatusForbidden, "FORBIDDEN", "role not permitted")
++		return
++	}
++
++	writeJSON(w, http.StatusOK, models.ContractExpiry{ContractID: contract.ID, EndDate: contract.EndDate})
++}
++
++type updateContractRequest struct {
++	EndDate *string  `json:"end_date"`
++	Amount  *float64 `json:"amount"`
++}
++
++// UpdateFields — PATCH /contracts/{id} (api-contracts.md 3.4), roles: owner.
++func (h *ContractHandler) UpdateFields(w http.ResponseWriter, r *http.Request) {
++	id, err := parseIntPath(chi.URLParam(r, "id"))
++	if err != nil {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid contract id")
++		return
++	}
++	var req updateContractRequest
++	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
++		return
++	}
++
++	var endDate *time.Time
++	if req.EndDate != nil {
++		d, err := time.Parse(dateLayout, *req.EndDate)
++		if err != nil {
++			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "end_date must be YYYY-MM-DD")
++			return
++		}
++		endDate = &d
++	}
++
++	contract, err := h.repo.UpdateFields(r.Context(), id, endDate, req.Amount)
++	if err != nil {
++		if errors.Is(err, repository.ErrNotFound) {
++			writeError(w, http.StatusNotFound, "NOT_FOUND", "contract not found")
++			return
++		}
++		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to update contract")
++		return
++	}
++	writeJSON(w, http.StatusOK, contract)
++}
++
++var validContractStatuses = map[string]bool{
++	string(models.StatusActive):     true,
++	string(models.StatusCompleted):  true,
++	string(models.StatusTerminated): true,
++}
++
++type updateStatusRequest struct {
++	Status string `json:"status"`
++}
++
++// UpdateStatus — PATCH /contracts/{id}/status (api-contracts.md 3.5), roles: owner.
++func (h *ContractHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
++	id, err := parseIntPath(chi.URLParam(r, "id"))
++	if err != nil {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid contract id")
++		return
++	}
++	var req updateStatusRequest
++	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
++		return
++	}
++	if !validContractStatuses[req.Status] {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "status must be one of active/completed/terminated")
++		return
++	}
++	if err := h.repo.UpdateStatus(r.Context(), id, req.Status); err != nil {
++		if errors.Is(err, repository.ErrNotFound) {
++			writeError(w, http.StatusNotFound, "NOT_FOUND", "contract not found")
++			return
++		}
++		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to update status")
++		return
++	}
++	w.WriteHeader(http.StatusOK)
++}
++
++var validPaymentStatuses = map[string]bool{
++	string(models.PaymentUnpaid): true,
++	string(models.PaymentPaid):   true,
++}
++
++type updatePaymentStatusRequest struct {
++	PaymentStatus string `json:"payment_status"`
++}
++
++// UpdatePaymentStatus — PATCH /contracts/{id}/payment-status (api-contracts.md 3.6), roles: owner.
++func (h *ContractHandler) UpdatePaymentStatus(w http.ResponseWriter, r *http.Request) {
++	id, err := parseIntPath(chi.URLParam(r, "id"))
++	if err != nil {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid contract id")
++		return
++	}
++	var req updatePaymentStatusRequest
++	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
++		return
++	}
++	if !validPaymentStatuses[req.PaymentStatus] {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "payment_status must be one of unpaid/paid")
++		return
++	}
++	if err := h.repo.UpdatePaymentStatus(r.Context(), id, req.PaymentStatus); err != nil {
++		if errors.Is(err, repository.ErrNotFound) {
++			writeError(w, http.StatusNotFound, "NOT_FOUND", "contract not found")
++			return
++		}
++		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to update payment status")
++		return
++	}
++	w.WriteHeader(http.StatusOK)
++}
++
++// Delete — DELETE /contracts/{id} (api-contracts.md 3.7), roles: owner.
++func (h *ContractHandler) Delete(w http.ResponseWriter, r *http.Request) {
++	id, err := parseIntPath(chi.URLParam(r, "id"))
++	if err != nil {
++		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid contract id")
++		return
++	}
++	if err := h.repo.Delete(r.Context(), id); err != nil {
++		if errors.Is(err, repository.ErrNotFound) {
++			writeError(w, http.StatusNotFound, "NOT_FOUND", "contract not found")
++			return
++		}
++		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to delete contract")
++		return
++	}
++	w.WriteHeader(http.StatusOK)
++}
+diff --git a/study-room-backend/contracts-service/internal/handlers/helpers.go b/study-room-backend/contracts-service/internal/handlers/helpers.go
+new file mode 100644
+index 0000000..5bee9b1
+--- /dev/null
++++ b/study-room-backend/contracts-service/internal/handlers/helpers.go
+@@ -0,0 +1,59 @@
++package handlers
++
++import (
++	"context"
++	"encoding/json"
++	"net/http"
++	"strconv"
++	"strings"
++)
++
++// ChildrenResolver — узкий интерфейс вокруг userclient.Client.Children,
++// нужен, чтобы контрактные тесты могли подставить фейковую реализацию
++// вместо реального HTTP-похода в User Service (см. tests/contracts/setup_test.go,
++// тот же паттерн, что в academic-service/internal/handlers/helpers.go).
++type ChildrenResolver interface {
++	Children(ctx context.Context, bearerToken string, parentID int64) ([]int64, error)
++}
++
++func writeJSON(w http.ResponseWriter, status int, v any) {
++	w.Header().Set("Content-Type", "application/json")
++	w.WriteHeader(status)
++	json.NewEncoder(w).Encode(v)
++}
++
++func writeError(w http.ResponseWriter, status int, code, message string) {
++	writeJSON(w, status, map[string]any{
++		"error": map[string]string{"code": code, "message": message},
++	})
++}
++
++func parseIntPath(raw string) (int64, error) {
++	return strconv.ParseInt(raw, 10, 64)
++}
++
++func parseIntQuery(r *http.Request, key string) (*int64, bool) {
++	raw := r.URL.Query().Get(key)
++	if raw == "" {
++		return nil, false
++	}
++	v, err := strconv.ParseInt(raw, 10, 64)
++	if err != nil {
++		return nil, false
++	}
++	return &v, true
++}
++
++func bearerToken(r *http.Request) string {
++	h := r.Header.Get("Authorization")
++	return strings.TrimPrefix(h, "Bearer ")
++}
++
++func contains(ids []int64, id int64) bool {
++	for _, v := range ids {
++		if v == id {
++			return true
++		}
++	}
++	return false
++}
+diff --git a/study-room-backend/contracts-service/internal/middleware/auth.go b/study-room-backend/contracts-service/internal/middleware/auth.go
+new file mode 100644
+index 0000000..43b7d0e
+--- /dev/null
++++ b/study-room-backend/contracts-service/internal/middleware/auth.go
+@@ -0,0 +1,74 @@
++package middleware
++
++import (
++	"context"
++	"net/http"
++	"strings"
++
++	"studyroom/contracts-service/internal/auth"
++	"studyroom/contracts-service/internal/models"
++)
++
++type ctxKey string
++
++const claimsKey ctxKey = "claims"
++
++// RequireAuth проверяет подпись JWT (общий секрет с User Service) и кладёт
++// claims в контекст запроса — тот же паттерн, что в user-service и
++// notification-service (см. их internal/middleware).
++func RequireAuth(tm *auth.TokenManager) func(http.Handler) http.Handler {
++	return func(next http.Handler) http.Handler {
++		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++			header := r.Header.Get("Authorization")
++			if !strings.HasPrefix(header, "Bearer ") {
++				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing bearer token")
++				return
++			}
++			tokenStr := strings.TrimPrefix(header, "Bearer ")
++
++			claims, err := tm.ParseAccessToken(tokenStr)
++			if err != nil {
++				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid or expired token")
++				return
++			}
++
++			ctx := context.WithValue(r.Context(), claimsKey, claims)
++			next.ServeHTTP(w, r.WithContext(ctx))
++		})
++	}
++}
++
++// RequireRoles — 403, если роль вызывающего не входит в разрешённый список.
++// Для более тонкой авторизации (например «branch_owner только своего
++// филиала») проверка делается внутри самого хендлера — см. handlers/*.go.
++func RequireRoles(roles ...models.Role) func(http.Handler) http.Handler {
++	allowed := make(map[models.Role]bool, len(roles))
++	for _, r := range roles {
++		allowed[r] = true
++	}
++	return func(next http.Handler) http.Handler {
++		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++			claims, ok := FromContext(r.Context())
++			if !ok {
++				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "no auth context")
++				return
++			}
++			if !allowed[claims.Role] {
++				writeError(w, http.StatusForbidden, "FORBIDDEN", "role not permitted for this action")
++				return
++			}
++			next.ServeHTTP(w, r)
++		})
++	}
++}
++
++func FromContext(ctx context.Context) (*auth.Claims, bool) {
++	claims, ok := ctx.Value(claimsKey).(*auth.Claims)
++	return claims, ok
++}
++
++func writeError(w http.ResponseWriter, status int, code, message string) {
++	w.Header().Set("Content-Type", "application/json")
++	w.WriteHeader(status)
++	w.Write([]byte(`{"error":{"code":"` + code + `","message":"` + message + `"}}`))
++}
+diff --git a/study-room-backend/contracts-service/internal/migrate/migrate.go b/study-room-backend/contracts-service/internal/migrate/migrate.go
+new file mode 100644
+index 0000000..432eb96
+--- /dev/null
++++ b/study-room-backend/contracts-service/internal/migrate/migrate.go
+@@ -0,0 +1,73 @@
++// Package migrate — минималистичный раннер миграций без внешних зависимостей.
++// Идентичен паттерну user-service/notification-service: SQL-файлы вшиваются
++// в бинарник через go:embed, применяются автоматически при каждом старте.
++package migrate
++
++import (
++	"context"
++	"embed"
++	"fmt"
++	"io/fs"
++	"sort"
++	"strings"
++
++	"github.com/jackc/pgx/v5/pgxpool"
++)
++
++//go:embed sql/*.sql
++var migrationsFS embed.FS
++
++// Run применяет все *.up.sql файлы из sql/, которых ещё нет в таблице
++// schema_migrations, по одному в транзакции, в порядке имени файла.
++func Run(ctx context.Context, pool *pgxpool.Pool) error {
++	if _, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
++		version TEXT PRIMARY KEY,
++		applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
++	)`); err != nil {
++		return fmt.Errorf("create schema_migrations: %w", err)
++	}
++
++	entries, err := fs.Glob(migrationsFS, "sql/*.up.sql")
++	if err != nil {
++		return err
++	}
++	sort.Strings(entries)
++
++	for _, path := range entries {
++		version := strings.TrimSuffix(strings.TrimPrefix(path, "sql/"), ".up.sql")
++
++		var alreadyApplied bool
++		err := pool.QueryRow(ctx,
++			`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)`, version,
++		).Scan(&alreadyApplied)
++		if err != nil {
++			return fmt.Errorf("check migration %s: %w", version, err)
++		}
++		if alreadyApplied {
++			continue
++		}
++
++		content, err := migrationsFS.ReadFile(path)
++		if err != nil {
++			return fmt.Errorf("read migration %s: %w", path, err)
++		}
++
++		tx, err := pool.Begin(ctx)
++		if err != nil {
++			return fmt.Errorf("begin tx for %s: %w", version, err)
++		}
++		if _, err := tx.Exec(ctx, string(content)); err != nil {
++			tx.Rollback(ctx)
++			return fmt.Errorf("apply migration %s: %w", version, err)
++		}
++		if _, err := tx.Exec(ctx, `INSERT INTO schema_migrations (version) VALUES ($1)`, version); err != nil {
++			tx.Rollback(ctx)
++			return fmt.Errorf("record migration %s: %w", version, err)
++		}
++		if err := tx.Commit(ctx); err != nil {
++			return fmt.Errorf("commit migration %s: %w", version, err)
++		}
++		fmt.Printf("[migrate] applied %s\n", version)
++	}
++	return nil
++}
+diff --git a/study-room-backend/contracts-service/internal/migrate/sql/0001_init.down.sql b/study-room-backend/contracts-service/internal/migrate/sql/0001_init.down.sql
+new file mode 100644
+index 0000000..ba698b7
+--- /dev/null
++++ b/study-room-backend/contracts-service/internal/migrate/sql/0001_init.down.sql
+@@ -0,0 +1,5 @@
++-- 0001_init.down.sql
++DROP TABLE IF EXISTS contracts;
++DROP TABLE IF EXISTS user_refs;
++DROP TYPE IF EXISTS payment_status;
++DROP TYPE IF EXISTS contract_status;
+diff --git a/study-room-backend/contracts-service/internal/migrate/sql/0001_init.up.sql b/study-room-backend/contracts-service/internal/migrate/sql/0001_init.up.sql
+new file mode 100644
+index 0000000..1966ff1
+--- /dev/null
++++ b/study-room-backend/contracts-service/internal/migrate/sql/0001_init.up.sql
+@@ -0,0 +1,40 @@
++-- 0001_init.up.sql
++-- Contracts Service schema. Своя БД: study_room_contracts (см.
++-- microservices-plan.md, п.1). student_id/parent_id/course_id/branch_id —
++-- ссылки на записи из User Service/Academic Service, БЕЗ настоящего
++-- FK-констрейнта (разные базы, разные процессы).
++
++CREATE TYPE contract_status AS ENUM ('active', 'completed', 'terminated');
++CREATE TYPE payment_status AS ENUM ('unpaid', 'paid');
++
++-- Облегчённая копия пользователей, наполняется событиями
++-- user.created/user.updated — см. internal/events. Используется для мягкой
++-- валидации при создании договора (см. README.md), не для авторизации.
++CREATE TABLE user_refs (
++    user_id     INTEGER PRIMARY KEY,
++    full_name   VARCHAR(255) NOT NULL DEFAULT '',
++    role        VARCHAR(32)  NOT NULL DEFAULT '',
++    branch_id   INTEGER,
++    synced_at   TIMESTAMPTZ NOT NULL DEFAULT now()
++);
++
++CREATE TABLE contracts (
++    id               SERIAL PRIMARY KEY,
++    contract_number  VARCHAR(32) NOT NULL UNIQUE,
++    student_id       INTEGER NOT NULL,
++    parent_id        INTEGER NOT NULL,
++    course_id        INTEGER NOT NULL,
++    branch_id        INTEGER NOT NULL,
++    amount           NUMERIC(12,2) NOT NULL,
++    payment_status   payment_status NOT NULL DEFAULT 'unpaid',
++    status           contract_status NOT NULL DEFAULT 'active',
++    start_date       DATE NOT NULL,
++    end_date         DATE NOT NULL,
++    expiry_notified_at TIMESTAMPTZ,
++    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
++);
++CREATE INDEX idx_contracts_branch_id ON contracts(branch_id);
++CREATE INDEX idx_contracts_student_id ON contracts(student_id);
++CREATE INDEX idx_contracts_parent_id ON contracts(parent_id);
++CREATE INDEX idx_contracts_status ON contracts(status);
++CREATE INDEX idx_contracts_end_date ON contracts(end_date);
+diff --git a/study-room-backend/contracts-service/internal/models/models.go b/study-room-backend/contracts-service/internal/models/models.go
+new file mode 100644
+index 0000000..75ac1e4
+--- /dev/null
++++ b/study-room-backend/contracts-service/internal/models/models.go
+@@ -0,0 +1,72 @@
++package models
++
++import "time"
++
++// Role — дублирует enum из User Service. Отдельная копия, а не общий пакет —
++// разные Go-модули с разными БД (database-per-service).
++type Role string
++
++const (
++	RoleOwner       Role = "owner"
++	RoleBranchOwner Role = "branch_owner"
++	RoleTutor       Role = "tutor"
++	RoleParent      Role = "parent"
++	RoleStudent     Role = "student"
++)
++
++// UserRef — облегчённая копия пользователя, наполняется user.created/
++// user.updated. См. README.md — на текущий момент используется только для
++// мягкой валидации (роль student_id/parent_id действительно
++// student/parent) при создании договора; авторизация по branch_owner/parent
++// идёт через claims/userclient, не через этот кэш.
++type UserRef struct {
++	UserID   int64  `json:"user_id"`
++	FullName string `json:"full_name"`
++	Role     Role   `json:"role"`
++	BranchID *int64 `json:"branch_id"`
++}
++
++type ContractStatus string
++
++const (
++	StatusActive     ContractStatus = "active"
++	StatusCompleted  ContractStatus = "completed"
++	StatusTerminated ContractStatus = "terminated"
++)
++
++type PaymentStatus string
++
++const (
++	PaymentUnpaid PaymentStatus = "unpaid"
++	PaymentPaid   PaymentStatus = "paid"
++)
++
++// Contract — соответствует таблице contracts (см. api-contracts.md, раздел 3).
++// student_id/parent_id/course_id/branch_id — ссылки на записи в других
++// сервисах, без настоящего FK (разные БД, разные процессы).
++// StartDate/EndDate — time.Time (как в academic-service), не отдельный
++// Date-тип: JSON-маршалинг даёт RFC3339 ("2026-08-01T00:00:00Z"), а не
++// голое "2026-08-01" из примеров api-contracts.md — то же расхождение уже
++// есть в academic-service (Enrollment.StartDate) и здесь оставлено для
++// консистентности между сервисами, а не исправлено половинчато в одном месте.
++type Contract struct {
++	ID             int64          `json:"id"`
++	ContractNumber string         `json:"contract_number"`
++	StudentID      int64          `json:"student_id"`
++	ParentID       int64          `json:"parent_id"`
++	CourseID       int64          `json:"course_id"`
++	BranchID       int64          `json:"branch_id"`
++	Amount         float64        `json:"amount"`
++	PaymentStatus  PaymentStatus  `json:"payment_status"`
++	Status         ContractStatus `json:"status"`
++	StartDate      time.Time      `json:"start_date"`
++	EndDate        time.Time      `json:"end_date"`
++	CreatedAt      time.Time      `json:"created_at"`
++}
++
++// ContractExpiry — облегчённая версия для 3.3a (branch_owner/parent):
++// никаких полей про сумму/статус оплаты.
++type ContractExpiry struct {
++	ContractID int64     `json:"contract_id"`
++	EndDate    time.Time `json:"end_date"`
++}
+diff --git a/study-room-backend/contracts-service/internal/repository/contract_repository.go b/study-room-backend/contracts-service/internal/repository/contract_repository.go
+new file mode 100644
+index 0000000..e7bbdfa
+--- /dev/null
++++ b/study-room-backend/contracts-service/internal/repository/contract_repository.go
+@@ -0,0 +1,200 @@
++package repository
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"time"
++
++	"github.com/jackc/pgx/v5"
++	"github.com/jackc/pgx/v5/pgxpool"
++	"studyroom/contracts-service/internal/models"
++)
++
++type ContractRepository struct {
++	pool *pgxpool.Pool
++}
++
++func NewContractRepository(pool *pgxpool.Pool) *ContractRepository {
++	return &ContractRepository{pool: pool}
++}
++
++const contractColumns = `id, contract_number, student_id, parent_id, course_id, branch_id, amount, payment_status, status, start_date, end_date, created_at`
++
++func scanContract(row pgx.Row) (*models.Contract, error) {
++	var c models.Contract
++	err := row.Scan(
++		&c.ID, &c.ContractNumber, &c.StudentID, &c.ParentID, &c.CourseID, &c.BranchID,
++		&c.Amount, &c.PaymentStatus, &c.Status, &c.StartDate, &c.EndDate, &c.CreatedAt,
++	)
++	if err != nil {
++		if errors.Is(err, pgx.ErrNoRows) {
++			return nil, ErrNotFound
++		}
++		return nil, err
++	}
++	return &c, nil
++}
++
++// Create — POST /contracts (api-contracts.md 3.1). status=active,
++// payment_status=unpaid по умолчанию. contract_number генерируется сразу
++// после вставки (нужен id) в формате SR-{год start_date}-{4 цифры id}.
++func (r *ContractRepository) Create(ctx context.Context, studentID, parentID, courseID, branchID int64, amount float64, startDate, endDate time.Time) (*models.Contract, error) {
++	tx, err := r.pool.Begin(ctx)
++	if err != nil {
++		return nil, err
++	}
++	defer tx.Rollback(ctx)
++
++	var id int64
++	err = tx.QueryRow(ctx, `
++		INSERT INTO contracts (contract_number, student_id, parent_id, course_id, branch_id, amount, start_date, end_date)
++		VALUES ('', $1, $2, $3, $4, $5, $6, $7) RETURNING id`,
++		studentID, parentID, courseID, branchID, amount, startDate, endDate,
++	).Scan(&id)
++	if err != nil {
++		return nil, err
++	}
++
++	number := fmt.Sprintf("SR-%d-%04d", startDate.Year(), id)
++
++	row := tx.QueryRow(ctx,
++		`UPDATE contracts SET contract_number = $1 WHERE id = $2 RETURNING `+contractColumns,
++		number, id)
++	c, err := scanContract(row)
++	if err != nil {
++		return nil, err
++	}
++	if err := tx.Commit(ctx); err != nil {
++		return nil, err
++	}
++	return c, nil
++}
++
++func (r *ContractRepository) GetByID(ctx context.Context, id int64) (*models.Contract, error) {
++	query := `SELECT ` + contractColumns + ` FROM contracts WHERE id = $1`
++	return scanContract(r.pool.QueryRow(ctx, query, id))
++}
++
++type ListFilter struct {
++	BranchID  *int64
++	StudentID *int64
++	Status    string
++}
++
++// List — GET /contracts?branch_id=&student_id=&status= (api-contracts.md 3.2), owner-only.
++func (r *ContractRepository) List(ctx context.Context, f ListFilter) ([]*models.Contract, error) {
++	query := `SELECT ` + contractColumns + ` FROM contracts WHERE 1=1`
++	args := []any{}
++	i := 1
++	if f.BranchID != nil {
++		query += fmt.Sprintf(" AND branch_id = $%d", i)
++		args = append(args, *f.BranchID)
++		i++
++	}
++	if f.StudentID != nil {
++		query += fmt.Sprintf(" AND student_id = $%d", i)
++		args = append(args, *f.StudentID)
++		i++
++	}
++	if f.Status != "" {
++		query += fmt.Sprintf(" AND status = $%d", i)
++		args = append(args, f.Status)
++		i++
++	}
++	query += " ORDER BY id DESC"
++
++	rows, err := r.pool.Query(ctx, query, args...)
++	if err != nil {
++		return nil, err
++	}
++	defer rows.Close()
++
++	var out []*models.Contract
++	for rows.Next() {
++		c, err := scanContract(rows)
++		if err != nil {
++			return nil, err
++		}
++		out = append(out, c)
++	}
++	return out, rows.Err()
++}
++
++// UpdateFields — PATCH /contracts/{id} (api-contracts.md 3.4): end_date и/или amount.
++func (r *ContractRepository) UpdateFields(ctx context.Context, id int64, endDate *time.Time, amount *float64) (*models.Contract, error) {
++	query := `UPDATE contracts SET
++		end_date = COALESCE($1, end_date),
++		amount = COALESCE($2, amount)
++		WHERE id = $3 RETURNING ` + contractColumns
++	return scanContract(r.pool.QueryRow(ctx, query, endDate, amount, id))
++}
++
++// UpdateStatus — PATCH /contracts/{id}/status (api-contracts.md 3.5).
++func (r *ContractRepository) UpdateStatus(ctx context.Context, id int64, status string) error {
++	tag, err := r.pool.Exec(ctx, `UPDATE contracts SET status = $1 WHERE id = $2`, status, id)
++	if err != nil {
++		return err
++	}
++	if tag.RowsAffected() == 0 {
++		return ErrNotFound
++	}
++	return nil
++}
++
++// UpdatePaymentStatus — PATCH /contracts/{id}/payment-status (api-contracts.md 3.6).
++func (r *ContractRepository) UpdatePaymentStatus(ctx context.Context, id int64, paymentStatus string) error {
++	tag, err := r.pool.Exec(ctx, `UPDATE contracts SET payment_status = $1 WHERE id = $2`, paymentStatus, id)
++	if err != nil {
++		return err
++	}
++	if tag.RowsAffected() == 0 {
++		return ErrNotFound
++	}
++	return nil
++}
++
++func (r *ContractRepository) Delete(ctx context.Context, id int64) error {
++	tag, err := r.pool.Exec(ctx, `DELETE FROM contracts WHERE id = $1`, id)
++	if err != nil {
++		return err
++	}
++	if tag.RowsAffected() == 0 {
++		return ErrNotFound
++	}
++	return nil
++}
++
++// ListExpiringSoon — договоры со статусом active, у которых end_date попадает
++// в ближайшие withinDays дней и уведомление ещё не отправлялось
++// (expiry_notified_at IS NULL). Используется фоновой джобой в cmd/api/main.go,
++// публикующей contract.expiring_soon — механизм триггера не описан в
++// api-contracts.md/event-schema.md, реализован как периодическая проверка
++// (см. README.md, "Что ещё не сделано").
++func (r *ContractRepository) ListExpiringSoon(ctx context.Context, withinDays int) ([]*models.Contract, error) {
++	query := `SELECT ` + contractColumns + ` FROM contracts
++		WHERE status = 'active'
++		AND expiry_notified_at IS NULL
++		AND end_date <= (CURRENT_DATE + ($1 || ' days')::interval)
++		ORDER BY end_date ASC`
++	rows, err := r.pool.Query(ctx, query, withinDays)
++	if err != nil {
++		return nil, err
++	}
++	defer rows.Close()
++
++	var out []*models.Contract
++	for rows.Next() {
++		c, err := scanContract(rows)
++		if err != nil {
++			return nil, err
++		}
++		out = append(out, c)
++	}
++	return out, rows.Err()
++}
++
++func (r *ContractRepository) MarkExpiryNotified(ctx context.Context, id int64) error {
++	_, err := r.pool.Exec(ctx, `UPDATE contracts SET expiry_notified_at = now() WHERE id = $1`, id)
++	return err
++}
+diff --git a/study-room-backend/contracts-service/internal/repository/userref_repository.go b/study-room-backend/contracts-service/internal/repository/userref_repository.go
+new file mode 100644
+index 0000000..7ee8a99
+--- /dev/null
++++ b/study-room-backend/contracts-service/internal/repository/userref_repository.go
+@@ -0,0 +1,53 @@
++package repository
++
++import (
++	"context"
++	"errors"
++
++	"github.com/jackc/pgx/v5"
++	"github.com/jackc/pgx/v5/pgxpool"
++	"studyroom/contracts-service/internal/models"
++)
++
++var ErrNotFound = errors.New("not found")
++
++// UserRefRepository — облегчённая копия пользователей (user_refs),
++// наполняется событиями user.created/user.updated (см. internal/events).
++// Используется в ApplicationHandler.Create только для мягкой валидации
++// (см. README.md) — авторизация по ролям идёт через JWT claims и
++// internal/userclient, этот кэш их не заменяет.
++type UserRefRepository struct {
++	pool *pgxpool.Pool
++}
++
++func NewUserRefRepository(pool *pgxpool.Pool) *UserRefRepository {
++	return &UserRefRepository{pool: pool}
++}
++
++func (r *UserRefRepository) Upsert(ctx context.Context, u *models.UserRef) error {
++	_, err := r.pool.Exec(ctx, `
++		INSERT INTO user_refs (user_id, full_name, role, branch_id, synced_at)
++		VALUES ($1,$2,$3,$4, now())
++		ON CONFLICT (user_id) DO UPDATE SET
++			full_name = CASE WHEN EXCLUDED.full_name = '' THEN user_refs.full_name ELSE EXCLUDED.full_name END,
++			role = CASE WHEN EXCLUDED.role = '' THEN user_refs.role ELSE EXCLUDED.role END,
++			branch_id = EXCLUDED.branch_id,
++			synced_at = now()`,
++		u.UserID, u.FullName, u.Role, u.BranchID)
++	return err
++}
++
++func (r *UserRefRepository) GetByID(ctx context.Context, id int64) (*models.UserRef, error) {
++	row := r.pool.QueryRow(ctx,
++		`SELECT user_id, full_name, role, branch_id FROM user_refs WHERE user_id = $1`, id)
++
++	var u models.UserRef
++	err := row.Scan(&u.UserID, &u.FullName, &u.Role, &u.BranchID)
++	if err != nil {
++		if errors.Is(err, pgx.ErrNoRows) {
++			return nil, ErrNotFound
++		}
++		return nil, err
++	}
++	return &u, nil
++}
+diff --git a/study-room-backend/contracts-service/internal/userclient/client.go b/study-room-backend/contracts-service/internal/userclient/client.go
+new file mode 100644
+index 0000000..5cc7844
+--- /dev/null
++++ b/study-room-backend/contracts-service/internal/userclient/client.go
+@@ -0,0 +1,73 @@
++// Package userclient — единственный синхронный HTTP-вызов Contracts Service
++// к User Service. Всё остальное (роль, филиал) читается из локального кэша
++// user_refs, наполняемого событиями (см. internal/events).
++//
++// Список "чьи я дети" — это связь parent↔student, которой в Contracts
++// Service нет и не будет (см. service-info/microservices-plan.md:
++// "database-per-service", у Contracts нет причин дублировать семейные
++// связи). Поэтому для GET /contracts/{id}/expiry с role=parent сервис один
++// раз синхронно спрашивает User Service — см. api-contracts.md, 1.18
++// GET /parents/{id}/children — и передаёт дальше тот же Bearer-токен
++// вызывающего (эндпоинт и так требует role=parent и самого parent'а).
++package userclient
++
++import (
++	"context"
++	"encoding/json"
++	"fmt"
++	"net/http"
++	"time"
++)
++
++type Client struct {
++	baseURL    string
++	httpClient *http.Client
++}
++
++func New(baseURL string) *Client {
++	return &Client{
++		baseURL:    baseURL,
++		httpClient: &http.Client{Timeout: 3 * time.Second},
++	}
++}
++
++// childrenResponse — соответствует api-contracts.md, 1.18:
++// { "items": [ { "id": 4588201, "first_name": "...", ... } ] }
++type childrenResponse struct {
++	Items []struct {
++		ID int64 `json:"id"`
++	} `json:"items"`
++}
++
++// Children возвращает id детей родителя parentID, используя тот же
++// Bearer-токен, что пришёл в запрос к Contracts Service (проброс авторизации
++// "как есть" — User Service сам проверит, что это действительно этот parent).
++func (c *Client) Children(ctx context.Context, bearerToken string, parentID int64) ([]int64, error) {
++	url := fmt.Sprintf("%s/api/v1/parents/%d/children", c.baseURL, parentID)
++	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
++	if err != nil {
++		return nil, err
++	}
++	req.Header.Set("Authorization", "Bearer "+bearerToken)
++
++	resp, err := c.httpClient.Do(req)
++	if err != nil {
++		return nil, fmt.Errorf("call user-service: %w", err)
++	}
++	defer resp.Body.Close()
++
++	if resp.StatusCode != http.StatusOK {
++		return nil, fmt.Errorf("user-service returned status %d", resp.StatusCode)
++	}
++
++	var body childrenResponse
++	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
++		return nil, fmt.Errorf("decode user-service response: %w", err)
++	}
++
++	ids := make([]int64, 0, len(body.Items))
++	for _, item := range body.Items {
++		ids = append(ids, item.ID)
++	}
++	return ids, nil
++}
+diff --git a/study-room-backend/contracts-service/tests/contracts/contracts_contracts_test.go b/study-room-backend/contracts-service/tests/contracts/contracts_contracts_test.go
+new file mode 100644
+index 0000000..dce6af7
+--- /dev/null
++++ b/study-room-backend/contracts-service/tests/contracts/contracts_contracts_test.go
+@@ -0,0 +1,299 @@
++package contracts_test
++
++import (
++	"net/http"
++	"strings"
++	"testing"
++)
++
++func createContractBody(studentID, parentID, courseID, branchID int64) map[string]any {
++	return map[string]any{
++		"student_id": studentID,
++		"parent_id":  parentID,
++		"course_id":  courseID,
++		"branch_id":  branchID,
++		"amount":     4500,
++		"start_date": "2026-08-01",
++		"end_date":   "2027-01-31",
++	}
++}
++
++// --- 3.1. POST /contracts -------------------------------------------------
++
++func TestCreateContract_Owner_Success(t *testing.T) {
++	e := getEnv(t)
++	ownerToken := e.accessToken(1, "owner", nil)
++
++	res := e.do(http.MethodPost, "/api/v1/contracts", createContractBody(100, 300, 12, 1), ownerToken)
++	e.mustOK(res, http.StatusCreated)
++
++	if res.Body["status"] != "active" || res.Body["payment_status"] != "unpaid" {
++		t.Fatalf("unexpected defaults: %+v", res.Body)
++	}
++	number, _ := res.Body["contract_number"].(string)
++	if !strings.HasPrefix(number, "SR-2026-") {
++		t.Fatalf("unexpected contract_number: %q", number)
++	}
++}
++
++func TestCreateContract_NonOwner_Forbidden(t *testing.T) {
++	e := getEnv(t)
++	parentToken := e.accessToken(300, "parent", nil)
++
++	res := e.do(http.MethodPost, "/api/v1/contracts", createContractBody(100, 300, 12, 1), parentToken)
++	e.mustOK(res, http.StatusForbidden)
++}
++
++func TestCreateContract_EndBeforeStart_Rejected(t *testing.T) {
++	e := getEnv(t)
++	ownerToken := e.accessToken(1, "owner", nil)
++
++	body := createContractBody(100, 300, 12, 1)
++	body["start_date"] = "2027-01-31"
++	body["end_date"] = "2026-08-01"
++
++	res := e.do(http.MethodPost, "/api/v1/contracts", body, ownerToken)
++	e.mustOK(res, http.StatusBadRequest)
++}
++
++func TestCreateContract_StudentIDRoleMismatch_Rejected(t *testing.T) {
++	e := getEnv(t)
++	ownerToken := e.accessToken(1, "owner", nil)
++
++	// student_id=300 на самом деле зарегистрирован в user_refs как tutor —
++	// мягкая валидация должна это поймать.
++	e.seedUserRef(300, "Не Студент", "tutor", nil)
++
++	res := e.do(http.MethodPost, "/api/v1/contracts", createContractBody(300, 301, 12, 1), ownerToken)
++	e.mustOK(res, http.StatusBadRequest)
++}
++
++func TestCreateContract_UnknownUserRefs_NotBlocked(t *testing.T) {
++	e := getEnv(t)
++	ownerToken := e.accessToken(1, "owner", nil)
++
++	// user_refs пуст (событие user.created ещё не пришло) — не должно блокировать создание.
++	res := e.do(http.MethodPost, "/api/v1/contracts", createContractBody(999, 998, 12, 1), ownerToken)
++	e.mustOK(res, http.StatusCreated)
++}
++
++// --- 3.2. GET /contracts ---------------------------------------------------
++
++func TestListContracts_OwnerOnly(t *testing.T) {
++	e := getEnv(t)
++	ownerToken := e.accessToken(1, "owner", nil)
++	parentToken := e.accessToken(300, "parent", nil)
++
++	e.mustOK(e.do(http.MethodPost, "/api/v1/contracts", createContractBody(100, 300, 12, 1), ownerToken), http.StatusCreated)
++
++	forbidden := e.do(http.MethodGet, "/api/v1/contracts", nil, parentToken)
++	e.mustOK(forbidden, http.StatusForbidden)
++
++	ok := e.do(http.MethodGet, "/api/v1/contracts", nil, ownerToken)
++	e.mustOK(ok, http.StatusOK)
++	if len(asSlice(ok.Body["items"])) != 1 {
++		t.Fatalf("expected 1 contract, got %+v", ok.Body["items"])
++	}
++}
++
++func TestListContracts_FilterByBranchAndStatus(t *testing.T) {
++	e := getEnv(t)
++	ownerToken := e.accessToken(1, "owner", nil)
++
++	e.mustOK(e.do(http.MethodPost, "/api/v1/contracts", createContractBody(100, 300, 12, 1), ownerToken), http.StatusCreated)
++	e.mustOK(e.do(http.MethodPost, "/api/v1/contracts", createContractBody(101, 301, 12, 2), ownerToken), http.StatusCreated)
++
++	byBranch := e.do(http.MethodGet, "/api/v1/contracts?branch_id=2", nil, ownerToken)
++	e.mustOK(byBranch, http.StatusOK)
++	items := asSlice(byBranch.Body["items"])
++	if len(items) != 1 || items[0].(map[string]any)["branch_id"] != float64(2) {
++		t.Fatalf("expected 1 contract with branch_id=2, got %+v", items)
++	}
++
++	list := e.do(http.MethodGet, "/api/v1/contracts", nil, ownerToken)
++	e.mustOK(list, http.StatusOK)
++	firstID := toPathID(asSlice(list.Body["items"])[0].(map[string]any)["id"])
++	e.mustOK(e.do(http.MethodPatch, "/api/v1/contracts/"+firstID+"/status", map[string]any{
++		"status": "terminated",
++	}, ownerToken), http.StatusOK)
++
++	byStatus := e.do(http.MethodGet, "/api/v1/contracts?status=terminated", nil, ownerToken)
++	e.mustOK(byStatus, http.StatusOK)
++	if len(asSlice(byStatus.Body["items"])) != 1 {
++		t.Fatalf("expected 1 terminated contract, got %+v", byStatus.Body["items"])
++	}
++}
++
++// --- 3.3. GET /contracts/{id} ----------------------------------------------
++
++func TestGetContract_NotFound(t *testing.T) {
++	e := getEnv(t)
++	ownerToken := e.accessToken(1, "owner", nil)
++
++	res := e.do(http.MethodGet, "/api/v1/contracts/999999", nil, ownerToken)
++	e.mustOK(res, http.StatusNotFound)
++}
++
++// --- 3.3a. GET /contracts/{id}/expiry --------------------------------------
++
++func TestExpiry_BranchOwner_OwnBranch_Success(t *testing.T) {
++	e := getEnv(t)
++	ownerToken := e.accessToken(1, "owner", nil)
++	created := e.do(http.MethodPost, "/api/v1/contracts", createContractBody(100, 300, 12, 5), ownerToken)
++	e.mustOK(created, http.StatusCreated)
++	id := toPathID(created.Body["id"])
++
++	branchID := int64(5)
++	branchOwnerToken := e.accessToken(50, "branch_owner", &branchID)
++
++	res := e.do(http.MethodGet, "/api/v1/contracts/"+id+"/expiry", nil, branchOwnerToken)
++	e.mustOK(res, http.StatusOK)
++	if res.Body["end_date"] == nil {
++		t.Fatalf("expected end_date in response, got %+v", res.Body)
++	}
++	if _, hasAmount := res.Body["amount"]; hasAmount {
++		t.Fatalf("expiry response must not expose amount, got %+v", res.Body)
++	}
++}
++
++func TestExpiry_BranchOwner_OtherBranch_Forbidden(t *testing.T) {
++	e := getEnv(t)
++	ownerToken := e.accessToken(1, "owner", nil)
++	created := e.do(http.MethodPost, "/api/v1/contracts", createContractBody(100, 300, 12, 5), ownerToken)
++	e.mustOK(created, http.StatusCreated)
++	id := toPathID(created.Body["id"])
++
++	otherBranch := int64(6)
++	branchOwnerToken := e.accessToken(51, "branch_owner", &otherBranch)
++
++	res := e.do(http.MethodGet, "/api/v1/contracts/"+id+"/expiry", nil, branchOwnerToken)
++	e.mustOK(res, http.StatusForbidden)
++}
++
++func TestExpiry_Parent_OwnChild_Success(t *testing.T) {
++	e := getEnv(t)
++	ownerToken := e.accessToken(1, "owner", nil)
++	created := e.do(http.MethodPost, "/api/v1/contracts", createContractBody(100, 300, 12, 5), ownerToken)
++	e.mustOK(created, http.StatusCreated)
++	id := toPathID(created.Body["id"])
++
++	e.children.set(300, 100)
++	parentToken := e.accessToken(300, "parent", nil)
++
++	res := e.do(http.MethodGet, "/api/v1/contracts/"+id+"/expiry", nil, parentToken)
++	e.mustOK(res, http.StatusOK)
++}
++
++func TestExpiry_Parent_NotOwnChild_Forbidden(t *testing.T) {
++	e := getEnv(t)
++	ownerToken := e.accessToken(1, "owner", nil)
++	created := e.do(http.MethodPost, "/api/v1/contracts", createContractBody(100, 300, 12, 5), ownerToken)
++	e.mustOK(created, http.StatusCreated)
++	id := toPathID(created.Body["id"])
++
++	e.children.set(301, 999) // чужой ребёнок
++	parentToken := e.accessToken(301, "parent", nil)
++
++	res := e.do(http.MethodGet, "/api/v1/contracts/"+id+"/expiry", nil, parentToken)
++	e.mustOK(res, http.StatusForbidden)
++}
++
++func TestExpiry_Owner_Forbidden(t *testing.T) {
++	// У owner уже есть полный 3.3 — облегчённый 3.3a ему не открыт по контракту.
++	e := getEnv(t)
++	ownerToken := e.accessToken(1, "owner", nil)
++	created := e.do(http.MethodPost, "/api/v1/contracts", createContractBody(100, 300, 12, 5), ownerToken)
++	e.mustOK(created, http.StatusCreated)
++	id := toPathID(created.Body["id"])
++
++	res := e.do(http.MethodGet, "/api/v1/contracts/"+id+"/expiry", nil, ownerToken)
++	e.mustOK(res, http.StatusForbidden)
++}
++
++// --- 3.4. PATCH /contracts/{id} --------------------------------------------
++
++func TestUpdateContractFields(t *testing.T) {
++	e := getEnv(t)
++	ownerToken := e.accessToken(1, "owner", nil)
++	created := e.do(http.MethodPost, "/api/v1/contracts", createContractBody(100, 300, 12, 1), ownerToken)
++	e.mustOK(created, http.StatusCreated)
++	id := toPathID(created.Body["id"])
++
++	res := e.do(http.MethodPatch, "/api/v1/contracts/"+id, map[string]any{
++		"end_date": "2027-06-30",
++		"amount":   5000,
++	}, ownerToken)
++	e.mustOK(res, http.StatusOK)
++	if res.Body["amount"] != float64(5000) {
++		t.Fatalf("expected amount updated to 5000, got %+v", res.Body["amount"])
++	}
++}
++
++// --- 3.5. PATCH /contracts/{id}/status -------------------------------------
++
++func TestUpdateContractStatus_Invalid(t *testing.T) {
++	e := getEnv(t)
++	ownerToken := e.accessToken(1, "owner", nil)
++	created := e.do(http.MethodPost, "/api/v1/contracts", createContractBody(100, 300, 12, 1), ownerToken)
++	e.mustOK(created, http.StatusCreated)
++	id := toPathID(created.Body["id"])
++
++	res := e.do(http.MethodPatch, "/api/v1/contracts/"+id+"/status", map[string]any{
++		"status": "not-a-real-status",
++	}, ownerToken)
++	e.mustOK(res, http.StatusBadRequest)
++}
++
++// --- 3.6. PATCH /contracts/{id}/payment-status -----------------------------
++
++func TestUpdatePaymentStatus(t *testing.T) {
++	e := getEnv(t)
++	ownerToken := e.accessToken(1, "owner", nil)
++	created := e.do(http.MethodPost, "/api/v1/contracts", createContractBody(100, 300, 12, 1), ownerToken)
++	e.mustOK(created, http.StatusCreated)
++	id := toPathID(created.Body["id"])
++
++	e.mustOK(e.do(http.MethodPatch, "/api/v1/contracts/"+id+"/payment-status", map[string]any{
++		"payment_status": "paid",
++	}, ownerToken), http.StatusOK)
++
++	get := e.do(http.MethodGet, "/api/v1/contracts/"+id, nil, ownerToken)
++	e.mustOK(get, http.StatusOK)
++	if get.Body["payment_status"] != "paid" {
++		t.Fatalf("expected payment_status=paid, got %+v", get.Body["payment_status"])
++	}
++}
++
++func TestUpdatePaymentStatus_Invalid(t *testing.T) {
++	e := getEnv(t)
++	ownerToken := e.accessToken(1, "owner", nil)
++	created := e.do(http.MethodPost, "/api/v1/contracts", createContractBody(100, 300, 12, 1), ownerToken)
++	e.mustOK(created, http.StatusCreated)
++	id := toPathID(created.Body["id"])
++
++	res := e.do(http.MethodPatch, "/api/v1/contracts/"+id+"/payment-status", map[string]any{
++		"payment_status": "half-paid",
++	}, ownerToken)
++	e.mustOK(res, http.StatusBadRequest)
++}
++
++// --- 3.7. DELETE /contracts/{id} --------------------------------------------
++
++func TestDeleteContract_Owner(t *testing.T) {
++	e := getEnv(t)
++	ownerToken := e.accessToken(1, "owner", nil)
++	created := e.do(http.MethodPost, "/api/v1/contracts", createContractBody(100, 300, 12, 1), ownerToken)
++	e.mustOK(created, http.StatusCreated)
++	id := toPathID(created.Body["id"])
++
++	e.mustOK(e.do(http.MethodDelete, "/api/v1/contracts/"+id, nil, ownerToken), http.StatusOK)
++	e.mustOK(e.do(http.MethodGet, "/api/v1/contracts/"+id, nil, ownerToken), http.StatusNotFound)
++}
++
++func TestDeleteContract_NonOwner_Forbidden(t *testing.T) {
++	e := getEnv(t)
++	parentToken := e.accessToken(300, "parent", nil)
++
++	res := e.do(http.MethodDelete, "/api/v1/contracts/1", nil, parentToken)
++	e.mustOK(res, http.StatusForbidden)
++}
+diff --git a/study-room-backend/contracts-service/tests/contracts/setup_test.go b/study-room-backend/contracts-service/tests/contracts/setup_test.go
+new file mode 100644
+index 0000000..b745607
+--- /dev/null
++++ b/study-room-backend/contracts-service/tests/contracts/setup_test.go
+@@ -0,0 +1,357 @@
++package contracts_test
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"fmt"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"os"
++	"path/filepath"
++	"runtime"
++	"strconv"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/golang-jwt/jwt/v5"
++	"github.com/jackc/pgx/v5/pgxpool"
++
++	"studyroom/contracts-service/internal/app"
++	"studyroom/contracts-service/internal/auth"
++	"studyroom/contracts-service/internal/events"
++	"studyroom/contracts-service/internal/migrate"
++	"studyroom/contracts-service/internal/models"
++)
++
++const defaultTestDSN = "postgres://contracts_service:devpassword123@localhost:5437/study_room_contracts?sslmode=disable"
++
++const testJWTSecret = "test-jwt-secret-for-contracts"
++
++var (
++	shared     *env
++	sharedOnce sync.Once
++	sharedErr  error
++
++	reportMu   sync.Mutex
++	reportFile *os.File
++	reportPath string
++)
++
++func TestMain(m *testing.M) {
++	_, thisFile, _, _ := runtime.Caller(0)
++	dir := filepath.Join(filepath.Dir(thisFile), "results")
++	_ = os.MkdirAll(dir, 0o755)
++	reportPath = filepath.Join(dir, "last-run.log")
++
++	f, err := os.Create(reportPath)
++	if err != nil {
++		fmt.Fprintf(os.Stderr, "cannot create report file %s: %v\n", reportPath, err)
++		os.Exit(1)
++	}
++	reportFile = f
++	writeReport("Study Room — contracts-service contract tests\n")
++	writeReport("started: %s\n\n", time.Now().Format(time.RFC3339))
++
++	code := m.Run()
++
++	writeReport("\nfinished: %s\nexit code: %d\n", time.Now().Format(time.RFC3339), code)
++	_ = reportFile.Close()
++
++	abs, _ := filepath.Abs(reportPath)
++	fmt.Printf("\ncontract test report: %s\n", abs)
++	os.Exit(code)
++}
++
++func writeReport(format string, args ...any) {
++	reportMu.Lock()
++	defer reportMu.Unlock()
++	if reportFile == nil {
++		return
++	}
++	_, _ = fmt.Fprintf(reportFile, format, args...)
++}
++
++// fakeChildrenResolver подменяет реальный HTTP-поход в User Service
++// (GET /parents/{id}/children, см. internal/userclient). Тесты явно
++// прописывают, кто чей ребёнок, вместо поднятия второго сервиса.
++type fakeChildrenResolver struct {
++	mu       sync.Mutex
++	children map[int64][]int64 // parentID -> []studentID
++}
++
++func newFakeChildrenResolver() *fakeChildrenResolver {
++	return &fakeChildrenResolver{children: map[int64][]int64{}}
++}
++
++func (f *fakeChildrenResolver) Children(_ context.Context, _ string, parentID int64) ([]int64, error) {
++	f.mu.Lock()
++	defer f.mu.Unlock()
++	return f.children[parentID], nil
++}
++
++func (f *fakeChildrenResolver) set(parentID int64, studentIDs ...int64) {
++	f.mu.Lock()
++	defer f.mu.Unlock()
++	f.children[parentID] = studentIDs
++}
++
++type env struct {
++	t        testing.TB
++	pool     *pgxpool.Pool
++	deps     *app.Deps
++	router   http.Handler
++	tm       *auth.TokenManager
++	children *fakeChildrenResolver
++}
++
++func (e *env) logf(format string, args ...any) {
++	e.t.Helper()
++	msg := fmt.Sprintf(format, args...)
++	writeReport("%s\n", msg)
++	e.t.Log(msg)
++}
++
++func getEnv(t *testing.T) *env {
++	t.Helper()
++	sharedOnce.Do(func() {
++		dsn := os.Getenv("TEST_DATABASE_URL")
++		if dsn == "" {
++			dsn = defaultTestDSN
++		}
++		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
++		defer cancel()
++
++		pool, err := pgxpool.New(ctx, dsn)
++		if err != nil {
++			sharedErr = fmt.Errorf("connect TEST_DATABASE_URL: %w (start postgres: docker compose up -d postgres-contracts)", err)
++			return
++		}
++		if err := pool.Ping(ctx); err != nil {
++			pool.Close()
++			sharedErr = fmt.Errorf("ping DB: %w (expected %s)", err, dsn)
++			return
++		}
++		if err := migrate.Run(ctx, pool); err != nil {
++			pool.Close()
++			sharedErr = fmt.Errorf("migrate: %w", err)
++			return
++		}
++
++		tm := auth.NewTokenManager(testJWTSecret)
++		children := newFakeChildrenResolver()
++		deps := app.NewDeps(pool, tm, "http://unused-in-tests.invalid", events.NoopPublisher{})
++		deps.UserClient = children
++
++		shared = &env{
++			pool:     pool,
++			deps:     deps,
++			router:   app.NewRouter(deps),
++			tm:       tm,
++			children: children,
++		}
++	})
++	if sharedErr != nil {
++		t.Skip(sharedErr.Error())
++	}
++	e := *shared
++	e.t = t
++	e.reset(t)
++	e.logf("═══ %s ═══", t.Name())
++	return &e
++}
++
++func (e *env) reset(t *testing.T) {
++	t.Helper()
++	ctx := context.Background()
++	_, err := e.pool.Exec(ctx, `
++		TRUNCATE TABLE
++			contracts,
++			user_refs
++		RESTART IDENTITY CASCADE
++	`)
++	if err != nil {
++		t.Fatalf("truncate: %v", err)
++	}
++	e.children.mu.Lock()
++	e.children.children = map[int64][]int64{}
++	e.children.mu.Unlock()
++}
++
++// seedUserRef кладёт запись в user_refs напрямую — эквивалент события
++// user.created/user.updated, но без похода через NATS в тесте.
++func (e *env) seedUserRef(id int64, fullName string, role models.Role, branchID *int64) {
++	e.t.Helper()
++	if err := e.deps.UserRefs.Upsert(context.Background(), &models.UserRef{
++		UserID: id, FullName: fullName, Role: role, BranchID: branchID,
++	}); err != nil {
++		e.t.Fatalf("seed user_ref id=%d: %v", id, err)
++	}
++	e.logf("  [DB] user_refs id=%d role=%s branch_id=%v", id, role, branchID)
++}
++
++// accessToken выпускает валидный JWT с тем же секретом, что проверяет
++// сервис — Contracts Service не выпускает токены сам (это делает User
++// Service), поэтому в тесте подписываем вручную через тот же auth.Claims.
++func (e *env) accessToken(userID int64, role models.Role, branchID *int64) string {
++	e.t.Helper()
++	claims := auth.Claims{
++		UserID:   userID,
++		Role:     role,
++		BranchID: branchID,
++		RegisteredClaims: jwt.RegisteredClaims{
++			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
++			IssuedAt:  jwt.NewNumericDate(time.Now()),
++		},
++	}
++	tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(testJWTSecret))
++	if err != nil {
++		e.t.Fatalf("sign token: %v", err)
++	}
++	e.logf("  [JWT] access for user_id=%d role=%s → %s", userID, role, truncate(tok, 24))
++	return tok
++}
++
++type apiResult struct {
++	Status int
++	Body   map[string]any
++	Raw    []byte
++}
++
++// do выполняет запрос с Authorization: Bearer <token> (или без него, если token == "").
++func (e *env) do(method, path string, body any, token string) apiResult {
++	return e.request(method, path, body, map[string]string{
++		"Authorization": bearerOrEmpty(token),
++	})
++}
++
++func bearerOrEmpty(token string) string {
++	if token == "" {
++		return ""
++	}
++	return "Bearer " + token
++}
++
++func (e *env) request(method, path string, body any, headers map[string]string) apiResult {
++	e.t.Helper()
++
++	var rawBody []byte
++	var reader io.Reader
++	if body != nil {
++		b, err := json.Marshal(body)
++		if err != nil {
++			e.t.Fatalf("marshal: %v", err)
++		}
++		rawBody = b
++		reader = bytes.NewReader(b)
++	}
++
++	e.logf("┌─ %s", e.t.Name())
++	e.logf("│  → %s %s", method, path)
++	for k, v := range headers {
++		if v != "" {
++			e.logf("│    %s: %s", k, truncate(v, 40))
++		}
++	}
++	if len(rawBody) > 0 {
++		e.logf("│    request body:\n%s", indentJSON(rawBody, "│      "))
++	} else {
++		e.logf("│    request body: (empty)")
++	}
++
++	req := httptest.NewRequest(method, path, reader)
++	if body != nil {
++		req.Header.Set("Content-Type", "application/json")
++	}
++	for k, v := range headers {
++		if v != "" {
++			req.Header.Set(k, v)
++		}
++	}
++	rr := httptest.NewRecorder()
++	e.router.ServeHTTP(rr, req)
++
++	raw := rr.Body.Bytes()
++	out := apiResult{Status: rr.Code, Raw: raw, Body: map[string]any{}}
++	if len(raw) > 0 {
++		_ = json.Unmarshal(raw, &out.Body)
++	}
++
++	e.logf("│  ← %d %s", out.Status, http.StatusText(out.Status))
++	if len(raw) > 0 {
++		e.logf("│    response body:\n%s", indentJSON(raw, "│      "))
++	} else {
++		e.logf("│    response body: (empty)")
++	}
++	e.logf("└─")
++
++	return out
++}
++
++func (e *env) mustOK(res apiResult, want int) {
++	e.t.Helper()
++	if res.Status != want {
++		msg := fmt.Sprintf("status=%d want=%d body=%s", res.Status, want, string(res.Raw))
++		writeReport("  ✗ FAIL: %s\n", msg)
++		e.t.Fatalf("%s", msg)
++	}
++	e.logf("  ✓ expect status %d — ok", want)
++}
++
++func truncate(s string, n int) string {
++	if len(s) <= n {
++		return s
++	}
++	return s[:n] + "…"
++}
++
++func indentJSON(raw []byte, prefix string) string {
++	var pretty bytes.Buffer
++	if err := json.Indent(&pretty, raw, "", "  "); err != nil {
++		return prefix + string(raw)
++	}
++	lines := bytes.Split(pretty.Bytes(), []byte("\n"))
++	var out bytes.Buffer
++	for i, line := range lines {
++		out.WriteString(prefix)
++		out.Write(line)
++		if i < len(lines)-1 {
++			out.WriteByte('\n')
++		}
++	}
++	return out.String()
++}
++
++func errCode(res apiResult) string {
++	errObj, _ := res.Body["error"].(map[string]any)
++	if errObj == nil {
++		return ""
++	}
++	code, _ := errObj["code"].(string)
++	return code
++}
++
++func asSlice(v any) []any {
++	if v == nil {
++		return nil
++	}
++	s, _ := v.([]any)
++	return s
++}
++
++// toPathID превращает id, пришедший из JSON-ответа (float64), в строку без
++// дробной части — например, для подстановки в URL вида /contracts/{id}.
++func toPathID(v any) string {
++	switch n := v.(type) {
++	case float64:
++		return strconv.FormatInt(int64(n), 10)
++	case int64:
++		return strconv.FormatInt(n, 10)
++	case int:
++		return strconv.Itoa(n)
++	default:
++		return fmt.Sprintf("%v", v)
++	}
++}
+diff --git a/study-room-backend/docker-compose.yml b/study-room-backend/docker-compose.yml
+index f4ee7a9..666ddd8 100644
+--- a/study-room-backend/docker-compose.yml
++++ b/study-room-backend/docker-compose.yml
+@@ -138,6 +138,50 @@ services:
+       - studyroom-network
+     restart: unless-stopped
+ 
++  # ---------- Contracts Service ----------
++  postgres-contracts:
++    image: postgres:16-alpine
++    environment:
++      POSTGRES_DB: study_room_contracts
++      POSTGRES_USER: contracts_service
++      POSTGRES_PASSWORD: ${CONTRACTS_DB_PASSWORD:-devpassword123}
++    ports:
++      - "5437:5432" # для локальных контрактных тестов (TEST_DATABASE_URL)
++    volumes:
++      - postgres_contracts_data:/var/lib/postgresql/data
++    healthcheck:
++      test: ["CMD-SHELL", "pg_isready -U contracts_service -d study_room_contracts"]
++      interval: 5s
++      timeout: 5s
++      retries: 10
++    networks:
++      - studyroom-network
++
++  contracts-service:
++    build:
++      context: ./contracts-service
++    environment:
++      PORT: 8083
++      DATABASE_URL: postgres://contracts_service:${CONTRACTS_DB_PASSWORD:-devpassword123}@postgres-contracts:5432/study_room_contracts?sslmode=disable
++      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
++      NATS_URL: nats://nats:4222
++      # Единственный синхронный HTTP-вызов Contracts Service — проверка
++      # "чьи дети" у parent (GET /parents/{id}/children) для
++      # GET /contracts/{id}/expiry, см. internal/userclient.
++      USER_SERVICE_URL: http://user-service:8081
++    ports:
++      - "8083:8083"
++    depends_on:
++      postgres-contracts:
++        condition: service_healthy
++      nats:
++        condition: service_started
++      user-service:
++        condition: service_started
++    networks:
++      - studyroom-network
++    restart: unless-stopped
++
+   # ---------- CRM Service ----------
+   postgres-crm:
+     image: postgres:16-alpine
+@@ -180,8 +224,8 @@ services:
+       - studyroom-network
+     restart: unless-stopped
+ 
+-  # ---------- Следующие сервисы (заготовки — раскомментировать по мере реализации) ----------
+-  # (аналогично: postgres-contracts/contracts-service)
++  # ---------- Следующие сервисы (пока не реализованы) ----------
++  # (Gateway/BFF — см. microservices-plan.md, п.10)
+ 
+ networks:
+   studyroom-network:
+@@ -192,4 +236,4 @@ volumes:
+   postgres_notifications_data:
+   postgres_academic_data:
+   postgres_crm_data:
+-  # postgres_contracts_data:
+\ No newline at end of file
++  postgres_contracts_data:
+\ No newline at end of file

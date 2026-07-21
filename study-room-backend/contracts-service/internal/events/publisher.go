@@ -1,0 +1,85 @@
+// Package events — публикация contract.created и contract.expiring_soon
+// (см. event-schema.md — это источник истины по форме payload, сверено
+// перед реализацией, а не реконструировано заново из REST-тела).
+package events
+
+import (
+	"encoding/json"
+	"log"
+
+	"github.com/nats-io/nats.go"
+)
+
+const (
+	SubjectContractCreated      = "contract.created"
+	SubjectContractExpiringSoon = "contract.expiring_soon"
+)
+
+type Publisher interface {
+	ContractCreated(id, studentID, courseID int64, tutorID *int64, startDate, endDate *string)
+	ContractExpiringSoon(userID int64, contractNumber, endDate string)
+}
+
+type NoopPublisher struct{}
+
+func (NoopPublisher) ContractCreated(int64, int64, int64, *int64, *string, *string) {}
+func (NoopPublisher) ContractExpiringSoon(int64, string, string)                     {}
+
+type contractCreatedPayload struct {
+	ID        int64   `json:"id"`
+	StudentID int64   `json:"student_id"`
+	CourseID  int64   `json:"course_id"`
+	TutorID   *int64  `json:"tutor_id"`
+	StartDate *string `json:"start_date"`
+	EndDate   *string `json:"end_date"`
+}
+
+type contractExpiringSoonPayload struct {
+	UserID         int64  `json:"user_id"`
+	ContractNumber string `json:"contract_number"`
+	EndDate        string `json:"end_date"`
+}
+
+type NATSPublisher struct {
+	nc *nats.Conn
+}
+
+func NewNATSPublisher(nc *nats.Conn) *NATSPublisher {
+	return &NATSPublisher{nc: nc}
+}
+
+// ContractCreated — основной путь наполнения enrollments в Academic
+// Service (см. academic-service/internal/events/subscriber.go,
+// handleContractCreated). tutor_id всегда nil — POST /contracts не
+// принимает tutor_id (см. api-contracts.md 3.1), назначение репетитора на
+// enrollment — отдельное действие уже на стороне Academic Service.
+func (p *NATSPublisher) ContractCreated(id, studentID, courseID int64, tutorID *int64, startDate, endDate *string) {
+	data, err := json.Marshal(contractCreatedPayload{
+		ID: id, StudentID: studentID, CourseID: courseID,
+		TutorID: tutorID, StartDate: startDate, EndDate: endDate,
+	})
+	if err != nil {
+		log.Printf("[events] marshal contract.created error: %v", err)
+		return
+	}
+	if err := p.nc.Publish(SubjectContractCreated, data); err != nil {
+		log.Printf("[events] publish contract.created error: %v", err)
+	}
+}
+
+func (p *NATSPublisher) ContractExpiringSoon(userID int64, contractNumber, endDate string) {
+	if userID == 0 {
+		log.Printf("[events] contract.expiring_soon: empty user_id, skip publish (contract=%s)", contractNumber)
+		return
+	}
+	data, err := json.Marshal(contractExpiringSoonPayload{
+		UserID: userID, ContractNumber: contractNumber, EndDate: endDate,
+	})
+	if err != nil {
+		log.Printf("[events] marshal contract.expiring_soon error: %v", err)
+		return
+	}
+	if err := p.nc.Publish(SubjectContractExpiringSoon, data); err != nil {
+		log.Printf("[events] publish contract.expiring_soon error: %v", err)
+	}
+}
