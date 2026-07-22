@@ -23,6 +23,15 @@ curl http://localhost:8085/healthz  # notification-service
 curl http://localhost:8082/healthz  # academic-service
 ```
 
+Документация Swagger для user-service доступна по адресу:
+```bash
+http://localhost:8081/docs
+```
+И OpenAPI-спецификация:
+```bash
+http://localhost:8081/openapi.yaml
+```
+
 Зарегистрировать первого пользователя (родителя):
 ```bash
 curl -X POST http://localhost:8081/api/v1/auth/register \

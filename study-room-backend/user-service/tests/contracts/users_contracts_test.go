@@ -245,8 +245,8 @@ func TestContract_1_11_CreateTutor_OwnerOnly(t *testing.T) {
 	if userMap(ok.Body["user"])["role"] != "tutor" {
 		t.Fatalf("user=%v", ok.Body["user"])
 	}
-	if ok.Body["temp_password"] == nil || ok.Body["temp_password"] == "" {
-		t.Fatal("expected temp_password")
+	if _, has := ok.Body["temp_password"]; has {
+		t.Fatal("temp_password must not be returned in CreateTutor response")
 	}
 
 	forbidden := e.do("POST", "/api/v1/users/tutors", map[string]any{

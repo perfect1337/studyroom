@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
+	"time"
 
 	"studyroom/user-service/internal/auth"
 	"studyroom/user-service/internal/models"
@@ -182,5 +184,57 @@ func TestRequireRoles_NoAuthContext(t *testing.T) {
 
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("status=%d want=401", rr.Code)
+	}
+}
+
+func TestRequestIDMiddleware_SetsHeader(t *testing.T) {
+	handler := RequestID(okHandler())
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/anything", nil)
+	handler.ServeHTTP(rr, req)
+
+	if got := rr.Header().Get(RequestIDHeader); got == "" {
+		t.Fatal("expected X-Request-ID header to be set")
+	}
+}
+
+func TestRequestIDMiddleware_PreservesHeader(t *testing.T) {
+	const customID = "custom-request-id"
+	handler := RequestID(okHandler())
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/anything", nil)
+	req.Header.Set(RequestIDHeader, customID)
+	handler.ServeHTTP(rr, req)
+
+	if got := rr.Header().Get(RequestIDHeader); got != customID {
+		t.Fatalf("expected X-Request-ID=%q, got=%q", customID, got)
+	}
+}
+
+func TestRateLimitMiddleware_LimitsByIP(t *testing.T) {
+	limiter := NewIPRateLimiter(2, time.Minute)
+	handler := RateLimit(limiter)(okHandler())
+	for i := 1; i <= 2; i++ {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/auth/login", nil)
+		req.RemoteAddr = "192.0.2.1:1234"
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("request %d: expected status 200, got %d", i, rr.Code)
+		}
+		if got := rr.Header().Get("X-RateLimit-Remaining"); got != strconv.Itoa(2-i) {
+			t.Fatalf("request %d: expected X-RateLimit-Remaining=%d, got=%q", i, 2-i, got)
+		}
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/auth/login", nil)
+	req.RemoteAddr = "192.0.2.1:1234"
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected status 429 after limit exceeded, got %d", rr.Code)
+	}
+	if got := rr.Header().Get("Retry-After"); got != "60" {
+		t.Fatalf("expected Retry-After=60, got=%q", got)
 	}
 }

@@ -350,7 +350,7 @@ func (h *UserHandler) CreateTutor(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.events.UserCreated(created, tempPassword, "", nil)
-	writeJSON(w, http.StatusCreated, map[string]any{"user": created, "temp_password": tempPassword})
+	writeJSON(w, http.StatusCreated, map[string]any{"user": created})
 }
 
 // --- 1.12. POST /users/students ---

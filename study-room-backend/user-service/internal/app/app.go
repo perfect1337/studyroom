@@ -2,12 +2,14 @@ package app
 
 import (
 	"net/http"
+	"time"
 
 	"studyroom/user-service/internal/auth"
 	"studyroom/user-service/internal/events"
 	"studyroom/user-service/internal/handlers"
 	"studyroom/user-service/internal/middleware"
 	"studyroom/user-service/internal/models"
+	"studyroom/user-service/internal/openapi"
 	"studyroom/user-service/internal/repository"
 
 	"github.com/go-chi/chi/v5"
@@ -51,14 +53,24 @@ func NewRouter(d *Deps) http.Handler {
 	tutorHandler := handlers.NewTutorHandler(d.TutorProfiles, d.Users)
 
 	r := chi.NewRouter()
+	r.Use(middleware.RequestID)
+	r.Use(middleware.Logging)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 
+	authLimiter := middleware.NewIPRateLimiter(15, time.Minute)
+
+	r.Get("/openapi.yaml", openapi.SpecHandler)
+	r.Get("/docs", openapi.DocsHandler)
+
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Post("/auth/register", authHandler.Register)
-		r.Post("/auth/login", authHandler.Login)
-		r.Post("/auth/refresh", authHandler.Refresh)
-		r.Post("/auth/forgot-password", authHandler.ForgotPassword)
-		r.Post("/auth/reset-password", authHandler.ResetPassword)
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RateLimit(authLimiter))
+			r.Post("/auth/register", authHandler.Register)
+			r.Post("/auth/login", authHandler.Login)
+			r.Post("/auth/refresh", authHandler.Refresh)
+			r.Post("/auth/forgot-password", authHandler.ForgotPassword)
+			r.Post("/auth/reset-password", authHandler.ResetPassword)
+		})
 
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth(d.TM))
