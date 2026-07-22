@@ -14,7 +14,9 @@ User Service публикует в NATS:
 | `user.updated` | upsert `users_ref` |
 | `password_reset_requested` | письмо со ссылкой сброса |
 
-Оба сервиса в compose подключены к `nats://nats:4222`. Нужен один и тот же `JWT_SECRET`.
+Оба сервиса в compose подключены к `nats://nats:4222`. Notification Service теперь подписывается в очередь `notification-service` —
+это означает, что при горизонтальном масштабировании только один экземпляр обрабатывает каждое событие.
+Нужен один и тот же `JWT_SECRET`.
 
 ## Настройка Яндекс SMTP
 
@@ -42,6 +44,11 @@ docker compose up --build nats user-service notification-service
 
 Проверка: зарегистрировать родителя → welcome-письмо; forgot-password → письмо со ссылкой;
 создать tutor (owner) → письмо с временным паролем.
+
+## Документация
+
+Notification Service теперь публикует Swagger UI на `/docs` и OpenAPI спецификацию на `/openapi.yaml`.
+Эти страницы доступны без аутентификации и помогают понять схему внешних и внутренних API.
 
 ## Что ещё не сделано
 

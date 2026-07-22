@@ -16,6 +16,7 @@ import (
 	"studyroom/notification-service/internal/mailer"
 	"studyroom/notification-service/internal/middleware"
 	"studyroom/notification-service/internal/notifier"
+	"studyroom/notification-service/internal/openapi"
 	"studyroom/notification-service/internal/repository"
 )
 
@@ -58,7 +59,11 @@ func NewRouter(d *Deps) http.Handler {
 	internalHandler := handlers.NewInternalHandler(d.Notifier, d.UsersRef)
 
 	r := chi.NewRouter()
+	r.Use(middleware.RequestID)
+	r.Use(middleware.Logging)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	r.Get("/openapi.yaml", openapi.SpecHandler)
+	r.Get("/docs", openapi.DocsHandler)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		// --- Требуют пользовательской авторизации ---

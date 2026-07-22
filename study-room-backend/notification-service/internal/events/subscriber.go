@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/nats-io/nats.go"
 	"studyroom/notification-service/internal/models"
@@ -14,17 +15,33 @@ import (
 )
 
 type Subscriber struct {
-	nc       *nats.Conn
-	notifier *notifier.Notifier
-	usersRef *repository.UserRefRepository
+	nc         *nats.Conn
+	notifier   *notifier.Notifier
+	usersRef   *repository.UserRefRepository
+	queueGroup string
 }
 
+const defaultQueueGroup = "notification-service"
+
 func Connect(url string) (*nats.Conn, error) {
-	return nats.Connect(url, nats.MaxReconnects(-1), nats.Name("notification-service"))
+	return nats.Connect(url,
+		nats.MaxReconnects(-1),
+		nats.ReconnectWait(2*time.Second),
+		nats.Name("notification-service"),
+		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
+			log.Printf("events: disconnected from NATS: %v", err)
+		}),
+		nats.ReconnectHandler(func(nc *nats.Conn) {
+			log.Printf("events: reconnected to NATS at %s", nc.ConnectedUrl())
+		}),
+		nats.ClosedHandler(func(nc *nats.Conn) {
+			log.Printf("events: NATS connection closed, last error: %v", nc.LastError())
+		}),
+	)
 }
 
 func NewSubscriber(nc *nats.Conn, n *notifier.Notifier, usersRef *repository.UserRefRepository) *Subscriber {
-	return &Subscriber{nc: nc, notifier: n, usersRef: usersRef}
+	return &Subscriber{nc: nc, notifier: n, usersRef: usersRef, queueGroup: defaultQueueGroup}
 }
 
 type userEvent struct {
@@ -82,21 +99,24 @@ type applicationReceivedEvent struct {
 
 func (s *Subscriber) Start(ctx context.Context) error {
 	handlers := map[string]nats.MsgHandler{
-		"user.created":               s.handleUserCreated,
-		"user.updated":               s.handleUserUpdated,
-		"password_reset_requested":   s.handlePasswordReset,
-		"contract.expiring_soon":     s.handleContractExpiring,
-		"lesson.created":             s.handleLessonReminder,
-		"attendance.marked_absent":   s.handleAttendanceAbsent,
-		"application.received":       s.handleApplicationReceived,
+		"user.created":             s.handleUserCreated,
+		"user.updated":             s.handleUserUpdated,
+		"password_reset_requested": s.handlePasswordReset,
+		"contract.expiring_soon":   s.handleContractExpiring,
+		"lesson.created":           s.handleLessonReminder,
+		"attendance.marked_absent": s.handleAttendanceAbsent,
+		"application.received":     s.handleApplicationReceived,
 	}
 
 	for subject, handler := range handlers {
-		if _, err := s.nc.Subscribe(subject, handler); err != nil {
+		if _, err := s.nc.QueueSubscribe(subject, s.queueGroup, handler); err != nil {
 			return err
 		}
 	}
-	log.Println("events: subscribed to user.*, password_reset_requested, contract/lesson/attendance/application")
+	if err := s.nc.Flush(); err != nil {
+		return err
+	}
+	log.Printf("events: subscribed to %d subjects in queue group %q", len(handlers), s.queueGroup)
 	return nil
 }
 
