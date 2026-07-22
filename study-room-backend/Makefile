@@ -42,6 +42,9 @@ test-user: ## Контрактные тесты user-service
 test-academic: ## Контрактные тесты academic-service
 	cd academic-service && $(MAKE) test
 
+test-load: ## Запустить cross-service load/integration тесты
+	cd tests/load && go test -v ./...
+
 help:
 	@awk 'BEGIN {FS = ":.*##"; printf "\033[36m%-25s\033[0m %s\n", "Target", "Description"} \
 	       /^[a-zA-Z_-]+:.*##/ { printf "\033[36m%-25s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
