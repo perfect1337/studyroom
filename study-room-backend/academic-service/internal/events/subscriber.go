@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"time"
 
 	"github.com/nats-io/nats.go"
 	"studyroom/academic-service/internal/models"
@@ -44,7 +45,20 @@ type ContractCreatedEvent struct {
 }
 
 func Connect(url string) (*nats.Conn, error) {
-	return nats.Connect(url, nats.MaxReconnects(-1), nats.Name("academic-service"))
+	return nats.Connect(url,
+		nats.MaxReconnects(-1),
+		nats.ReconnectWait(2*time.Second),
+		nats.Name("academic-service"),
+		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
+			log.Printf("[events] NATS disconnected: %v", err)
+		}),
+		nats.ReconnectHandler(func(nc *nats.Conn) {
+			log.Printf("[events] NATS reconnected to %s", nc.ConnectedUrl())
+		}),
+		nats.ClosedHandler(func(nc *nats.Conn) {
+			log.Printf("[events] NATS connection closed: %v", nc.LastError())
+		}),
+	)
 }
 
 type Subscriber struct {

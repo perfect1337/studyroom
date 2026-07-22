@@ -32,6 +32,15 @@ http://localhost:8081/docs
 http://localhost:8081/openapi.yaml
 ```
 
+Документация Swagger для academic-service доступна по адресу:
+```bash
+http://localhost:8082/docs
+```
+И OpenAPI-спецификация:
+```bash
+http://localhost:8082/openapi.yaml
+```
+
 Зарегистрировать первого пользователя (родителя):
 ```bash
 curl -X POST http://localhost:8081/api/v1/auth/register \

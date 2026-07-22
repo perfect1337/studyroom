@@ -47,6 +47,11 @@ docker compose up --build nats user-service postgres-academic academic-service
 curl http://localhost:8082/healthz
 ```
 
+## Документация
+
+Academic Service теперь публикует Swagger UI на `/docs` и OpenAPI спецификацию на `/openapi.yaml`.
+Это позволяет быстрее понять, какие API доступны и какие параметры ожидаются.
+
 ## Тесты
 
 ```bash

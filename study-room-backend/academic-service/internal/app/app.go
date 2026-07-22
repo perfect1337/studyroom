@@ -9,6 +9,7 @@ import (
 	"studyroom/academic-service/internal/handlers"
 	"studyroom/academic-service/internal/middleware"
 	"studyroom/academic-service/internal/models"
+	"studyroom/academic-service/internal/openapi"
 	"studyroom/academic-service/internal/repository"
 	"studyroom/academic-service/internal/userclient"
 
@@ -58,8 +59,12 @@ func NewRouter(d *Deps) http.Handler {
 	homeworkHandler := handlers.NewHomeworkHandler(d.Homework, d.UserRefs, d.UserClient)
 
 	r := chi.NewRouter()
+	r.Use(middleware.RequestID)
+	r.Use(middleware.Logging)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-
+	r.Get("/openapi.yaml", openapi.SpecHandler)
+	r.Get("/docs", openapi.DocsHandler)
+ 
 	r.Route("/api/v1/academic", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth(d.TM))

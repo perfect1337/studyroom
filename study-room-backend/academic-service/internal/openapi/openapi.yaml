@@ -1,0 +1,336 @@
+openapi: 3.1.0
+info:
+  title: Academic Service API
+  version: 1.0.0
+  description: API for academic operations, lesson planning, enrollments, attendance, and homework.
+servers:
+  - url: /api/v1/academic
+security:
+  - bearerAuth: []
+paths:
+  /courses:
+    get:
+      summary: List courses
+      responses:
+        '200':
+          description: Courses list
+    post:
+      summary: Create a course
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CourseInput'
+      responses:
+        '201':
+          description: Course created
+  /courses/{id}:
+    patch:
+      summary: Update a course
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CourseInput'
+      responses:
+        '200':
+          description: Updated course
+    delete:
+      summary: Delete a course
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Course deleted
+  /enrollments:
+    get:
+      summary: List enrollments
+      responses:
+        '200':
+          description: Enrollment list
+    post:
+      summary: Create an enrollment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollmentInput'
+      responses:
+        '201':
+          description: Enrollment created
+  /enrollments/{id}:
+    patch:
+      summary: Update enrollment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollmentUpdate'
+      responses:
+        '200':
+          description: Enrollment updated
+  /enrollments/{id}/assign-tutor:
+    patch:
+      summary: Assign tutor to enrollment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tutor_id:
+                  type: integer
+              required:
+                - tutor_id
+      responses:
+        '200':
+          description: Tutor assigned
+  /lessons:
+    get:
+      summary: List lessons
+      responses:
+        '200':
+          description: Lesson list
+    post:
+      summary: Create a lesson
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LessonInput'
+      responses:
+        '201':
+          description: Lesson created
+  /lessons/{id}:
+    patch:
+      summary: Update lesson
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LessonUpdate'
+      responses:
+        '200':
+          description: Lesson updated
+    delete:
+      summary: Delete lesson
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lesson deleted
+  /lessons/{id}/attendance:
+    get:
+      summary: Get lesson attendance
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Attendance list
+    post:
+      summary: Mark attendance
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttendanceRequest'
+      responses:
+        '200':
+          description: Attendance marked
+  /homework:
+    get:
+      summary: List homework
+      responses:
+        '200':
+          description: Homework list
+    post:
+      summary: Create homework
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HomeworkInput'
+      responses:
+        '201':
+          description: Homework created
+  /homework/{id}/open:
+    get:
+      summary: Open homework details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '302':
+          description: Redirect to homework URL
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    CourseInput:
+      type: object
+      properties:
+        branch_id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+      required:
+        - branch_id
+        - name
+    EnrollmentInput:
+      type: object
+      properties:
+        course_id:
+          type: integer
+        student_id:
+          type: integer
+        tutor_id:
+          type: integer
+      required:
+        - course_id
+        - student_id
+    EnrollmentUpdate:
+      type: object
+      properties:
+        tutor_id:
+          type: integer
+        status:
+          type: string
+    LessonInput:
+      type: object
+      properties:
+        course_id:
+          type: integer
+        tutor_id:
+          type: integer
+        topic:
+          type: string
+        lesson_date:
+          type: string
+          format: date
+        start_time:
+          type: string
+        end_time:
+          type: string
+        location_type:
+          type: string
+        group_type:
+          type: string
+        comment:
+          type: string
+      required:
+        - course_id
+        - tutor_id
+        - topic
+        - lesson_date
+        - start_time
+        - end_time
+    LessonUpdate:
+      type: object
+      properties:
+        topic:
+          type: string
+        lesson_date:
+          type: string
+          format: date
+        start_time:
+          type: string
+        end_time:
+          type: string
+        location_type:
+          type: string
+        group_type:
+          type: string
+        status:
+          type: string
+        comment:
+          type: string
+        tutor_id:
+          type: integer
+    AttendanceRequest:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            type: object
+            properties:
+              student_id:
+                type: integer
+              status:
+                type: string
+              absence_reason:
+                type: string
+            required:
+              - student_id
+              - status
+      required:
+        - records
+    HomeworkInput:
+      type: object
+      properties:
+        lesson_id:
+          type: integer
+        description:
+          type: string
+      required:
+        - lesson_id
+        - description
