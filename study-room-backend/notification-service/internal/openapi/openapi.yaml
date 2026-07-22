@@ -94,7 +94,7 @@ paths:
   /internal/notifications/send:
     post:
       summary: Send a notification event
-      description: Internal endpoint used by other services to publish a notification event.
+      description: Internal endpoint used by other services to publish a notification event. The notification is queued for asynchronous delivery and the request returns once the message is accepted.
       security:
         - serviceToken: []
       requestBody:

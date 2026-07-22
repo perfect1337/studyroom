@@ -203,6 +203,19 @@ func (e *env) reset(t *testing.T) {
 	e.mail.reset()
 }
 
+func (e *env) waitForMailCount(expected int) {
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if e.mail.count() >= expected {
+			return
+		}
+		if time.Now().After(deadline) {
+			e.t.Fatalf("expected %d emails sent, got %d", expected, e.mail.count())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 // seedUserRef кладёт запись в users_ref напрямую (эквивалент POST /internal/users/sync
 // или события user.created, но без похода через HTTP/NATS в тесте).
 func (e *env) seedUserRef(id int64, email, firstName, lastName string) {

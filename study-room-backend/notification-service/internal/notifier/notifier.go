@@ -15,7 +15,20 @@ type Notifier struct {
 	settings      *repository.SettingsRepository
 	usersRef      *repository.UserRefRepository
 	mail          mailer.Sender
+	sendQueue     chan *sendJob
 }
+
+type sendJob struct {
+	notificationID int64
+	to             string
+	subject        string
+	body           string
+}
+
+const (
+	defaultSendQueueSize = 128
+	defaultSendWorkers   = 4
+)
 
 func New(
 	notifications *repository.NotificationRepository,
@@ -23,11 +36,22 @@ func New(
 	usersRef *repository.UserRefRepository,
 	mail mailer.Sender,
 ) *Notifier {
-	return &Notifier{notifications: notifications, settings: settings, usersRef: usersRef, mail: mail}
+	n := &Notifier{
+		notifications: notifications,
+		settings:      settings,
+		usersRef:      usersRef,
+		mail:          mail,
+		sendQueue:     make(chan *sendJob, defaultSendQueueSize),
+	}
+	for i := 0; i < defaultSendWorkers; i++ {
+		go n.processBackgroundSends()
+	}
+	return n
 }
 
-// Send создаёт запись в notifications и отправляет email.
-// При ошибке SMTP возвращает error (после пометки записи failed).
+// Send создаёт запись в notifications и ставит email на фоновую отправку.
+// При ошибке SMTP статус уведомления обновляется на failed, но ошибка не возвращается
+// синхронно: запрос не ждёт завершения SMTP-сессии.
 func (n *Notifier) Send(ctx context.Context, userID int64, notifType, message, emailOverride string) (*models.Notification, error) {
 	created, err := n.notifications.Create(ctx, &models.Notification{
 		UserID:  userID,
@@ -63,18 +87,41 @@ func (n *Notifier) Send(ctx context.Context, userID int64, notifType, message, e
 	}
 
 	subject := subjectFor(notifType)
-	if err := n.mail.Send(to, subject, message); err != nil {
-		errMsg := err.Error()
-		log.Printf("notifier: send email to %s failed: %v", to, err)
-		_ = n.notifications.UpdateStatus(ctx, created.ID, models.StatusFailed, &errMsg)
-		return created, fmt.Errorf("smtp send: %w", err)
+	job := &sendJob{
+		notificationID: created.ID,
+		to:             to,
+		subject:        subject,
+		body:           message,
 	}
+	select {
+	case n.sendQueue <- job:
+		return created, nil
+	default:
+		errMsg := "notification queue is full"
+		_ = n.notifications.UpdateStatus(ctx, created.ID, models.StatusFailed, &errMsg)
+		return created, fmt.Errorf("%s", errMsg)
+	}
+}
 
-	if err := n.notifications.UpdateStatus(ctx, created.ID, models.StatusSent, nil); err != nil {
+func (n *Notifier) processBackgroundSends() {
+	for job := range n.sendQueue {
+		n.processSendJob(job)
+	}
+}
+
+func (n *Notifier) processSendJob(job *sendJob) {
+	ctx := context.Background()
+	if err := n.mail.Send(job.to, job.subject, job.body); err != nil {
+		errMsg := err.Error()
+		log.Printf("notifier: send email to %s failed: %v", job.to, err)
+		if updateErr := n.notifications.UpdateStatus(ctx, job.notificationID, models.StatusFailed, &errMsg); updateErr != nil {
+			log.Printf("notifier: update status failed after smtp error: %v", updateErr)
+		}
+		return
+	}
+	if err := n.notifications.UpdateStatus(ctx, job.notificationID, models.StatusSent, nil); err != nil {
 		log.Printf("notifier: update status to sent failed: %v", err)
 	}
-	created.Status = models.StatusSent
-	return created, nil
 }
 
 func subjectFor(notifType string) string {

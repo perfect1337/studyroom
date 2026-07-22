@@ -2,6 +2,7 @@ package contracts_test
 
 import (
 	"testing"
+	"time"
 )
 
 // 5.5. Отправить уведомление (internal, service-to-service)
@@ -13,10 +14,8 @@ func TestContract_5_5_SendNotification(t *testing.T) {
 		"user_id": 1, "type": "contract_expiring", "message": "Договор №284-М истекает через 7 дней",
 	}, testServiceToken)
 	e.mustOK(res, 200)
+	e.waitForMailCount(1)
 
-	if e.mail.count() != 1 {
-		t.Fatalf("expected 1 email sent, got %d", e.mail.count())
-	}
 	last, ok := e.mail.last()
 	if !ok || last.To != "user1@example.com" {
 		t.Fatalf("expected email to user1@example.com, got %+v", last)
@@ -34,6 +33,7 @@ func TestContract_5_5_SendNotification_EmailOverride(t *testing.T) {
 		"email": "override@example.com",
 	}, testServiceToken)
 	e.mustOK(res, 200)
+	e.waitForMailCount(1)
 
 	last, ok := e.mail.last()
 	if !ok || last.To != "override@example.com" {
@@ -68,22 +68,27 @@ func TestContract_5_5_SendNotification_SMTPFailure(t *testing.T) {
 	res := e.doInternal("POST", "/api/v1/internal/notifications/send", map[string]any{
 		"user_id": 1, "type": "lesson_reminder", "message": "должно упасть",
 	}, testServiceToken)
-	if res.Status != 500 {
-		t.Fatalf("expected 500 on smtp failure, got %d", res.Status)
-	}
+	e.mustOK(res, 200)
 
-	list := e.do("GET", "/api/v1/notifications?unread_only=false", nil, e.accessToken(1))
-	e.mustOK(list, 200)
-	items := asSlice(list.Body["items"])
-	if len(items) != 1 {
-		t.Fatalf("expected 1 notification, got %d", len(items))
-	}
-	item := items[0].(map[string]any)
-	if item["status"] != "failed" {
-		t.Fatalf("expected status=failed, got %v", item)
-	}
-	if item["error"] == nil {
-		t.Fatal("expected error message to be recorded")
+	// Отправка идёт в фоне; ожидаем, что ошибка будет записана в статусе failed.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		list := e.do("GET", "/api/v1/notifications?unread_only=false", nil, e.accessToken(1))
+		e.mustOK(list, 200)
+		items := asSlice(list.Body["items"])
+		if len(items) == 1 {
+			item := items[0].(map[string]any)
+			if item["status"] == "failed" {
+				if item["error"] == nil {
+					t.Fatal("expected error message to be recorded")
+				}
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected notification to transition to failed status within timeout, got %d items", len(items))
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
@@ -144,6 +149,7 @@ func TestContract_UsersSync(t *testing.T) {
 		"user_id": 42, "type": "welcome", "message": "добро пожаловать",
 	}, testServiceToken)
 	e.mustOK(send, 200)
+	e.waitForMailCount(1)
 
 	last, ok := e.mail.last()
 	if !ok || last.To != "synced@example.com" {
@@ -193,6 +199,7 @@ func TestContract_UsersSync_UpsertKeepsNameOnEmptyUpdate(t *testing.T) {
 		"user_id": 7, "type": "welcome", "message": "test",
 	}, testServiceToken)
 	e.mustOK(send, 200)
+	e.waitForMailCount(1)
 
 	last, ok := e.mail.last()
 	if !ok || last.To != "second@example.com" {
