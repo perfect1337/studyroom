@@ -1,0 +1,124 @@
+openapi: 3.1.0
+info:
+  title: CRM Service API
+  version: 1.0.0
+  description: API for CRM applications, webhook intake, and application lifecycle management.
+servers:
+  - url: /api/v1/crm
+security:
+  - bearerAuth: []
+paths:
+  /applications/webhook:
+    post:
+      summary: Receive a new application from Tilda webhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookRequest'
+      responses:
+        '200':
+          description: Webhook received successfully
+  /applications:
+    post:
+      summary: Create a new internal application
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInternalRequest'
+      responses:
+        '201':
+          description: Application created
+    get:
+      summary: List applications
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of applications
+  /applications/{id}:
+    patch:
+      summary: Update application status
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStatusRequest'
+      responses:
+        '200':
+          description: Application updated
+    delete:
+      summary: Delete an application
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Application deleted
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    WebhookRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        age:
+          type: integer
+        phone:
+          type: string
+        subject_interest:
+          type: string
+        parent_name:
+          type: string
+      required:
+        - name
+    CreateInternalRequest:
+      type: object
+      properties:
+        student_id:
+          type: integer
+        subject_interest:
+          type: string
+        format:
+          type: string
+      required:
+        - student_id
+    UpdateStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [new, in_progress, converted, rejected]
+        handled_by:
+          type: integer
+      required:
+        - status

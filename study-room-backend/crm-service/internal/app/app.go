@@ -9,6 +9,7 @@ import (
 	"studyroom/crm-service/internal/handlers"
 	"studyroom/crm-service/internal/middleware"
 	"studyroom/crm-service/internal/models"
+	"studyroom/crm-service/internal/openapi"
 	"studyroom/crm-service/internal/repository"
 
 	"github.com/go-chi/chi/v5"
@@ -46,7 +47,12 @@ func NewRouter(d *Deps) http.Handler {
 	appHandler := handlers.NewApplicationHandler(d.Applications, d.UserRefs, d.Events, d.WebhookSecret)
 
 	r := chi.NewRouter()
+	r.Use(middleware.RequestID)
+	r.Use(middleware.Logging)
+
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	r.Get("/openapi.yaml", openapi.SpecHandler)
+	r.Get("/docs", openapi.DocsHandler)
 
 	r.Route("/api/v1/crm", func(r chi.Router) {
 		// 4.1 — вебхук Tilda: auth: false, вместо JWT проверяется подпись
@@ -79,6 +85,9 @@ func NewServer(addr string, handler http.Handler) *http.Server {
 	return &http.Server{
 		Addr:              addr,
 		Handler:           handler,
+		ReadTimeout:       10 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
 	}
 }

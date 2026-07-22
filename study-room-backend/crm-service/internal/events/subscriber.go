@@ -27,7 +27,20 @@ type UserEvent struct {
 }
 
 func Connect(url string) (*nats.Conn, error) {
-	return nats.Connect(url, nats.MaxReconnects(-1), nats.Name("crm-service"))
+	return nats.Connect(
+		url,
+		nats.MaxReconnects(-1),
+		nats.Name("crm-service"),
+		nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
+			log.Printf("[events] disconnected from NATS: %v", err)
+		}),
+		nats.ReconnectHandler(func(nc *nats.Conn) {
+			log.Printf("[events] reconnected to NATS: %s", nc.ConnectedUrl())
+		}),
+		nats.ClosedHandler(func(nc *nats.Conn) {
+			log.Printf("[events] NATS connection closed: %v", nc.LastError())
+		}),
+	)
 }
 
 type Subscriber struct {

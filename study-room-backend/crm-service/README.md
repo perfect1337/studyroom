@@ -59,6 +59,18 @@ docker compose up --build nats user-service postgres-crm crm-service
 curl http://localhost:8084/healthz
 ```
 
+API docs:
+```
+curl http://localhost:8084/openapi.yaml
+```
+Open in browser:
+```
+http://localhost:8084/docs
+```
+
+## Тесты
+```
+
 ## Тесты
 
 ```bash
