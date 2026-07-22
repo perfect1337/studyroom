@@ -24,7 +24,7 @@
 
 **Версия:** v1
 **Публикует:** User Service, `internal/events/publisher.go` → `SubjectUserCreated`
-**Подписаны:** Academic Service (наполняет `user_refs`), Notification Service (шлёт welcome/credentials)
+**Подписаны:** Academic Service (наполняет `user_refs`), CRM Service (наполняет `user_refs`), Notification Service (шлёт welcome/credentials, наполняет `users_ref`)
 **Статус:** ✅ implemented
 
 ```json
@@ -56,8 +56,7 @@
 Подписчики читают только нужное им подмножество полей (Academic Service —
 `id/first_name/last_name/role/branch_id`, без `email`/паролей) — это
 нормально, JSON-структуры не обязаны совпадать 1:1, лишние поля просто
-игнорируются `encoding/json`. Проблема — обратная ситуация (см. mismatch'и
-ниже).
+игнорируются `encoding/json`.
 
 ---
 
@@ -111,55 +110,19 @@
 
 ---
 
-## v1.lesson.created — ⚠️ MISMATCH, требует исправления
+## v1.lesson.created — ✅ исправлен (был MISMATCH)
 
-**Версия:** v1 (объявлена, но по факту не согласована между сторонами)
+**Версия:** v1
 **Публикует:** Academic Service, `internal/events/publisher.go`, subject `lesson.created`
 **Подписаны:** Notification Service, `internal/events/subscriber.go` → `handleLessonReminder`
-**Статус:** ⚠️ **mismatch** — публикующая и подписанная сторона реализованы
-по разным схемам, ни одно поле не совпадает по имени. По факту уведомление
-**никогда не отправляется**: `lessonReminderEvent.UserID` всегда
-десериализуется в `0` (поля с таким именем в payload просто нет), а в
-`Subscriber.send()` есть ранний `return` при `userID == 0`.
+**Статус:** ✅ **implemented** (вариант А). Раньше обе стороны были
+реализованы по разным схемам, ни одно поле не совпадало по имени — из-за
+этого уведомление никогда не отправлялось (`user_id` десериализовался в
+`0`). Исправлено: `handleLessonReminder` переписан под реальный payload
+Academic Service, текст сообщения собирается на стороне Notification
+Service.
 
-**Что реально публикует Academic Service** (по одному событию на каждого
-участника занятия):
-```json
-{
-  "lesson_id": 501,
-  "tutor_id": 15,
-  "student_id": 100,
-  "topic": "Циклы",
-  "lesson_date": "2026-08-01",
-  "start_time": "10:00"
-}
-```
-
-**Что реально ожидает Notification Service:**
-```json
-{
-  "user_id": 100,
-  "message": "Напоминание: занятие «Циклы» 2026-08-01 в 10:00"
-}
-```
-
-**Как исправить (нужно выбрать один вариант и зафиксировать здесь же):**
-
-- **Вариант А (рекомендуется):** Notification Service достраивает текст
-  сообщения сам — переписать `lessonReminderEvent` под реальный payload
-  Academic Service (`lesson_id`, `tutor_id`, `student_id`, `topic`,
-  `lesson_date`, `start_time`), формировать `message` в
-  `handleLessonReminder`, слать на `student_id` (это и есть `user_id`
-  получателя). Плюс: Academic Service не обязан знать формат текста
-  уведомления — это ответственность Notification Service.
-- **Вариант Б:** Academic Service формирует готовый текст и шлёт `user_id`/
-  `message`, как сейчас ожидает подписчик — тогда Academic Service должен
-  сам собирать читаемую строку (потребует имени репетитора, а его там
-  нет — `user_refs` в Academic Service хранит только `full_name`, тьютора
-  можно взять оттуда).
-
-До исправления зафиксирован **вариант А** как целевая схема:
-
+Academic Service публикует (по одному событию на каждого участника занятия):
 ```json
 {
   "lesson_id": 501,
@@ -182,48 +145,23 @@
 
 ---
 
-## v1.attendance.marked_absent — ⚠️ MISMATCH, требует исправления
+## v1.attendance.marked_absent — ✅ исправлен (был MISMATCH)
 
-**Версия:** v1 (объявлена, но не согласована)
+**Версия:** v1
 **Публикует:** Academic Service, `internal/events/publisher.go`, subject `attendance.marked_absent`
 **Подписаны:** Notification Service, `internal/events/subscriber.go` → `handleAttendanceAbsent`
-**Статус:** ⚠️ **mismatch** — те же симптомы, что у `lesson.created`:
-`attendanceAbsentEvent.ParentUserID` всегда `0`, уведомление родителю о
-пропуске занятия молча не отправляется.
+**Статус:** ✅ **implemented** (вариант А). Раньше та же проблема, что у
+`lesson.created` — `parent_user_id` всегда `0`, уведомление молча не
+отправлялось. Дополнительная сложность: Academic Service физически не знает
+`parent_id` (эта связь хранится только в User Service, `parent_student`).
 
-**Что реально публикует Academic Service:**
-```json
-{
-  "lesson_id": 501,
-  "student_id": 100,
-  "absence_reason": "болен"
-}
-```
+**Как исправлено:** User Service теперь передаёт `parent_id` в событиях
+`user.created`/`user.updated` (см. секцию `v1.user.created` ниже).
+Notification Service хранит его в `users_ref.parent_id` и резолвит
+`student_id → parent_id` локально в `handleAttendanceAbsent`, без
+синхронного похода в User Service на каждое событие.
 
-**Что реально ожидает Notification Service:**
-```json
-{
-  "parent_user_id": 300,
-  "student_name": "Иван Петров",
-  "lesson_date": "2026-08-01"
-}
-```
-
-**Ключевая проблема не только в именах полей:** Academic Service вообще не
-знает `parent_user_id` — связь родитель↔ребёнок физически хранится в User
-Service (см. `academic-service/README.md`, раздел "Связь с другими
-сервисами"), Academic Service её узнаёт только синхронным HTTP-вызовом
-`GET /parents/{id}/children`, а не по `student_id` в обратную сторону. Чтобы
-опубликовать `parent_user_id`, Academic Service должен либо хранить
-обратный индекс (кэш "student_id → parent_id" из `user.*` событий — но
-User Service такое поле в `user.created`/`user.updated` пока не передаёт),
-либо Notification Service сам резолвит `student_id → parent_id` (у него уже
-есть `user_refs`, если туда добавить `parent_id`).
-
-**Целевая схема (вариант А, симметрично `lesson.created`):** Academic
-Service публикует, что знает сам, Notification Service берёт на себя
-резолв получателя и текста:
-
+Academic Service публикует:
 ```json
 {
   "lesson_id": 501,
@@ -238,10 +176,9 @@ Service публикует, что знает сам, Notification Service бе�
 | `student_id` | int64 | да |
 | `absence_reason` | string\|null | нет |
 
-Notification Service обязан резолвить `student_id → parent_user_id`
-самостоятельно (потребует либо расширить `user.*` событие полем
-`parent_id`, либо синхронный вызов в User Service — решить отдельно, вне
-рамок этого документа).
+Если `student_id` ещё не встречался в `users_ref` (событие `user.created`
+не дошло) либо у него не заполнен `parent_id` — уведомление тихо
+пропускается (залогировано), а не падает с ошибкой.
 
 ---
 
@@ -309,9 +246,9 @@ publisher'ом. Когда Contracts Service будет писаться — **�
 ## v1.application.received
 
 **Версия:** v1
-**Публикует:** CRM Service — 🚧 не реализован
+**Публикует:** CRM Service, `internal/events/publisher.go` → `ApplicationReceived` — ✅ реализован
 **Подписаны:** Notification Service, `internal/events/subscriber.go` → `handleApplicationReceived`
-**Статус:** 🚧 planned — форма реконструирована из подписчика.
+**Статус:** ✅ implemented — payload совпадает по обеим сторонам без изменений.
 
 ```json
 {
