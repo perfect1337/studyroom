@@ -76,6 +76,15 @@ docker compose up --build nats user-service postgres-contracts contracts-service
 curl http://localhost:8083/healthz
 ```
 
+API docs:
+```
+curl http://localhost:8083/openapi.yaml
+```
+Open in browser:
+```
+http://localhost:8083/docs
+```
+
 ## Тесты
 
 ```bash

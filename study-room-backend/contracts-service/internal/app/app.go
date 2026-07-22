@@ -9,6 +9,7 @@ import (
 	"studyroom/contracts-service/internal/handlers"
 	"studyroom/contracts-service/internal/middleware"
 	"studyroom/contracts-service/internal/models"
+	"studyroom/contracts-service/internal/openapi"
 	"studyroom/contracts-service/internal/repository"
 	"studyroom/contracts-service/internal/userclient"
 
@@ -52,7 +53,13 @@ func NewRouter(d *Deps) http.Handler {
 	h := handlers.NewContractHandler(d.Contracts, d.UserRefs, d.UserClient, d.Events)
 
 	r := chi.NewRouter()
+	r.Use(middleware.RequestID)
+	r.Use(middleware.Logging)
+
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	// API documentation is intentionally public for local development and debugging.
+	r.Get("/openapi.yaml", openapi.SpecHandler)
+	r.Get("/docs", openapi.DocsHandler)
 
 	r.Route("/api/v1/contracts", func(r chi.Router) {
 		r.Use(middleware.RequireAuth(d.TM))
@@ -84,6 +91,9 @@ func NewServer(addr string, handler http.Handler) *http.Server {
 	return &http.Server{
 		Addr:              addr,
 		Handler:           handler,
+		ReadTimeout:       10 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
 	}
 }

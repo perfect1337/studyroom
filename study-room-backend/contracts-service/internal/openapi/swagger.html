@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Study Room Contracts Service API</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.21.0/swagger-ui.css" integrity="sha512-ioz5+VDpnPSvMWt1gDmDWuRzcOiT7O96G+3HHYt0I05OVlO+zA34phbaWepoCj45GwHaeFSxstI8fUyvOxjU4Q==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <style>body{margin:0;padding:0;}</style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.21.0/swagger-ui-bundle.min.js" integrity="sha512-XkqU4gizxwX7Jm3AeZlH0z+jdoETaWl0o0u7QGQLnjW+VYFH+o+Lw/qnR/vFz2qvUEsps3fxe5sy3izVxjJ06w==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script>
+    window.onload = function() {
+      SwaggerUIBundle({
+        url: '/openapi.yaml',
+        dom_id: '#swagger-ui',
+        presets: [SwaggerUIBundle.presets.apis],
+        layout: 'BaseLayout',
+      })
+    }
+  </script>
+</body>
+</html>
