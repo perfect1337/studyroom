@@ -52,7 +52,7 @@ func main() {
 	}
 
 	tm := auth.NewTokenManager(cfg.JWTSecret, cfg.AccessTokenTTL, cfg.RefreshTokenTTL)
-	deps := app.NewDeps(pool, tm, pub, cfg.AppPublicURL)
+	deps := app.NewDeps(pool, tm, pub, cfg.AppPublicURL, cfg.AuthRateLimit)
 	handler := app.NewRouter(deps)
 
 	srv := &http.Server{

@@ -15,11 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"studyroom/user-service/internal/app"
 	"studyroom/user-service/internal/auth"
 	"studyroom/user-service/internal/migrate"
 	"studyroom/user-service/internal/models"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const defaultTestDSN = "postgres://user_service:devpassword123@localhost:5433/study_room_users?sslmode=disable"
@@ -111,7 +112,7 @@ func getEnv(t *testing.T) *env {
 		}
 
 		tm := auth.NewTokenManager("test-jwt-secret-for-contracts", 60, 30)
-		deps := app.NewDeps(pool, tm, nil, "http://localhost:3000")
+		deps := app.NewDeps(pool, tm, nil, "http://localhost:3000", 0)
 		shared = &env{
 			pool:   pool,
 			deps:   deps,

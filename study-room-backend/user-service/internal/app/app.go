@@ -27,9 +27,16 @@ type Deps struct {
 	TutorProfiles *repository.TutorProfileRepository
 	Events        events.Publisher
 	AppPublicURL  string
+
+	// AuthRateLimit — сколько запросов в минуту на IP разрешено к /auth/*
+	// (register/login/refresh/forgot-password/reset-password). 0 или
+	// отрицательное значение означает "не задано" — используется дефолт 200.
+	// Настраивается через ENV AUTH_RATE_LIMIT_PER_MIN (см. internal/config),
+	// прод-поведение по умолчанию не меняется.
+	AuthRateLimit int
 }
 
-func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, pub events.Publisher, appPublicURL string) *Deps {
+func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, pub events.Publisher, appPublicURL string, authRateLimit int) *Deps {
 	if pub == nil {
 		pub = events.NoopPublisher{}
 	}
@@ -43,6 +50,7 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, pub events.Publisher, ap
 		TutorProfiles: repository.NewTutorProfileRepository(pool),
 		Events:        pub,
 		AppPublicURL:  appPublicURL,
+		AuthRateLimit: authRateLimit,
 	}
 }
 
@@ -57,7 +65,11 @@ func NewRouter(d *Deps) http.Handler {
 	r.Use(middleware.Logging)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 
-	authLimiter := middleware.NewIPRateLimiter(200, time.Minute)
+	authRateLimit := d.AuthRateLimit
+	if authRateLimit <= 0 {
+		authRateLimit = 200
+	}
+	authLimiter := middleware.NewIPRateLimiter(authRateLimit, time.Minute)
 
 	r.Get("/openapi.yaml", openapi.SpecHandler)
 	r.Get("/docs", openapi.DocsHandler)
