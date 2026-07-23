@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"strings"
 	"testing"
@@ -70,6 +71,22 @@ func reportNote(note string) {
 	currentScenario.Notes = append(currentScenario.Notes, note)
 }
 
+// failf records the failure reason on the current scenario's report before
+// failing the test, so report.md shows *why* a scenario failed instead of
+// just "FAIL".
+func failf(t *testing.T, format string, args ...any) {
+	t.Helper()
+	msg := fmt.Sprintf(format, args...)
+	reportNote("FAILED: " + msg)
+	t.Fatalf("%s", msg)
+}
+
+func fail(t *testing.T, msg string) {
+	t.Helper()
+	reportNote("FAILED: " + msg)
+	t.Fatal(msg)
+}
+
 type registerResponse struct {
 	UserID       int64  `json:"user_id"`
 	AccessToken  string `json:"access_token"`
@@ -94,6 +111,7 @@ type workflowResources struct {
 	ParentPassword string
 	ParentID       int64
 	StudentID      int64
+	TutorID        int64
 	BranchID       int64
 	CourseID       int64
 	ContractID     int64
@@ -130,11 +148,15 @@ func TestDistributedLoadScenarios(t *testing.T) {
 	missing := requireServices(t, cfg, client)
 	if len(missing) > 0 {
 		loadReport.StartupError = strings.Join(missing, "; ")
-		t.Fatalf("cross-service tests cannot run because services are not available: %s", loadReport.StartupError)
+		failf(t, "cross-service tests cannot run because services are not available: %s", loadReport.StartupError)
 	}
 
 	runScenario(t, "HealthzAndDocs", func(t *testing.T) {
 		testHealthzAndDocs(t, cfg, client)
+	})
+
+	runScenario(t, "AuthNegativeCases", func(t *testing.T) {
+		testAuthNegativeCases(t, cfg, client)
 	})
 
 	resources := workflowResources{ParentEmail: fmt.Sprintf("parent+%d@test.local", time.Now().UnixNano()), ParentPassword: "Password123!"}
@@ -146,24 +168,44 @@ func TestDistributedLoadScenarios(t *testing.T) {
 		testUserAuthenticationAndDirectory(t, cfg, client, resources)
 	})
 
+	runScenario(t, "AuthorizationAndRBAC", func(t *testing.T) {
+		testAuthorizationAndRBAC(t, cfg, client, resources)
+	})
+
 	runScenario(t, "ContractsLifecycle", func(t *testing.T) {
 		testContractsLifecycle(t, cfg, client, resources)
+	})
+
+	runScenario(t, "ContractsValidationAndAccessControl", func(t *testing.T) {
+		testContractsValidationAndAccessControl(t, cfg, client, resources)
 	})
 
 	runScenario(t, "AcademicLessonAndAttendance", func(t *testing.T) {
 		testAcademicLessonAndAttendance(t, cfg, client, resources)
 	})
 
+	runScenario(t, "AcademicValidationAndAccessControl", func(t *testing.T) {
+		testAcademicValidationAndAccessControl(t, cfg, client, resources)
+	})
+
 	runScenario(t, "NotificationSettingsAndRead", func(t *testing.T) {
 		testNotificationSettingsAndRead(t, cfg, client, resources)
+	})
+
+	runScenario(t, "NotificationsAccessControl", func(t *testing.T) {
+		testNotificationsAccessControl(t, cfg, client, resources)
 	})
 
 	runScenario(t, "AcademicEnrollmentFromContract", func(t *testing.T) {
 		testAcademicEnrollmentFromContract(t, cfg, client, resources.OwnerToken, resources.ParentToken, resources.StudentID)
 	})
 
+	runScenario(t, "CRMValidationAndAccessControl", func(t *testing.T) {
+		testCRMValidationAndAccessControl(t, cfg, client, resources)
+	})
+
 	runScenario(t, "CRMToNotificationFlow", func(t *testing.T) {
-		testCRMToNotificationFlow(t, cfg, client, resources.OwnerToken, resources.ParentToken, resources.StudentID)
+		testCRMToNotificationFlow(t, cfg, client, resources)
 	})
 }
 
@@ -192,11 +234,53 @@ func writeLoadReport() error {
 		b.WriteString("## Service availability check failed\n\n")
 		b.WriteString(fmt.Sprintf("%s\n\n", loadReport.StartupError))
 	}
+
+	var passed, failedCount, skipped, totalRequests int
+	for _, scenario := range loadReport.Scenarios {
+		switch scenario.Status {
+		case "PASS":
+			passed++
+		case "FAIL":
+			failedCount++
+		case "SKIPPED":
+			skipped++
+		}
+		for _, log := range scenario.Logs {
+			if strings.Contains(log, " -> ") {
+				totalRequests++
+			}
+		}
+	}
+
+	b.WriteString("## Summary\n\n")
+	b.WriteString(fmt.Sprintf("- scenarios: %d (passed: %d, failed: %d, skipped: %d)\n", len(loadReport.Scenarios), passed, failedCount, skipped))
+	b.WriteString(fmt.Sprintf("- HTTP requests made: %d\n", totalRequests))
+	b.WriteString(fmt.Sprintf("- total run time: %s\n\n", loadReport.End.Sub(loadReport.Start).Round(time.Millisecond)))
+
+	b.WriteString("| Scenario | Status | Duration | Requests |\n")
+	b.WriteString("|---|---|---|---|\n")
+	for _, scenario := range loadReport.Scenarios {
+		reqCount := 0
+		for _, log := range scenario.Logs {
+			if strings.Contains(log, " -> ") {
+				reqCount++
+			}
+		}
+		b.WriteString(fmt.Sprintf("| %s | %s | %s | %d |\n", scenario.Name, scenario.Status, scenario.Duration.Round(time.Millisecond), reqCount))
+	}
+	b.WriteString("\n")
+
 	b.WriteString("## Scenario results\n\n")
 	for _, scenario := range loadReport.Scenarios {
-		b.WriteString(fmt.Sprintf("### %s\n\n", scenario.Name))
+		statusMark := "✅"
+		if scenario.Status == "FAIL" {
+			statusMark = "❌"
+		} else if scenario.Status == "SKIPPED" {
+			statusMark = "⚠️"
+		}
+		b.WriteString(fmt.Sprintf("### %s %s\n\n", statusMark, scenario.Name))
 		b.WriteString(fmt.Sprintf("- status: %s\n", scenario.Status))
-		b.WriteString(fmt.Sprintf("- duration: %s\n", scenario.Duration))
+		b.WriteString(fmt.Sprintf("- duration: %s\n", scenario.Duration.Round(time.Millisecond)))
 		if len(scenario.Notes) > 0 {
 			b.WriteString("- notes:\n")
 			for _, note := range scenario.Notes {
@@ -204,9 +288,9 @@ func writeLoadReport() error {
 			}
 		}
 		if len(scenario.Logs) > 0 {
-			b.WriteString("- details:\n")
-			for _, log := range scenario.Logs {
-				b.WriteString(fmt.Sprintf("  - %s\n", log))
+			b.WriteString(fmt.Sprintf("- details (%d entries):\n", len(scenario.Logs)))
+			for i, log := range scenario.Logs {
+				b.WriteString(fmt.Sprintf("  %d. %s\n", i+1, log))
 			}
 		}
 		b.WriteString("\n")
@@ -314,11 +398,11 @@ func testHealthzAndDocs(t *testing.T, cfg config, client *http.Client) {
 		for _, endpoint := range endpoints {
 			resp, err := client.Get(endpoint)
 			if err != nil {
-				t.Fatalf("%s failed %s: %v", service, endpoint, err)
+				failf(t, "%s failed %s: %v", service, endpoint, err)
 			}
 			defer resp.Body.Close()
 			if resp.StatusCode != http.StatusOK {
-				t.Fatalf("%s %s returned %d", service, endpoint, resp.StatusCode)
+				failf(t, "%s %s returned %d", service, endpoint, resp.StatusCode)
 			}
 			reportLog("OK %s %s", service, endpoint)
 		}
@@ -330,7 +414,7 @@ func testUserAuthenticationAndDirectory(t *testing.T, cfg config, client *http.C
 
 	loginResp := loginParent(t, client, cfg.UserBase, resources.ParentEmail, resources.ParentPassword)
 	if loginResp.User.ID != resources.ParentID {
-		t.Fatalf("logged-in user id=%d does not match created parent id=%d", loginResp.User.ID, resources.ParentID)
+		failf(t, "logged-in user id=%d does not match created parent id=%d", loginResp.User.ID, resources.ParentID)
 	}
 	reportLog("parent login success for user %d", loginResp.User.ID)
 
@@ -339,93 +423,252 @@ func testUserAuthenticationAndDirectory(t *testing.T, cfg config, client *http.C
 
 	respStatus, meBody, _, err := doJSONRequest(client, "GET", cfg.UserBase+"/api/v1/users/me", refreshResp.AccessToken, nil)
 	if err != nil {
-		t.Fatalf("fetch me failed: %v", err)
+		failf(t, "fetch me failed: %v", err)
 	}
 	if respStatus != http.StatusOK {
-		t.Fatalf("fetch me expected 200, got %d", respStatus)
+		failf(t, "fetch me expected 200, got %d", respStatus)
 	}
 	meMap, ok := meBody.(map[string]any)
 	if !ok {
-		t.Fatalf("users/me response is not JSON object")
+		failf(t, "users/me response is not JSON object")
 	}
 	if id, ok := parseNumericID(meMap["id"]); !ok || id != resources.ParentID {
-		t.Fatalf("users/me returned wrong id: %#v", meMap["id"])
+		failf(t, "users/me returned wrong id: %#v", meMap["id"])
 	}
 	reportLog("users/me returned parent profile for id %d", resources.ParentID)
 
 	newName := "Ирина"
 	respStatus, updatedBody, _, err := doJSONRequest(client, "PATCH", cfg.UserBase+"/api/v1/users/me", refreshResp.AccessToken, map[string]any{"first_name": newName})
 	if err != nil {
-		t.Fatalf("update me failed: %v", err)
+		failf(t, "update me failed: %v", err)
 	}
 	if respStatus != http.StatusOK {
-		t.Fatalf("update me expected 200, got %d", respStatus)
+		failf(t, "update me expected 200, got %d", respStatus)
 	}
 	updatedMap, ok := updatedBody.(map[string]any)
 	if !ok {
-		t.Fatalf("update me response is not JSON object")
+		failf(t, "update me response is not JSON object")
 	}
 	if name, ok := updatedMap["first_name"].(string); !ok || name != newName {
-		t.Fatalf("expected first_name %q, got %#v", newName, updatedMap["first_name"])
+		failf(t, "expected first_name %q, got %#v", newName, updatedMap["first_name"])
 	}
 	reportLog("updated parent first_name to %s", newName)
 
 	respStatus, childrenBody, _, err := doJSONRequest(client, "GET", cfg.UserBase+fmt.Sprintf("/api/v1/parents/%d/children", resources.ParentID), resources.ParentToken, nil)
 	if err != nil {
-		t.Fatalf("list children failed: %v", err)
+		failf(t, "list children failed: %v", err)
 	}
 	if respStatus != http.StatusOK {
-		t.Fatalf("list children expected 200, got %d", respStatus)
+		failf(t, "list children expected 200, got %d", respStatus)
 	}
 	childrenMap, ok := childrenBody.(map[string]any)
 	if !ok {
-		t.Fatalf("list children response is not JSON object")
+		failf(t, "list children response is not JSON object")
 	}
 	children, ok := childrenMap["items"].([]any)
 	if !ok {
-		t.Fatalf("list children response missing items")
+		failf(t, "list children response missing items")
 	}
 	if len(children) == 0 {
-		t.Fatal("expected at least one child for parent")
+		fail(t, "expected at least one child for parent")
 	}
 	reportLog("parent has %d child(ren)", len(children))
 }
 
-// testContractsLifecycle exercises reading a single contract, listing contracts
-// scoped to a parent/student, and moving a contract through its sign transition.
+// testAuthNegativeCases exercises user-service auth error paths that the
+// happy-path InitialSetup/UserAuthenticationAndDirectory scenarios never
+// reach: duplicate registration, weak passwords, bad credentials, and
+// invalid refresh/reset tokens. None of this depends on workflowResources,
+// so it can run before InitialSetup.
+func testAuthNegativeCases(t *testing.T, cfg config, client *http.Client) {
+	t.Helper()
+
+	email := fmt.Sprintf("parent-negative+%d@test.local", time.Now().UnixNano())
+	password := "Password123!"
+	registerParent(t, client, cfg.UserBase, email, password)
+	reportLog("registered baseline user %s for negative auth checks", email)
+
+	respStatus, _, _, err := doJSONRequest(client, "POST", cfg.UserBase+"/api/v1/auth/register", "", map[string]any{
+		"email": email, "password": password, "last_name": "Test", "first_name": "Test",
+	})
+	if err != nil {
+		failf(t, "duplicate register request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusConflict, "registering an already-used email")
+	reportLog("confirmed duplicate registration returns 409")
+
+	respStatus, _, _, err = doJSONRequest(client, "POST", cfg.UserBase+"/api/v1/auth/register", "", map[string]any{
+		"email":      fmt.Sprintf("parent-shortpw+%d@test.local", time.Now().UnixNano()),
+		"password":   "short",
+		"last_name":  "Test",
+		"first_name": "Test",
+	})
+	if err != nil {
+		failf(t, "short password register request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusBadRequest, "registering with a password under 8 characters")
+	reportLog("confirmed registration validation rejects short passwords")
+
+	respStatus, _, _, err = doJSONRequest(client, "POST", cfg.UserBase+"/api/v1/auth/register", "", map[string]any{
+		"email": fmt.Sprintf("parent-missing+%d@test.local", time.Now().UnixNano()), "password": password,
+	})
+	if err != nil {
+		failf(t, "missing-name register request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusBadRequest, "registering without first_name/last_name")
+	reportLog("confirmed registration validation rejects missing name fields")
+
+	respStatus, _, _, err = doJSONRequest(client, "POST", cfg.UserBase+"/api/v1/auth/login", "", map[string]any{
+		"login": email, "password": "WrongPassword123!",
+	})
+	if err != nil {
+		failf(t, "wrong-password login request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusUnauthorized, "logging in with the wrong password")
+	reportLog("confirmed login rejects the wrong password")
+
+	respStatus, _, _, err = doJSONRequest(client, "POST", cfg.UserBase+"/api/v1/auth/login", "", map[string]any{
+		"login": fmt.Sprintf("nobody+%d@test.local", time.Now().UnixNano()), "password": password,
+	})
+	if err != nil {
+		failf(t, "unknown login request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusUnauthorized, "logging in with an unknown login")
+	reportLog("confirmed login rejects an unknown identity")
+
+	respStatus, _, _, err = doJSONRequest(client, "POST", cfg.UserBase+"/api/v1/auth/refresh", "", map[string]any{
+		"refresh_token": "not-a-real-refresh-token",
+	})
+	if err != nil {
+		failf(t, "invalid refresh token request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusUnauthorized, "refreshing with an invalid refresh token")
+	reportLog("confirmed refresh rejects an invalid refresh token")
+
+	// Forgot-password must not leak whether an email is registered: 200 either way.
+	respStatus, _, _, err = doJSONRequest(client, "POST", cfg.UserBase+"/api/v1/auth/forgot-password", "", map[string]any{
+		"email": fmt.Sprintf("nobody+%d@test.local", time.Now().UnixNano()),
+	})
+	if err != nil {
+		failf(t, "forgot-password for unknown email failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusOK, "requesting a password reset for an unknown email")
+	reportLog("confirmed forgot-password does not leak account existence")
+
+	respStatus, _, _, err = doJSONRequest(client, "POST", cfg.UserBase+"/api/v1/auth/reset-password", "", map[string]any{
+		"reset_token": "not-a-real-reset-token", "new_password": "NewPassword123!",
+	})
+	if err != nil {
+		failf(t, "invalid reset token request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusBadRequest, "resetting a password with an invalid reset token")
+	reportLog("confirmed reset-password rejects an invalid reset token")
+}
+
+// testAuthorizationAndRBAC exercises the RequireAuth/RequireRoles middleware
+// paths in user-service that the happy-path scenarios never hit: missing or
+// malformed bearer tokens, and roles attempting actions outside their scope
+// (api-contracts.md 1.11/1.12/1.17/1.18 role restrictions).
+func testAuthorizationAndRBAC(t *testing.T, cfg config, client *http.Client, resources workflowResources) {
+	t.Helper()
+
+	respStatus, _, _, err := doJSONRequest(client, "GET", cfg.UserBase+"/api/v1/users/me", "", nil)
+	if err != nil {
+		failf(t, "users/me without token failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusUnauthorized, "fetching users/me without a bearer token")
+	reportLog("confirmed users/me rejects requests without a token")
+
+	respStatus, _, _, err = doJSONRequest(client, "GET", cfg.UserBase+"/api/v1/users/me", "not-a-real-jwt", nil)
+	if err != nil {
+		failf(t, "users/me with malformed token failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusUnauthorized, "fetching users/me with a malformed token")
+	reportLog("confirmed users/me rejects a malformed token")
+
+	respStatus, _, _, err = doJSONRequest(client, "POST", cfg.UserBase+"/api/v1/branches", resources.ParentToken, map[string]any{
+		"name": "Should Be Rejected", "city": "Nowhere",
+	})
+	if err != nil {
+		failf(t, "parent create branch request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusForbidden, "parent creating a branch")
+	reportLog("confirmed parent role cannot create branches (403)")
+
+	respStatus, _, _, err = doJSONRequest(client, "POST", cfg.UserBase+"/api/v1/users/tutors", resources.ParentToken, map[string]any{
+		"email":          fmt.Sprintf("tutor-rejected+%d@test.local", time.Now().UnixNano()),
+		"last_name":      "Test",
+		"first_name":     "Test",
+		"branch_id":      resources.BranchID,
+		"specialization": "Test",
+	})
+	if err != nil {
+		failf(t, "parent create tutor request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusForbidden, "parent creating a tutor")
+	reportLog("confirmed parent role cannot create tutors (403)")
+
+	// A parent may only create students under their own parent_id.
+	respStatus, _, _, err = doJSONRequest(client, "POST", cfg.UserBase+"/api/v1/users/students", resources.ParentToken, map[string]any{
+		"last_name": "Test", "first_name": "Test",
+		"parent_id": resources.ParentID + 987654, "branch_id": resources.BranchID,
+	})
+	if err != nil {
+		failf(t, "parent create student for another parent request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusForbidden, "parent creating a student under someone else's parent_id")
+	reportLog("confirmed a parent cannot create a student under another parent's id")
+
+	// A parent may only view their own children.
+	otherParentEmail := fmt.Sprintf("parent-rbac-unrelated+%d@test.local", time.Now().UnixNano())
+	otherParent := registerParent(t, client, cfg.UserBase, otherParentEmail, "Password123!")
+	respStatus, _, _, err = doJSONRequest(client, "GET", cfg.UserBase+fmt.Sprintf("/api/v1/parents/%d/children", resources.ParentID), otherParent.AccessToken, nil)
+	if err != nil {
+		failf(t, "unrelated parent list children request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusForbidden, "a parent listing another parent's children")
+	reportLog("confirmed a parent cannot view another parent's children list")
+}
+
+// testContractsLifecycle exercises fetching a single contract, listing
+// contracts (both owner-only per api-contracts.md 3.2/3.3), and moving a
+// contract through a status transition.
 func testContractsLifecycle(t *testing.T, cfg config, client *http.Client, resources workflowResources) {
 	t.Helper()
 
 	respStatus, body, _, err := doJSONRequest(client, "GET", cfg.ContractsBase+fmt.Sprintf("/api/v1/contracts/%d", resources.ContractID), resources.OwnerToken, nil)
 	if err != nil {
-		t.Fatalf("get contract failed: %v", err)
+		failf(t, "get contract failed: %v", err)
 	}
 	if respStatus != http.StatusOK {
-		t.Fatalf("get contract expected 200, got %d", respStatus)
+		failf(t, "get contract expected 200, got %d", respStatus)
 	}
 	contractMap, ok := body.(map[string]any)
 	if !ok {
-		t.Fatalf("get contract response is not JSON object")
+		failf(t, "get contract response is not JSON object")
 	}
 	if id, ok := parseNumericID(contractMap["id"]); !ok || id != resources.ContractID {
-		t.Fatalf("get contract returned wrong id: %#v", contractMap["id"])
+		failf(t, "get contract returned wrong id: %#v", contractMap["id"])
 	}
 	reportLog("fetched contract %d", resources.ContractID)
 
-	respStatus, listBody, _, err := doJSONRequest(client, "GET", cfg.ContractsBase+fmt.Sprintf("/api/v1/contracts?student_id=%d", resources.StudentID), resources.ParentToken, nil)
+	// Listing contracts is owner-only (api-contracts.md 3.2) - there is no
+	// parent-facing contract list; parents only get the lightweight /expiry
+	// endpoint (3.3a).
+	respStatus, listBody, _, err := doJSONRequest(client, "GET", cfg.ContractsBase+fmt.Sprintf("/api/v1/contracts?student_id=%d", resources.StudentID), resources.OwnerToken, nil)
 	if err != nil {
-		t.Fatalf("list contracts failed: %v", err)
+		failf(t, "list contracts failed: %v", err)
 	}
 	if respStatus != http.StatusOK {
-		t.Fatalf("list contracts expected 200, got %d", respStatus)
+		failf(t, "list contracts expected 200, got %d", respStatus)
 	}
 	listMap, ok := listBody.(map[string]any)
 	if !ok {
-		t.Fatalf("list contracts response is not JSON object")
+		failf(t, "list contracts response is not JSON object")
 	}
 	items, ok := listMap["items"].([]any)
 	if !ok {
-		t.Fatalf("list contracts response missing items")
+		failf(t, "list contracts response missing items")
 	}
 	found := false
 	for _, item := range items {
@@ -439,26 +682,116 @@ func testContractsLifecycle(t *testing.T, cfg config, client *http.Client, resou
 		}
 	}
 	if !found {
-		t.Fatalf("contract %d not found in student's contract list", resources.ContractID)
+		failf(t, "contract %d not found in student's contract list", resources.ContractID)
 	}
-	reportLog("parent can see contract %d in contract list", resources.ContractID)
+	reportLog("owner can see contract %d in contract list", resources.ContractID)
 
-	respStatus, signedBody, _, err := doJSONRequest(client, "PATCH", cfg.ContractsBase+fmt.Sprintf("/api/v1/contracts/%d/sign", resources.ContractID), resources.ParentToken, nil)
+	// Contracts are created directly with status "active" (there is no
+	// separate "sign" step/endpoint - see api-contracts.md 3.1). Exercise the
+	// real status-transition endpoint (3.5, owner-only, no response body)
+	// instead, then confirm the change via GetByID.
+	respStatus, _, _, err = doJSONRequest(client, "PATCH", cfg.ContractsBase+fmt.Sprintf("/api/v1/contracts/%d/status", resources.ContractID), resources.OwnerToken, map[string]any{
+		"status": "completed",
+	})
 	if err != nil {
-		t.Fatalf("sign contract failed: %v", err)
+		failf(t, "update contract status failed: %v", err)
 	}
 	if respStatus != http.StatusOK {
-		t.Fatalf("sign contract expected 200, got %d", respStatus)
+		failf(t, "update contract status expected 200, got %d", respStatus)
 	}
-	signedMap, ok := signedBody.(map[string]any)
+	reportLog("contract %d status update request accepted", resources.ContractID)
+
+	respStatus, updatedBody, _, err := doJSONRequest(client, "GET", cfg.ContractsBase+fmt.Sprintf("/api/v1/contracts/%d", resources.ContractID), resources.OwnerToken, nil)
+	if err != nil {
+		failf(t, "re-fetch contract failed: %v", err)
+	}
+	if respStatus != http.StatusOK {
+		failf(t, "re-fetch contract expected 200, got %d", respStatus)
+	}
+	updatedMap, ok := updatedBody.(map[string]any)
 	if !ok {
-		t.Fatalf("sign contract response is not JSON object")
+		failf(t, "re-fetch contract response is not JSON object")
 	}
-	status, _ := signedMap["status"].(string)
-	if status != "active" && status != "signed" {
-		t.Fatalf("expected contract status to be active/signed after signing, got %q", status)
+	if status, _ := updatedMap["status"].(string); status != "completed" {
+		failf(t, "expected contract status to be completed, got %q", status)
 	}
-	reportLog("contract %d transitioned to status %q after signing", resources.ContractID, status)
+	reportLog("contract %d transitioned to status \"completed\"", resources.ContractID)
+}
+
+// testContractsValidationAndAccessControl exercises contracts-service input
+// validation (api-contracts.md 3.1) and the role/ownership checks around
+// GetByID/expiry (3.2/3.3/3.3a) that testContractsLifecycle does not cover.
+func testContractsValidationAndAccessControl(t *testing.T, cfg config, client *http.Client, resources workflowResources) {
+	t.Helper()
+
+	start := time.Now().Add(24 * time.Hour).Format("2006-01-02")
+	end := time.Now().Add(31 * 24 * time.Hour).Format("2006-01-02")
+
+	// Only owner may create contracts - a parent must be rejected.
+	respStatus, _, _, err := doJSONRequest(client, "POST", cfg.ContractsBase+"/api/v1/contracts", resources.ParentToken, map[string]any{
+		"student_id": resources.StudentID, "parent_id": resources.ParentID,
+		"course_id": resources.CourseID, "branch_id": resources.BranchID,
+		"amount": 1000.0, "start_date": start, "end_date": end,
+	})
+	if err != nil {
+		failf(t, "parent create contract request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusForbidden, "parent creating a contract")
+	reportLog("confirmed parent role cannot create contracts (403)")
+
+	badPayloads := []struct {
+		name string
+		body map[string]any
+	}{
+		{"missing student_id", map[string]any{"parent_id": resources.ParentID, "course_id": resources.CourseID, "branch_id": resources.BranchID, "amount": 1000.0, "start_date": start, "end_date": end}},
+		{"non-positive amount", map[string]any{"student_id": resources.StudentID, "parent_id": resources.ParentID, "course_id": resources.CourseID, "branch_id": resources.BranchID, "amount": 0.0, "start_date": start, "end_date": end}},
+		{"end_date before start_date", map[string]any{"student_id": resources.StudentID, "parent_id": resources.ParentID, "course_id": resources.CourseID, "branch_id": resources.BranchID, "amount": 1000.0, "start_date": end, "end_date": start}},
+		{"malformed start_date", map[string]any{"student_id": resources.StudentID, "parent_id": resources.ParentID, "course_id": resources.CourseID, "branch_id": resources.BranchID, "amount": 1000.0, "start_date": "not-a-date", "end_date": end}},
+	}
+	for _, tc := range badPayloads {
+		respStatus, _, _, err := doJSONRequest(client, "POST", cfg.ContractsBase+"/api/v1/contracts", resources.OwnerToken, tc.body)
+		if err != nil {
+			failf(t, "create contract (%s) request failed: %v", tc.name, err)
+		}
+		expectStatus(t, respStatus, http.StatusBadRequest, "creating a contract with "+tc.name)
+	}
+	reportLog("confirmed contract creation validation rejects malformed payloads")
+
+	respStatus, _, _, err = doJSONRequest(client, "GET", cfg.ContractsBase+"/api/v1/contracts/999999999", resources.OwnerToken, nil)
+	if err != nil {
+		failf(t, "get nonexistent contract failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusNotFound, "fetching a nonexistent contract")
+	reportLog("confirmed nonexistent contract returns 404")
+
+	respStatus, _, _, err = doJSONRequest(client, "PATCH", cfg.ContractsBase+fmt.Sprintf("/api/v1/contracts/%d/status", resources.ContractID), resources.OwnerToken, map[string]any{
+		"status": "not_a_real_status",
+	})
+	if err != nil {
+		failf(t, "update contract status with bad value failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusBadRequest, "updating contract status to an invalid value")
+	reportLog("confirmed invalid contract status value is rejected")
+
+	// A branch_owner from a different branch must not see this contract's expiry.
+	otherBranchID := createBranch(t, client, cfg.UserBase, resources.OwnerToken)
+	otherBranchOwnerToken := makeToken(t, cfg.JWTSecret, int64(800000000)+otherBranchID, "branch_owner", &otherBranchID)
+	respStatus, _, _, err = doJSONRequest(client, "GET", cfg.ContractsBase+fmt.Sprintf("/api/v1/contracts/%d/expiry", resources.ContractID), otherBranchOwnerToken, nil)
+	if err != nil {
+		failf(t, "expiry lookup by unrelated branch owner failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusForbidden, "branch_owner of a different branch reading contract expiry")
+	reportLog("confirmed branch_owner from another branch cannot read this contract's expiry")
+
+	// A parent unrelated to this student must not see the contract's expiry either.
+	otherParentEmail := fmt.Sprintf("parent-contracts-unrelated+%d@test.local", time.Now().UnixNano())
+	otherParent := registerParent(t, client, cfg.UserBase, otherParentEmail, "Password123!")
+	respStatus, _, _, err = doJSONRequest(client, "GET", cfg.ContractsBase+fmt.Sprintf("/api/v1/contracts/%d/expiry", resources.ContractID), otherParent.AccessToken, nil)
+	if err != nil {
+		failf(t, "expiry lookup by unrelated parent failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusForbidden, "unrelated parent reading contract expiry")
+	reportLog("confirmed a parent outside the family cannot read this contract's expiry")
 }
 
 // testAcademicLessonAndAttendance creates a lesson for the course used in the
@@ -466,48 +799,51 @@ func testContractsLifecycle(t *testing.T, cfg config, client *http.Client, resou
 func testAcademicLessonAndAttendance(t *testing.T, cfg config, client *http.Client, resources workflowResources) {
 	t.Helper()
 
-	lessonStart := time.Now().Add(48 * time.Hour).Format(time.RFC3339)
+	lessonDate := time.Now().Add(48 * time.Hour).Format("2006-01-02")
 	respStatus, body, _, err := doJSONRequest(client, "POST", cfg.AcademicBase+"/api/v1/academic/lessons", resources.OwnerToken, map[string]any{
-		"course_id":        resources.CourseID,
-		"topic":            "Load Test Lesson",
-		"starts_at":        lessonStart,
-		"duration_minutes": 45,
+		"course_id":   resources.CourseID,
+		"tutor_id":    resources.TutorID,
+		"topic":       "Load Test Lesson",
+		"lesson_date": lessonDate,
+		"start_time":  "10:00",
+		"end_time":    "10:45",
 	})
 	if err != nil {
-		t.Fatalf("create lesson failed: %v", err)
+		failf(t, "create lesson failed: %v", err)
 	}
 	if respStatus != http.StatusCreated {
-		t.Fatalf("create lesson expected 201, got %d", respStatus)
+		failf(t, "create lesson expected 201, got %d", respStatus)
 	}
 	lessonID := mustGetInt64(body, "id", t)
 	reportLog("created lesson %d for course %d", lessonID, resources.CourseID)
 
 	respStatus, _, _, err = doJSONRequest(client, "POST", cfg.AcademicBase+fmt.Sprintf("/api/v1/academic/lessons/%d/attendance", lessonID), resources.OwnerToken, map[string]any{
-		"student_id": resources.StudentID,
-		"status":     "present",
+		"records": []map[string]any{
+			{"student_id": resources.StudentID, "status": "present"},
+		},
 	})
 	if err != nil {
-		t.Fatalf("mark attendance failed: %v", err)
+		failf(t, "mark attendance failed: %v", err)
 	}
 	if respStatus != http.StatusCreated && respStatus != http.StatusOK {
-		t.Fatalf("mark attendance expected 200/201, got %d", respStatus)
+		failf(t, "mark attendance expected 200/201, got %d", respStatus)
 	}
 	reportLog("marked attendance present for student %d on lesson %d", resources.StudentID, lessonID)
 
 	respStatus, listBody, _, err := doJSONRequest(client, "GET", cfg.AcademicBase+fmt.Sprintf("/api/v1/academic/lessons/%d/attendance", lessonID), resources.ParentToken, nil)
 	if err != nil {
-		t.Fatalf("list attendance failed: %v", err)
+		failf(t, "list attendance failed: %v", err)
 	}
 	if respStatus != http.StatusOK {
-		t.Fatalf("list attendance expected 200, got %d", respStatus)
+		failf(t, "list attendance expected 200, got %d", respStatus)
 	}
 	listMap, ok := listBody.(map[string]any)
 	if !ok {
-		t.Fatalf("list attendance response is not JSON object")
+		failf(t, "list attendance response is not JSON object")
 	}
 	items, ok := listMap["items"].([]any)
 	if !ok {
-		t.Fatalf("list attendance response missing items")
+		failf(t, "list attendance response missing items")
 	}
 	found := false
 	for _, item := range items {
@@ -523,9 +859,91 @@ func testAcademicLessonAndAttendance(t *testing.T, cfg config, client *http.Clie
 		}
 	}
 	if !found {
-		t.Fatalf("expected attendance record with status present for student %d on lesson %d", resources.StudentID, lessonID)
+		failf(t, "expected attendance record with status present for student %d on lesson %d", resources.StudentID, lessonID)
 	}
 	reportLog("verified attendance record for student %d on lesson %d", resources.StudentID, lessonID)
+}
+
+// testAcademicValidationAndAccessControl exercises academic-service input
+// validation and the tutor/branch_owner/parent scoping rules around lessons
+// and attendance (api-contracts.md 2.8/2.9/2.10/2.11) that
+// testAcademicLessonAndAttendance does not cover.
+func testAcademicValidationAndAccessControl(t *testing.T, cfg config, client *http.Client, resources workflowResources) {
+	t.Helper()
+
+	respStatus, _, _, err := doJSONRequest(client, "POST", cfg.AcademicBase+"/api/v1/academic/lessons", resources.OwnerToken, map[string]any{
+		"course_id": resources.CourseID,
+	})
+	if err != nil {
+		failf(t, "create lesson with missing fields request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusBadRequest, "creating a lesson with missing required fields")
+	reportLog("confirmed lesson creation validation rejects incomplete payloads")
+
+	lessonDate := time.Now().Add(72 * time.Hour).Format("2006-01-02")
+
+	// A parent must not be able to create lessons.
+	respStatus, _, _, err = doJSONRequest(client, "POST", cfg.AcademicBase+"/api/v1/academic/lessons", resources.ParentToken, map[string]any{
+		"course_id": resources.CourseID, "tutor_id": resources.TutorID, "topic": "Should Be Rejected",
+		"lesson_date": lessonDate, "start_time": "11:00", "end_time": "11:45",
+	})
+	if err != nil {
+		failf(t, "parent create lesson request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusForbidden, "parent creating a lesson")
+	reportLog("confirmed parent role cannot create lessons (403)")
+
+	// A tutor must not be able to create a lesson under a different tutor_id.
+	tutorToken := makeToken(t, cfg.JWTSecret, resources.TutorID, "tutor", &resources.BranchID)
+	respStatus, _, _, err = doJSONRequest(client, "POST", cfg.AcademicBase+"/api/v1/academic/lessons", tutorToken, map[string]any{
+		"course_id": resources.CourseID, "tutor_id": resources.TutorID + 123456, "topic": "Should Be Rejected",
+		"lesson_date": lessonDate, "start_time": "12:00", "end_time": "12:45",
+	})
+	if err != nil {
+		failf(t, "tutor create lesson for another tutor request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusForbidden, "tutor creating a lesson under a different tutor_id")
+	reportLog("confirmed a tutor cannot create lessons on behalf of another tutor")
+
+	// Create a real lesson to exercise attendance validation and access control against.
+	respStatus, body, _, err := doJSONRequest(client, "POST", cfg.AcademicBase+"/api/v1/academic/lessons", resources.OwnerToken, map[string]any{
+		"course_id": resources.CourseID, "tutor_id": resources.TutorID, "topic": "Validation Lesson",
+		"lesson_date": lessonDate, "start_time": "13:00", "end_time": "13:45",
+	})
+	if err != nil {
+		failf(t, "create lesson for validation checks failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusCreated, "creating the lesson used for validation checks")
+	lessonID := mustGetInt64(body, "id", t)
+	reportLog("created lesson %d to exercise attendance validation/access checks", lessonID)
+
+	respStatus, _, _, err = doJSONRequest(client, "POST", cfg.AcademicBase+fmt.Sprintf("/api/v1/academic/lessons/%d/attendance", lessonID), resources.OwnerToken, map[string]any{
+		"records": []map[string]any{
+			{"student_id": resources.StudentID, "status": "not_a_real_status"},
+		},
+	})
+	if err != nil {
+		failf(t, "mark attendance with invalid status request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusBadRequest, "marking attendance with an invalid status value")
+	reportLog("confirmed invalid attendance status value is rejected")
+
+	respStatus, _, _, err = doJSONRequest(client, "GET", cfg.AcademicBase+"/api/v1/academic/lessons/999999999/attendance", resources.OwnerToken, nil)
+	if err != nil {
+		failf(t, "get attendance for nonexistent lesson failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusNotFound, "fetching attendance for a nonexistent lesson")
+	reportLog("confirmed nonexistent lesson returns 404")
+
+	// A parent whose child does not attend this lesson must not see attendance.
+	otherParentEmail := fmt.Sprintf("parent-academic-unrelated+%d@test.local", time.Now().UnixNano())
+	otherParent := registerParent(t, client, cfg.UserBase, otherParentEmail, "Password123!")
+	respStatus, _, _, err = doJSONRequest(client, "GET", cfg.AcademicBase+fmt.Sprintf("/api/v1/academic/lessons/%d/attendance", lessonID), otherParent.AccessToken, nil)
+	if err != nil {
+		failf(t, "get attendance by unrelated parent failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusForbidden, "unrelated parent reading lesson attendance")
+	reportLog("confirmed a parent whose child doesn't attend the lesson cannot read attendance")
 }
 
 // testNotificationSettingsAndRead reads and updates a parent's notification
@@ -535,10 +953,10 @@ func testNotificationSettingsAndRead(t *testing.T, cfg config, client *http.Clie
 
 	respStatus, body, _, err := doJSONRequest(client, "GET", cfg.NotificationBase+"/api/v1/notifications/settings", resources.ParentToken, nil)
 	if err != nil {
-		t.Fatalf("get notification settings failed: %v", err)
+		failf(t, "get notification settings failed: %v", err)
 	}
 	if respStatus != http.StatusOK {
-		t.Fatalf("get notification settings expected 200, got %d", respStatus)
+		failf(t, "get notification settings expected 200, got %d", respStatus)
 	}
 	var settings notificationSettingsResponse
 	decodeJSONMap(body, &settings, t)
@@ -548,28 +966,28 @@ func testNotificationSettingsAndRead(t *testing.T, cfg config, client *http.Clie
 		"sms_enabled": !settings.SMSEnabled,
 	})
 	if err != nil {
-		t.Fatalf("update notification settings failed: %v", err)
+		failf(t, "update notification settings failed: %v", err)
 	}
 	if respStatus != http.StatusOK {
-		t.Fatalf("update notification settings expected 200, got %d", respStatus)
+		failf(t, "update notification settings expected 200, got %d", respStatus)
 	}
 	var updatedSettings notificationSettingsResponse
 	decodeJSONMap(updatedBody, &updatedSettings, t)
 	if updatedSettings.SMSEnabled == settings.SMSEnabled {
-		t.Fatalf("expected sms_enabled to toggle from %v", settings.SMSEnabled)
+		failf(t, "expected sms_enabled to toggle from %v", settings.SMSEnabled)
 	}
 	reportLog("toggled sms_enabled from %v to %v", settings.SMSEnabled, updatedSettings.SMSEnabled)
 
 	respStatus, listBody, _, err := doJSONRequest(client, "GET", cfg.NotificationBase+"/api/v1/notifications?unread_only=true", resources.ParentToken, nil)
 	if err != nil {
-		t.Fatalf("list notifications failed: %v", err)
+		failf(t, "list notifications failed: %v", err)
 	}
 	if respStatus != http.StatusOK {
-		t.Fatalf("list notifications expected 200, got %d", respStatus)
+		failf(t, "list notifications expected 200, got %d", respStatus)
 	}
 	listMap, ok := listBody.(map[string]any)
 	if !ok {
-		t.Fatalf("list notifications response is not JSON object")
+		failf(t, "list notifications response is not JSON object")
 	}
 	items, _ := listMap["items"].([]any)
 	if len(items) == 0 {
@@ -578,32 +996,32 @@ func testNotificationSettingsAndRead(t *testing.T, cfg config, client *http.Clie
 	}
 	first, ok := items[0].(map[string]any)
 	if !ok {
-		t.Fatalf("notification item is not JSON object")
+		failf(t, "notification item is not JSON object")
 	}
 	notifID, ok := parseNumericID(first["id"])
 	if !ok {
-		t.Fatalf("notification item missing numeric id")
+		failf(t, "notification item missing numeric id")
 	}
 
 	respStatus, _, _, err = doJSONRequest(client, "PATCH", cfg.NotificationBase+fmt.Sprintf("/api/v1/notifications/%d/read", notifID), resources.ParentToken, nil)
 	if err != nil {
-		t.Fatalf("mark notification read failed: %v", err)
+		failf(t, "mark notification read failed: %v", err)
 	}
 	if respStatus != http.StatusOK {
-		t.Fatalf("mark notification read expected 200, got %d", respStatus)
+		failf(t, "mark notification read expected 200, got %d", respStatus)
 	}
 	reportLog("marked notification %d as read", notifID)
 
 	respStatus, unreadBody, _, err := doJSONRequest(client, "GET", cfg.NotificationBase+"/api/v1/notifications?unread_only=true", resources.ParentToken, nil)
 	if err != nil {
-		t.Fatalf("list unread notifications after read failed: %v", err)
+		failf(t, "list unread notifications after read failed: %v", err)
 	}
 	if respStatus != http.StatusOK {
-		t.Fatalf("list unread notifications after read expected 200, got %d", respStatus)
+		failf(t, "list unread notifications after read expected 200, got %d", respStatus)
 	}
 	unreadMap, ok := unreadBody.(map[string]any)
 	if !ok {
-		t.Fatalf("list unread notifications response is not JSON object")
+		failf(t, "list unread notifications response is not JSON object")
 	}
 	unreadItems, _ := unreadMap["items"].([]any)
 	for _, item := range unreadItems {
@@ -612,10 +1030,108 @@ func testNotificationSettingsAndRead(t *testing.T, cfg config, client *http.Clie
 			continue
 		}
 		if id, ok := parseNumericID(row["id"]); ok && id == notifID {
-			t.Fatalf("notification %d still present in unread list after marking read", notifID)
+			failf(t, "notification %d still present in unread list after marking read", notifID)
 		}
 	}
 	reportLog("confirmed notification %d no longer present in unread list", notifID)
+}
+
+// testNotificationsAccessControl exercises notification-service auth
+// enforcement and not-found handling that testNotificationSettingsAndRead
+// does not cover.
+func testNotificationsAccessControl(t *testing.T, cfg config, client *http.Client, resources workflowResources) {
+	t.Helper()
+
+	respStatus, _, _, err := doJSONRequest(client, "GET", cfg.NotificationBase+"/api/v1/notifications", "", nil)
+	if err != nil {
+		failf(t, "list notifications without a token failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusUnauthorized, "listing notifications without a bearer token")
+	reportLog("confirmed notifications endpoint rejects requests without a token")
+
+	respStatus, _, _, err = doJSONRequest(client, "GET", cfg.NotificationBase+"/api/v1/notifications", "not-a-real-jwt", nil)
+	if err != nil {
+		failf(t, "list notifications with a malformed token failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusUnauthorized, "listing notifications with a malformed token")
+	reportLog("confirmed notifications endpoint rejects a malformed token")
+
+	respStatus, _, _, err = doJSONRequest(client, "PATCH", cfg.NotificationBase+"/api/v1/notifications/999999999/read", resources.ParentToken, nil)
+	if err != nil {
+		failf(t, "mark nonexistent notification read failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusNotFound, "marking a nonexistent notification as read")
+	reportLog("confirmed marking a nonexistent notification as read returns 404")
+}
+
+// testCRMValidationAndAccessControl exercises crm-service input validation
+// and the parent/owner role split (api-contracts.md 4.2/4.3/4.4/4.5) that
+// testCRMToNotificationFlow does not cover.
+func testCRMValidationAndAccessControl(t *testing.T, cfg config, client *http.Client, resources workflowResources) {
+	t.Helper()
+
+	// Only a parent may submit an application through the internal endpoint.
+	respStatus, _, _, err := doJSONRequest(client, "POST", cfg.CRMBase+"/api/v1/crm/applications", resources.OwnerToken, map[string]any{
+		"student_id": resources.StudentID, "subject_interest": "Физика",
+	})
+	if err != nil {
+		failf(t, "owner create application request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusForbidden, "owner submitting a CRM application")
+	reportLog("confirmed owner role cannot submit CRM applications (403)")
+
+	respStatus, _, _, err = doJSONRequest(client, "POST", cfg.CRMBase+"/api/v1/crm/applications", resources.ParentToken, map[string]any{
+		"subject_interest": "Физика",
+	})
+	if err != nil {
+		failf(t, "create application with missing student_id request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusBadRequest, "submitting a CRM application without student_id")
+	reportLog("confirmed CRM application validation rejects a missing student_id")
+
+	// A parent must not be able to list applications (owner-only).
+	respStatus, _, _, err = doJSONRequest(client, "GET", cfg.CRMBase+"/api/v1/crm/applications", resources.ParentToken, nil)
+	if err != nil {
+		failf(t, "parent list applications request failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusForbidden, "parent listing CRM applications")
+	reportLog("confirmed parent role cannot list CRM applications (403)")
+
+	// Create a real application to exercise status-update validation against.
+	respStatus, body, _, err := doJSONRequest(client, "POST", cfg.CRMBase+"/api/v1/crm/applications", resources.ParentToken, map[string]any{
+		"student_id": resources.StudentID, "subject_interest": "Химия", "format": "offline",
+	})
+	if err != nil {
+		failf(t, "create application for validation checks failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusCreated, "creating the application used for validation checks")
+	applicationID := mustGetInt64(body, "id", t)
+	reportLog("created application %d to exercise status validation", applicationID)
+
+	respStatus, _, _, err = doJSONRequest(client, "PATCH", cfg.CRMBase+fmt.Sprintf("/api/v1/crm/applications/%d", applicationID), resources.OwnerToken, map[string]any{
+		"status": "not_a_real_status",
+	})
+	if err != nil {
+		failf(t, "update application status with bad value failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusBadRequest, "updating a CRM application to an invalid status")
+	reportLog("confirmed invalid CRM application status value is rejected")
+
+	respStatus, _, _, err = doJSONRequest(client, "PATCH", cfg.CRMBase+"/api/v1/crm/applications/999999999", resources.OwnerToken, map[string]any{
+		"status": "in_progress",
+	})
+	if err != nil {
+		failf(t, "update nonexistent application failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusNotFound, "updating a nonexistent CRM application")
+	reportLog("confirmed updating a nonexistent CRM application returns 404")
+
+	respStatus, _, _, err = doJSONRequest(client, "DELETE", cfg.CRMBase+"/api/v1/crm/applications/999999999", resources.OwnerToken, nil)
+	if err != nil {
+		failf(t, "delete nonexistent application failed: %v", err)
+	}
+	expectStatus(t, respStatus, http.StatusNotFound, "deleting a nonexistent CRM application")
+	reportLog("confirmed deleting a nonexistent CRM application returns 404")
 }
 
 func loginParent(t *testing.T, client *http.Client, baseURL, email, password string) loginResponse {
@@ -623,10 +1139,10 @@ func loginParent(t *testing.T, client *http.Client, baseURL, email, password str
 
 	respStatus, body, _, err := doJSONRequest(client, "POST", baseURL+"/api/v1/auth/login", "", map[string]any{"login": email, "password": password})
 	if err != nil {
-		t.Fatalf("login failed: %v", err)
+		failf(t, "login failed: %v", err)
 	}
 	if respStatus != http.StatusOK {
-		t.Fatalf("login expected 200, got %d", respStatus)
+		failf(t, "login expected 200, got %d", respStatus)
 	}
 	var result loginResponse
 	decodeJSONMap(body, &result, t)
@@ -638,10 +1154,10 @@ func refreshToken(t *testing.T, client *http.Client, baseURL, refreshToken strin
 
 	respStatus, body, _, err := doJSONRequest(client, "POST", baseURL+"/api/v1/auth/refresh", "", map[string]any{"refresh_token": refreshToken})
 	if err != nil {
-		t.Fatalf("token refresh failed: %v", err)
+		failf(t, "token refresh failed: %v", err)
 	}
 	if respStatus != http.StatusOK {
-		t.Fatalf("token refresh expected 200, got %d", respStatus)
+		failf(t, "token refresh expected 200, got %d", respStatus)
 	}
 	var result loginResponse
 	decodeJSONMap(body, &result, t)
@@ -665,6 +1181,9 @@ func setupUserWorkflow(t *testing.T, cfg config, client *http.Client, parentEmai
 	resources.BranchID = createBranch(t, client, cfg.UserBase, resources.OwnerToken)
 	reportLog("created branch %d", resources.BranchID)
 
+	resources.TutorID = createTutor(t, client, cfg.UserBase, resources.OwnerToken, resources.BranchID)
+	reportLog("created tutor %d", resources.TutorID)
+
 	resources.CourseID = createCourse(t, client, cfg.AcademicBase, resources.OwnerToken, resources.BranchID)
 	reportLog("created course %d", resources.CourseID)
 
@@ -683,12 +1202,41 @@ func createBranch(t *testing.T, client *http.Client, baseURL, ownerToken string)
 		"city": "Testopolis",
 	})
 	if err != nil {
-		t.Fatalf("create branch failed: %v", err)
+		failf(t, "create branch failed: %v", err)
 	}
 	if respStatus != http.StatusCreated {
-		t.Fatalf("create branch expected 201, got %d", respStatus)
+		failf(t, "create branch expected 201, got %d", respStatus)
 	}
 	return mustGetInt64(body, "id", t)
+}
+
+func createTutor(t *testing.T, client *http.Client, baseURL, ownerToken string, branchID int64) int64 {
+	respStatus, body, _, err := doJSONRequest(client, "POST", baseURL+"/api/v1/users/tutors", ownerToken, map[string]any{
+		"email":          fmt.Sprintf("tutor+%d@test.local", time.Now().UnixNano()),
+		"last_name":      "Сидоров",
+		"first_name":     "Пётр",
+		"branch_id":      branchID,
+		"specialization": "Математика",
+	})
+	if err != nil {
+		failf(t, "create tutor failed: %v", err)
+	}
+	if respStatus != http.StatusCreated {
+		failf(t, "create tutor expected 201, got %d", respStatus)
+	}
+	bodyMap, ok := body.(map[string]any)
+	if !ok {
+		failf(t, "create tutor response is not JSON object")
+	}
+	user, ok := bodyMap["user"].(map[string]any)
+	if !ok {
+		failf(t, "create tutor response missing user object")
+	}
+	id, ok := parseNumericID(user["id"])
+	if !ok {
+		failf(t, "create tutor response user.id is not numeric: %#v", user["id"])
+	}
+	return id
 }
 
 func createCourse(t *testing.T, client *http.Client, baseURL, ownerToken string, branchID int64) int64 {
@@ -699,10 +1247,10 @@ func createCourse(t *testing.T, client *http.Client, baseURL, ownerToken string,
 		"branch_id": branchID,
 	})
 	if err != nil {
-		t.Fatalf("create course failed: %v", err)
+		failf(t, "create course failed: %v", err)
 	}
 	if respStatus != http.StatusCreated {
-		t.Fatalf("create course expected 201, got %d", respStatus)
+		failf(t, "create course expected 201, got %d", respStatus)
 	}
 	return mustGetInt64(body, "id", t)
 }
@@ -717,10 +1265,10 @@ func createStudent(t *testing.T, client *http.Client, baseURL, parentToken strin
 		"school":     "Школа №1",
 	})
 	if err != nil {
-		t.Fatalf("create student failed: %v", err)
+		failf(t, "create student failed: %v", err)
 	}
 	if respStatus != http.StatusCreated {
-		t.Fatalf("create student expected 201, got %d", respStatus)
+		failf(t, "create student expected 201, got %d", respStatus)
 	}
 	return mustGetInt64(body, "id", t)
 }
@@ -738,10 +1286,10 @@ func createContract(t *testing.T, baseURL string, client *http.Client, ownerToke
 		"end_date":   end,
 	})
 	if err != nil {
-		t.Fatalf("create contract failed: %v", err)
+		failf(t, "create contract failed: %v", err)
 	}
 	if respStatus != http.StatusCreated {
-		t.Fatalf("create contract expected 201, got %d", respStatus)
+		failf(t, "create contract expected 201, got %d", respStatus)
 	}
 	return mustGetInt64(body, "id", t)
 }
@@ -753,18 +1301,18 @@ func testAcademicEnrollmentFromContract(t *testing.T, cfg config, client *http.C
 	for time.Now().Before(deadline) {
 		respStatus, body, _, err := doJSONRequest(client, "GET", cfg.AcademicBase+"/api/v1/academic/enrollments", parentToken, nil)
 		if err != nil {
-			t.Fatalf("list enrollments failed: %v", err)
+			failf(t, "list enrollments failed: %v", err)
 		}
 		if respStatus != http.StatusOK {
-			t.Fatalf("list enrollments expected 200, got %d", respStatus)
+			failf(t, "list enrollments expected 200, got %d", respStatus)
 		}
 		bodyMap, ok := body.(map[string]any)
 		if !ok {
-			t.Fatalf("list enrollments response is not JSON object")
+			failf(t, "list enrollments response is not JSON object")
 		}
 		items, ok := bodyMap["items"].([]any)
 		if !ok {
-			t.Fatalf("list enrollments response missing items")
+			failf(t, "list enrollments response missing items")
 		}
 		for _, item := range items {
 			row, ok := item.(map[string]any)
@@ -779,46 +1327,59 @@ func testAcademicEnrollmentFromContract(t *testing.T, cfg config, client *http.C
 		reportLog("waiting for academic enrollment for student %d", studentID)
 		time.Sleep(1 * time.Second)
 	}
-	t.Fatal("academic enrollment was not created after contract event")
+	fail(t, "academic enrollment was not created after contract event")
 }
 
-func testCRMToNotificationFlow(t *testing.T, cfg config, client *http.Client, ownerToken, parentToken string, studentID int64) {
+func testCRMToNotificationFlow(t *testing.T, cfg config, client *http.Client, resources workflowResources) {
 	t.Helper()
 
-	ownerUserID := int64(9999)
-	publishUserCreatedEvent(t, cfg.NATSUrl, ownerUserID, "owner@test.local", "Owner", "Service", "owner", nil)
-	reportLog("seeded owner user.created event for user id %d", ownerUserID)
-	// Give CRM/Notification subscribers time to process the seeded owner event.
+	// CRM resolves who to notify about a new application in two steps
+	// (see crm-service/internal/handlers/application_handler.go,
+	// resolveNotifyTarget): first it looks for a branch_owner of the
+	// application's branch; only if none exists does it fall back to
+	// "any owner" - and that fallback picks the lowest user_id with
+	// role=owner across the *entire* database, which after many runs is
+	// some pre-existing real owner, not whatever id we make up here. So
+	// instead of seeding a fake "owner" and hoping it wins the fallback,
+	// we seed a branch_owner scoped to the branch this run just created
+	// (branch ids are unique per run, so this can't collide with another
+	// run's leftover data) and use the higher-priority branch_owner path.
+	notifyUserID := int64(900000000) + resources.BranchID
+	publishUserCreatedEvent(t, cfg.NATSUrl, notifyUserID, "branchowner+load@test.local", "Branch", "Owner", "branch_owner", &resources.BranchID)
+	reportLog("seeded branch_owner user.created event for user id %d (branch %d)", notifyUserID, resources.BranchID)
+	// Give CRM/Notification subscribers time to process the seeded event.
 	time.Sleep(2 * time.Second)
 
-	respStatus, _, _, err := doJSONRequest(client, "POST", cfg.CRMBase+"/api/v1/crm/applications", parentToken, map[string]any{
-		"student_id":       studentID,
+	respStatus, _, _, err := doJSONRequest(client, "POST", cfg.CRMBase+"/api/v1/crm/applications", resources.ParentToken, map[string]any{
+		"student_id":       resources.StudentID,
 		"subject_interest": "Математика",
 		"format":           "online",
 	})
 	if err != nil {
-		t.Fatalf("crm create application failed: %v", err)
+		failf(t, "crm create application failed: %v", err)
 	}
 	if respStatus != http.StatusCreated {
-		t.Fatalf("crm create application expected 201, got %d", respStatus)
+		failf(t, "crm create application expected 201, got %d", respStatus)
 	}
+
+	notifyToken := makeToken(t, cfg.JWTSecret, notifyUserID, "branch_owner", &resources.BranchID)
 
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
-		respStatus, notifyBody, _, err := doJSONRequest(client, "GET", cfg.NotificationBase+"/api/v1/notifications?unread_only=true", ownerToken, nil)
+		respStatus, notifyBody, _, err := doJSONRequest(client, "GET", cfg.NotificationBase+"/api/v1/notifications?unread_only=true", notifyToken, nil)
 		if err != nil {
-			t.Fatalf("list notifications failed: %v", err)
+			failf(t, "list notifications failed: %v", err)
 		}
 		if respStatus != http.StatusOK {
-			t.Fatalf("list notifications expected 200, got %d", respStatus)
+			failf(t, "list notifications expected 200, got %d", respStatus)
 		}
 		notifyMap, ok := notifyBody.(map[string]any)
 		if !ok {
-			t.Fatalf("notifications response is not JSON object")
+			failf(t, "notifications response is not JSON object")
 		}
 		items, ok := notifyMap["items"].([]any)
 		if !ok {
-			t.Fatalf("notifications response missing items")
+			failf(t, "notifications response missing items")
 		}
 		for _, item := range items {
 			notif, ok := item.(map[string]any)
@@ -826,14 +1387,14 @@ func testCRMToNotificationFlow(t *testing.T, cfg config, client *http.Client, ow
 				continue
 			}
 			if typ, ok := notif["type"].(string); ok && typ == "new_application" {
-				reportLog("received CRM notification new_application for owner %d", ownerUserID)
+				reportLog("received CRM notification new_application for branch owner %d", notifyUserID)
 				return
 			}
 		}
 		reportLog("waiting for notification service to receive CRM event")
 		time.Sleep(1 * time.Second)
 	}
-	t.Fatal("notification service did not receive CRM application event")
+	fail(t, "notification service did not receive CRM application event")
 }
 
 func publishUserCreatedEvent(t *testing.T, natsURL string, userID int64, email, firstName, lastName, role string, branchID *int64) {
@@ -841,7 +1402,7 @@ func publishUserCreatedEvent(t *testing.T, natsURL string, userID int64, email, 
 
 	nc, err := nats.Connect(natsURL, nats.MaxReconnects(-1), nats.ReconnectWait(2*time.Second))
 	if err != nil {
-		t.Fatalf("connect to NATS failed: %v", err)
+		failf(t, "connect to NATS failed: %v", err)
 	}
 	defer nc.Close()
 
@@ -857,10 +1418,10 @@ func publishUserCreatedEvent(t *testing.T, natsURL string, userID int64, email, 
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		t.Fatalf("marshal NATS event failed: %v", err)
+		failf(t, "marshal NATS event failed: %v", err)
 	}
 	if err := nc.Publish("user.created", data); err != nil {
-		t.Fatalf("publish NATS user.created failed: %v", err)
+		failf(t, "publish NATS user.created failed: %v", err)
 	}
 }
 
@@ -873,15 +1434,15 @@ func registerParent(t *testing.T, client *http.Client, baseURL, email, password 
 		"first_name": "Ирина",
 	})
 	if err != nil {
-		t.Fatalf("register parent failed: %v", err)
+		failf(t, "register parent failed: %v", err)
 	}
 	if respStatus != http.StatusOK {
-		t.Fatalf("register parent expected 200, got %d", respStatus)
+		failf(t, "register parent expected 200, got %d", respStatus)
 	}
 	var resultObj registerResponse
 	decodeJSONMap(result, &resultObj, t)
 	if resultObj.UserID == 0 || resultObj.AccessToken == "" || resultObj.RefreshToken == "" {
-		t.Fatalf("unexpected register response: %+v", resultObj)
+		failf(t, "unexpected register response: %+v", resultObj)
 	}
 	return resultObj
 }
@@ -901,24 +1462,36 @@ func makeToken(t *testing.T, secret string, userID int64, role string, branchID 
 	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	token, err := jwtToken.SignedString([]byte(secret))
 	if err != nil {
-		t.Fatalf("failed to sign token: %v", err)
+		failf(t, "failed to sign token: %v", err)
 	}
 	return token
 }
 
-func doJSONRequest(client *http.Client, method, url, token string, body any) (int, any, []byte, error) {
+func doJSONRequest(client *http.Client, method, url, token string, body any) (status int, out any, raw []byte, err error) {
+	start := time.Now()
+	defer func() {
+		elapsed := time.Since(start).Round(time.Millisecond)
+		if status != 0 {
+			reportLog("%s %s -> %d (%s)", method, shortURL(url), status, elapsed)
+		} else if err != nil {
+			reportLog("%s %s -> error after %s: %v", method, shortURL(url), elapsed, err)
+		}
+	}()
+
 	var payload io.Reader
 	if body != nil {
-		raw, err := json.Marshal(body)
-		if err != nil {
-			return 0, nil, nil, err
+		rawBody, marshalErr := json.Marshal(body)
+		if marshalErr != nil {
+			err = marshalErr
+			return
 		}
-		payload = bytes.NewReader(raw)
+		payload = bytes.NewReader(rawBody)
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), method, url, payload)
-	if err != nil {
-		return 0, nil, nil, err
+	req, reqErr := http.NewRequestWithContext(context.Background(), method, url, payload)
+	if reqErr != nil {
+		err = reqErr
+		return
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -928,46 +1501,75 @@ func doJSONRequest(client *http.Client, method, url, token string, body any) (in
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, nil, nil, err
+	resp, doErr := client.Do(req)
+	if doErr != nil {
+		err = doErr
+		return
 	}
 	defer resp.Body.Close()
+	status = resp.StatusCode
 
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return resp.StatusCode, nil, nil, err
+	respRaw, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		err = readErr
+		return
 	}
+	raw = respRaw
 
 	if len(raw) == 0 {
-		return resp.StatusCode, nil, raw, nil
+		return
 	}
 
-	var out any
 	if strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
 		dec := json.NewDecoder(bytes.NewReader(raw))
 		dec.UseNumber()
-		if err := dec.Decode(&out); err != nil {
-			return resp.StatusCode, nil, raw, err
+		var decoded any
+		if decodeErr := dec.Decode(&decoded); decodeErr != nil {
+			err = decodeErr
+			return
 		}
+		out = decoded
 	} else {
 		out = string(raw)
 	}
-	return resp.StatusCode, out, raw, nil
+	return
+}
+
+// shortURL trims a full request URL down to path+query so log lines in
+// report.md stay readable instead of repeating the service base URL on
+// every line.
+func shortURL(raw string) string {
+	if u, parseErr := neturl.Parse(raw); parseErr == nil && u.Path != "" {
+		if u.RawQuery != "" {
+			return u.Path + "?" + u.RawQuery
+		}
+		return u.Path
+	}
+	return raw
+}
+
+// expectStatus is a small assertion helper used by the negative-path/RBAC
+// scenarios below, where a single scenario checks many different endpoints
+// and repeating the same 4-line if-block for each would drown out intent.
+func expectStatus(t *testing.T, got, want int, action string) {
+	t.Helper()
+	if got != want {
+		failf(t, "%s: expected status %d, got %d", action, want, got)
+	}
 }
 
 func decodeJSONMap(source any, dest any, t *testing.T) {
 	t.Helper()
 	m, ok := source.(map[string]any)
 	if !ok {
-		t.Fatalf("expected JSON object, got %T", source)
+		failf(t, "expected JSON object, got %T", source)
 	}
 	raw, err := json.Marshal(m)
 	if err != nil {
-		t.Fatalf("marshal JSON object: %v", err)
+		failf(t, "marshal JSON object: %v", err)
 	}
 	if err := json.Unmarshal(raw, dest); err != nil {
-		t.Fatalf("unmarshal into struct failed: %v", err)
+		failf(t, "unmarshal into struct failed: %v", err)
 	}
 }
 
@@ -975,15 +1577,15 @@ func mustGetInt64(body any, key string, t *testing.T) int64 {
 	t.Helper()
 	m, ok := body.(map[string]any)
 	if !ok {
-		t.Fatalf("response body is not JSON object: %T", body)
+		failf(t, "response body is not JSON object: %T", body)
 	}
 	value, exists := m[key]
 	if !exists {
-		t.Fatalf("response missing %q", key)
+		failf(t, "response missing %q", key)
 	}
 	id, ok := parseNumericID(value)
 	if !ok {
-		t.Fatalf("response %q is not numeric: %#v", key, value)
+		failf(t, "response %q is not numeric: %#v", key, value)
 	}
 	return id
 }

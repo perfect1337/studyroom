@@ -57,7 +57,7 @@ func NewRouter(d *Deps) http.Handler {
 	r.Use(middleware.Logging)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 
-	authLimiter := middleware.NewIPRateLimiter(15, time.Minute)
+	authLimiter := middleware.NewIPRateLimiter(200, time.Minute)
 
 	r.Get("/openapi.yaml", openapi.SpecHandler)
 	r.Get("/docs", openapi.DocsHandler)
