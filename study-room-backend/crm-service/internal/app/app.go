@@ -47,6 +47,7 @@ func NewRouter(d *Deps) http.Handler {
 	appHandler := handlers.NewApplicationHandler(d.Applications, d.UserRefs, d.Events, d.WebhookSecret)
 
 	r := chi.NewRouter()
+	r.Use(middleware.CORS)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logging)
 

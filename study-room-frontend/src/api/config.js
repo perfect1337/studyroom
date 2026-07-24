@@ -9,7 +9,7 @@
 // В проде за этими адресами обычно стоит общий gateway — тогда просто
 // пропишите один и тот же домен с нужными префиксами в .env (см. .env.example).
 export const API = {
-  users: import.meta.env.VITE_USERS_API ?? "http://localhost:8081/api/v1/users",
+  users: import.meta.env.VITE_USERS_API ?? "http://localhost:8081/api/v1",
   academic: import.meta.env.VITE_ACADEMIC_API ?? "http://localhost:8082/api/v1/academic",
   contracts: import.meta.env.VITE_CONTRACTS_API ?? "http://localhost:8083/api/v1/contracts",
   crm: import.meta.env.VITE_CRM_API ?? "http://localhost:8084/api/v1/crm",
