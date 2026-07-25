@@ -6,19 +6,6 @@ import { fetchCourses, fetchEnrollments } from "../../api/academic.js";
 import { fetchContracts } from "../../api/contracts.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
-const STATUS_STYLES = {
-  green: { badge: "bg-green-100 text-green-700", dot: "bg-green-500" },
-  amber: { badge: "bg-amber-100 text-amber-700", dot: "bg-amber-500" },
-  red: { badge: "bg-red-100 text-red-700", dot: "bg-red-500" },
-};
-
-const TUTOR_STATUS_LABEL = {
-  active: { label: "Активен", color: "green" },
-  vacation: { label: "В отпуске", color: "amber" },
-  sick_leave: { label: "На больничном", color: "red" },
-  inactive: { label: "Неактивен", color: "red" },
-};
-
 const CONTRACT_STATUS_LABEL = {
   active: "Активен",
   terminated: "Расторгнут",
@@ -80,15 +67,6 @@ export default function AdminStudents() {
   const enrollmentsByStudent = useMemo(() => {
     const map = {};
     enrollments.forEach((e) => (map[e.student_id] ??= []).push(e));
-    return map;
-  }, [enrollments]);
-
-  const enrollmentsByTutor = useMemo(() => {
-    const map = {};
-    enrollments.forEach((e) => {
-      if (!e.tutor_id) return;
-      (map[e.tutor_id] ??= new Set()).add(e.student_id);
-    });
     return map;
   }, [enrollments]);
 
@@ -209,50 +187,6 @@ export default function AdminStudents() {
                 })}
               </tbody>
             </table>
-          </div>
-        </section>
-
-        <section className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h3 className="font-headline-sm text-headline-sm text-on-surface">Наши преподаватели</h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {!loading && tutors.length === 0 && (
-              <p className="text-on-surface-variant font-body-md">Преподавателей пока нет.</p>
-            )}
-            {tutors.map((t) => {
-              const statusInfo = TUTOR_STATUS_LABEL[t.tutor_status] ?? { label: "Активен", color: "green" };
-              const style = STATUS_STYLES[statusInfo.color];
-              const studentCount = enrollmentsByTutor[t.id]?.size ?? 0;
-              return (
-                <div
-                  key={t.id}
-                  className="bg-surface-container-lowest p-6 rounded-2xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 flex flex-col gap-4 group hover:border-primary/30 transition-all"
-                >
-                  <div className="flex justify-between items-start">
-                    <div className="relative">
-                      <div className="w-16 h-16 rounded-xl bg-primary-fixed flex items-center justify-center text-primary font-bold text-xl">
-                        {initials(t)}
-                      </div>
-                      <div className={`absolute -bottom-1 -right-1 w-4 h-4 ${style.dot} border-2 border-white rounded-full`} />
-                    </div>
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${style.badge}`}>
-                      {statusInfo.label}
-                    </span>
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-body-lg text-on-surface">{fullName(t)}</h4>
-                    <p className="text-label-md text-primary font-semibold">{t.specialization ?? "—"}</p>
-                  </div>
-                  <div className="flex justify-center items-center py-3 border-y border-outline-variant/20">
-                    <div className="text-center">
-                      <p className="text-[10px] text-outline uppercase font-bold">Учеников</p>
-                      <p className="font-bold text-on-surface">{studentCount}</p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         </section>
       </div>

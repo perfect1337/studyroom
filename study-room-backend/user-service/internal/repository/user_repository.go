@@ -23,11 +23,33 @@ func NewUserRepository(pool *pgxpool.Pool) *UserRepository {
 const userColumns = `id, email, phone, password_hash, role, last_name, first_name,
 	patronymic, avatar_url, branch_id, is_active, created_at, updated_at`
 
+// listColumns — то же самое + профиль репетитора (nil для всех остальных ролей,
+// т.к. LEFT JOIN). Нужен, чтобы List/ListAll возвращали specialization/tutor_status:
+// раньше их вообще не было в ответе GET /users, из-за чего в UI статус преподавателя
+// после обновления страницы "откатывался" на дефолтный, хотя в БД менялся корректно.
+const listColumns = `users.id, users.email, users.phone, users.password_hash, users.role, users.last_name, users.first_name,
+	users.patronymic, users.avatar_url, users.branch_id, users.is_active, users.created_at, users.updated_at,
+	tutor_profiles.specialization, tutor_profiles.status`
+
 func scanUser(row pgx.Row) (*models.User, error) {
 	var u models.User
 	err := row.Scan(&u.ID, &u.Email, &u.Phone, &u.PasswordHash, &u.Role, &u.LastName,
 		&u.FirstName, &u.Patronymic, &u.AvatarURL, &u.BranchID, &u.IsActive,
 		&u.CreatedAt, &u.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &u, nil
+}
+
+func scanUserWithTutorProfile(row pgx.Row) (*models.User, error) {
+	var u models.User
+	err := row.Scan(&u.ID, &u.Email, &u.Phone, &u.PasswordHash, &u.Role, &u.LastName,
+		&u.FirstName, &u.Patronymic, &u.AvatarURL, &u.BranchID, &u.IsActive,
+		&u.CreatedAt, &u.UpdatedAt, &u.Specialization, &u.TutorStatus)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -180,34 +202,36 @@ func (r *UserRepository) List(ctx context.Context, f ListFilter) ([]*models.User
 		for idx, role := range f.Roles {
 			roleStrs[idx] = string(role)
 		}
-		where += " AND role = ANY($" + itoa(i) + ")"
+		where += " AND users.role = ANY($" + itoa(i) + ")"
 		args = append(args, roleStrs)
 		i++
 	} else if f.Role != nil {
-		where += " AND role = $" + itoa(i)
+		where += " AND users.role = $" + itoa(i)
 		args = append(args, *f.Role)
 		i++
 	}
 	if f.BranchID != nil {
-		where += " AND branch_id = $" + itoa(i)
+		where += " AND users.branch_id = $" + itoa(i)
 		args = append(args, *f.BranchID)
 		i++
 	}
 	if f.Search != "" {
-		where += " AND (last_name ILIKE $" + itoa(i) + " OR first_name ILIKE $" + itoa(i) + ")"
+		where += " AND (users.last_name ILIKE $" + itoa(i) + " OR users.first_name ILIKE $" + itoa(i) + ")"
 		args = append(args, "%"+f.Search+"%")
 		i++
 	}
 
+	const fromJoin = "FROM users LEFT JOIN tutor_profiles ON tutor_profiles.user_id = users.id "
+
 	var total int
-	countQuery := "SELECT count(*) FROM users " + where
+	countQuery := "SELECT count(*) " + fromJoin + where
 	if err := r.pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
 	args = append(args, f.PerPage, (f.Page-1)*f.PerPage)
-	query := "SELECT " + userColumns + " FROM users " + where +
-		" ORDER BY id LIMIT $" + itoa(i) + " OFFSET $" + itoa(i+1)
+	query := "SELECT " + listColumns + " " + fromJoin + where +
+		" ORDER BY users.id LIMIT $" + itoa(i) + " OFFSET $" + itoa(i+1)
 
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -217,7 +241,7 @@ func (r *UserRepository) List(ctx context.Context, f ListFilter) ([]*models.User
 
 	var users []*models.User
 	for rows.Next() {
-		u, err := scanUser(rows)
+		u, err := scanUserWithTutorProfile(rows)
 		if err != nil {
 			return nil, 0, err
 		}

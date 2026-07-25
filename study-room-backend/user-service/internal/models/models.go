@@ -36,6 +36,11 @@ type User struct {
 	IsActive     bool      `json:"is_active"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+
+	// Заполняются только для role=tutor через LEFT JOIN tutor_profiles в List/ListAll
+	// (см. user_repository.go). Для остальных ролей всегда nil.
+	Specialization *string      `json:"specialization,omitempty"`
+	TutorStatus    *TutorStatus `json:"tutor_status,omitempty"`
 }
 
 type Branch struct {

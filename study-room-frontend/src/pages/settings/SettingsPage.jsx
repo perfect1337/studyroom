@@ -26,6 +26,46 @@ function initials(person) {
   return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
 }
 
+// В контракте бэкенда нет отдельного эндпоинта загрузки файла — только строковое
+// поле avatar_url. Чтобы пользователь не вставлял ссылку руками, читаем выбранный
+// файл, ужимаем его на канвасе (макс. 512x512, JPEG) и кладём как data:-URL в то же
+// поле — работает без изменений на сервере.
+const MAX_AVATAR_SIDE = 512;
+const MAX_AVATAR_BYTES = 1_500_000; // ~1.5MB — с запасом под TEXT-колонку и трафик
+
+function resizeImageFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/")) {
+      reject(new Error("Выберите файл изображения (JPEG, PNG, WebP)"));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Не удалось прочитать файл"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Файл повреждён или это не изображение"));
+      img.onload = () => {
+        const scale = Math.min(1, MAX_AVATAR_SIDE / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        if (dataUrl.length > MAX_AVATAR_BYTES) {
+          reject(new Error("Изображение слишком большое даже после сжатия — выберите файл поменьше"));
+          return;
+        }
+        resolve(dataUrl);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 /**
  * Раздел "Настройки" — общий для всех ролей (см. п.1.7 / 1.8 api-contracts.md):
  * - PATCH /users/me — редактирование имени/фамилии/отчества/аватара (по ссылке, т.к.
@@ -44,6 +84,24 @@ export default function SettingsPage({ role }) {
   });
   const [profileStatus, setProfileStatus] = useState("");
   const [profileError, setProfileError] = useState("");
+  const [avatarError, setAvatarError] = useState("");
+  const [avatarLoading, setAvatarLoading] = useState(false);
+
+  async function handleAvatarFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // чтобы можно было выбрать тот же файл повторно
+    if (!file) return;
+    setAvatarError("");
+    setAvatarLoading(true);
+    try {
+      const dataUrl = await resizeImageFile(file);
+      setProfileForm((f) => ({ ...f, avatar_url: dataUrl }));
+    } catch (err) {
+      setAvatarError(err.message || "Не удалось обработать изображение");
+    } finally {
+      setAvatarLoading(false);
+    }
+  }
 
   const [pwForm, setPwForm] = useState({ current_password: "", new_password: "", confirm_password: "" });
   const [pwStatus, setPwStatus] = useState("");
@@ -112,19 +170,44 @@ export default function SettingsPage({ role }) {
                 initials(user)
               )}
             </div>
+            <label
+              htmlFor="avatar-upload-input"
+              className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-opacity"
+              title="Загрузить фото"
+            >
+              <span className="material-symbols-outlined text-white text-3xl">photo_camera</span>
+            </label>
+            <input
+              id="avatar-upload-input"
+              type="file"
+              accept="image/*"
+              onChange={handleAvatarFile}
+              className="hidden"
+            />
           </div>
           <div className="text-center md:text-left flex-1 w-full">
             <h3 className="font-headline-sm text-headline-sm text-on-surface">{fullName(user) || user?.email}</h3>
             <p className="font-body-md text-on-surface-variant">{ROLE_TAGLINE[role] ?? "Управление учётной записью"}</p>
-            <div className="mt-4">
-              <label className="block text-[12px] font-bold text-on-surface-variant mb-1 text-left">Ссылка на фото профиля</label>
-              <input
-                value={profileForm.avatar_url}
-                onChange={(e) => setProfileForm((f) => ({ ...f, avatar_url: e.target.value }))}
-                placeholder="https://..."
-                className="w-full bg-surface border border-outline-variant rounded-lg px-4 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-on-surface"
-              />
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <label
+                htmlFor="avatar-upload-input"
+                className="inline-flex items-center gap-2 bg-surface border border-outline-variant rounded-lg px-4 py-2 text-label-md font-bold text-on-surface cursor-pointer hover:bg-surface-container-high transition-colors"
+              >
+                <span className="material-symbols-outlined text-[18px]">upload</span>
+                {avatarLoading ? "Обработка..." : "Загрузить фото"}
+              </label>
+              {profileForm.avatar_url && (
+                <button
+                  type="button"
+                  onClick={() => setProfileForm((f) => ({ ...f, avatar_url: "" }))}
+                  className="text-label-md text-error font-bold hover:underline"
+                >
+                  Удалить фото
+                </button>
+              )}
             </div>
+            {avatarError && <p className="text-sm text-error mt-2 text-left">{avatarError}</p>}
+            <p className="text-[12px] text-on-surface-variant mt-1 text-left">JPEG, PNG или WebP. Изменения сохранятся после нажатия «Сохранить изменения» ниже.</p>
           </div>
         </section>
 
@@ -186,7 +269,7 @@ export default function SettingsPage({ role }) {
             <div className="pt-stack-md flex justify-end">
               <button
                 type="submit"
-                disabled={profileStatus === "saving"}
+                disabled={profileStatus === "saving" || avatarLoading}
                 className={`font-label-md px-8 py-3 rounded-lg shadow-sm hover:translate-y-[-1px] active:scale-95 transition-all disabled:opacity-60 ${
                   profileStatus === "done" ? "bg-green-600 text-white" : "bg-primary text-on-primary"
                 }`}
