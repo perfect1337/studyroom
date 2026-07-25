@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import Pagination from "../../components/ui/Pagination.jsx";
 import { usePagination } from "../../utils/usePagination.js";
@@ -30,6 +31,10 @@ function initials(person) {
 export default function StudentsDirectory({ role }) {
   const isOwner = role === "owner";
   const { user } = useAuth();
+  const navigate = useNavigate();
+  // /admin/students/:id для owner, /branch/students/:id для branch_owner —
+  // единая карточка ученика (StudentDetail), см. AdminStudentDetail / BranchStudentDetail.
+  const studentDetailPath = (id) => (isOwner ? `/admin/students/${id}` : `/branch/students/${id}`);
 
   const [students, setStudents] = useState([]);
   const [tutors, setTutors] = useState([]);
@@ -215,7 +220,11 @@ export default function StudentsDirectory({ role }) {
                   const studentContracts = contractsByStudent[st.id] ?? [];
                   const latestContract = studentContracts[0];
                   return (
-                    <tr key={st.id} className="hover:bg-surface-container-low transition-colors group">
+                    <tr
+                      key={st.id}
+                      onClick={() => navigate(studentDetailPath(st.id))}
+                      className="hover:bg-surface-container-low transition-colors group cursor-pointer"
+                    >
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-primary-container/20 flex items-center justify-center text-primary font-bold">

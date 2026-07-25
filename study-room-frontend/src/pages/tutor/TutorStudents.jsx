@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import ProgressBar from "../../components/ui/ProgressBar.jsx";
@@ -22,6 +23,7 @@ function initials(person) {
 
 export default function TutorStudents() {
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const [enrollments, setEnrollments] = useState([]);
   const [courses, setCourses] = useState([]);
@@ -123,7 +125,11 @@ export default function TutorStudents() {
                   const course = coursesById[e.course_id];
                   const nextLesson = nextLessonByStudent[e.course_id];
                   return (
-                    <tr key={e.id} className="hover:bg-surface-container-low transition-colors">
+                    <tr
+                      key={e.id}
+                      onClick={() => navigate(`/tutor/students/${e.student_id}`)}
+                      className="hover:bg-surface-container-low transition-colors cursor-pointer"
+                    >
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant font-bold shrink-0">

@@ -51,9 +51,21 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (loginValue, password) => {
     const data = await authApi.login({ login: loginValue, password });
     setTokens(data);
-    setStoredUser(data.user);
-    setUser(data.user);
-    return data.user;
+    // POST /auth/login возвращает урезанный объект user (только id/role/first_name/
+    // last_name) — без avatar_url, patronymic, email и т.д. Если сохранить его как
+    // есть, при повторном входе аватар (и другие поля) "пропадают" из интерфейса,
+    // хотя в БД они на самом деле сохранены. Поэтому сразу подтягиваем полный
+    // профиль через GET /users/me — так же, как уже делает registerParent ниже.
+    let me = data.user;
+    try {
+      me = await authApi.fetchMe();
+    } catch {
+      // Если /users/me недоступен (например, временный сбой сети) — не блокируем
+      // вход, просто останемся с урезанным объектом из ответа логина.
+    }
+    setStoredUser(me);
+    setUser(me);
+    return me;
   }, []);
 
   const registerParent = useCallback(async (payload) => {

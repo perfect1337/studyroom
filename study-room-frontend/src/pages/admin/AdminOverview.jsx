@@ -201,6 +201,52 @@ export default function AdminOverview() {
               itemLabel="преподавателей"
             />
           </div>
+
+          <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant shadow-sm">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-headline-sm text-headline-sm">Новые заявки</h3>
+              <span className="bg-error text-white text-[10px] px-2 py-0.5 rounded-full">{applications.length} новых</span>
+            </div>
+
+            <div className="relative mb-4">
+              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[18px]">
+                search
+              </span>
+              <input
+                value={applicationSearch}
+                onChange={(e) => setApplicationSearch(e.target.value)}
+                placeholder="Поиск по имени (А-Я)..."
+                className="w-full bg-surface border border-outline-variant rounded-full pl-9 pr-4 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+              />
+            </div>
+
+            <div className="space-y-4">
+              {visibleApplications.length === 0 && (
+                <p className="text-sm text-on-surface-variant">
+                  {applicationSearch ? "Ничего не найдено." : "Новых заявок нет."}
+                </p>
+              )}
+              {pagedApplications.map((a) => (
+                <div key={a.id} className="p-3 border border-outline-variant rounded-xl hover:bg-surface-container-low transition-colors">
+                  <div className="flex justify-between items-start mb-1">
+                    <p className="font-bold text-label-md">{a.name} {a.age ? `(${a.age} лет)` : ""}</p>
+                    <span className="text-[10px] text-outline">
+                      {a.created_at ? new Date(a.created_at).toLocaleDateString("ru-RU") : ""}
+                    </span>
+                  </div>
+                  <p className="text-[12px] text-on-surface-variant">Интерес: {a.subject_interest ?? a.course ?? "—"}</p>
+                </div>
+              ))}
+            </div>
+
+            <Pagination
+              page={applicationsPage}
+              pageSize={APPLICATIONS_PAGE_SIZE}
+              total={visibleApplications.length}
+              onPageChange={setApplicationsPage}
+              itemLabel="заявок"
+            />
+          </div>
         </section>
 
         <aside className="flex flex-col gap-stack-lg">
@@ -265,52 +311,6 @@ export default function AdminOverview() {
                 <p className="text-sm text-red-100">{lessonStatus}</p>
               )}
             </form>
-          </div>
-
-          <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant shadow-sm">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-headline-sm text-headline-sm">Новые заявки</h3>
-              <span className="bg-error text-white text-[10px] px-2 py-0.5 rounded-full">{applications.length} новых</span>
-            </div>
-
-            <div className="relative mb-4">
-              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[18px]">
-                search
-              </span>
-              <input
-                value={applicationSearch}
-                onChange={(e) => setApplicationSearch(e.target.value)}
-                placeholder="Поиск по имени (А-Я)..."
-                className="w-full bg-surface border border-outline-variant rounded-full pl-9 pr-4 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-              />
-            </div>
-
-            <div className="space-y-4">
-              {visibleApplications.length === 0 && (
-                <p className="text-sm text-on-surface-variant">
-                  {applicationSearch ? "Ничего не найдено." : "Новых заявок нет."}
-                </p>
-              )}
-              {pagedApplications.map((a) => (
-                <div key={a.id} className="p-3 border border-outline-variant rounded-xl hover:bg-surface-container-low transition-colors">
-                  <div className="flex justify-between items-start mb-1">
-                    <p className="font-bold text-label-md">{a.name} {a.age ? `(${a.age} лет)` : ""}</p>
-                    <span className="text-[10px] text-outline">
-                      {a.created_at ? new Date(a.created_at).toLocaleDateString("ru-RU") : ""}
-                    </span>
-                  </div>
-                  <p className="text-[12px] text-on-surface-variant">Интерес: {a.subject_interest ?? a.course ?? "—"}</p>
-                </div>
-              ))}
-            </div>
-
-            <Pagination
-              page={applicationsPage}
-              pageSize={APPLICATIONS_PAGE_SIZE}
-              total={visibleApplications.length}
-              onPageChange={setApplicationsPage}
-              itemLabel="заявок"
-            />
           </div>
         </aside>
       </div>
