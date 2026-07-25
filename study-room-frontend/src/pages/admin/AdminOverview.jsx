@@ -2,12 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
+import Pagination from "../../components/ui/Pagination.jsx";
+import { usePagination } from "../../utils/usePagination.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople } from "../../api/users.js";
 import { fetchApplications } from "../../api/crm.js";
 import { fetchContracts } from "../../api/contracts.js";
 import { fetchCourses, createLesson } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+
+const TEACHERS_PAGE_SIZE = 5;
+const APPLICATIONS_PAGE_SIZE = 5;
 
 const TUTOR_STATUS_LABEL = {
   active: "Активен",
@@ -34,6 +39,7 @@ export default function AdminOverview() {
 
   const [lessonForm, setLessonForm] = useState({ tutorId: "", courseId: "", date: "", time: "" });
   const [lessonStatus, setLessonStatus] = useState("");
+  const [applicationSearch, setApplicationSearch] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -76,6 +82,19 @@ export default function AdminOverview() {
     { label: "Выручка (оплачено)", value: `₽${totalRevenue.toLocaleString("ru-RU")}`, icon: "trending_up" },
     { label: "Новые заявки", value: String(applications.length), icon: "assignment_ind" },
   ];
+
+  // Поиск по алфавиту среди заявок — фильтр по имени + сортировка А-Я.
+  const visibleApplications = useMemo(() => {
+    const q = applicationSearch.trim().toLowerCase();
+    const filtered = q ? applications.filter((a) => (a.name ?? "").toLowerCase().includes(q)) : applications;
+    return [...filtered].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "ru"));
+  }, [applications, applicationSearch]);
+
+  const { page: teachersPage, setPage: setTeachersPage, pageItems: pagedTutors } = usePagination(tutors, TEACHERS_PAGE_SIZE);
+  const { page: applicationsPage, setPage: setApplicationsPage, pageItems: pagedApplications } = usePagination(
+    visibleApplications,
+    APPLICATIONS_PAGE_SIZE
+  );
 
   async function handleCreateLesson(e) {
     e.preventDefault();
@@ -153,7 +172,7 @@ export default function AdminOverview() {
                     <td colSpan={3} className="px-6 py-8 text-center text-on-surface-variant">Репетиторов пока нет</td>
                   </tr>
                 )}
-                {tutors.map((t) => (
+                {pagedTutors.map((t) => (
                   <tr key={t.id} className="hover:bg-surface-container-low transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
@@ -174,6 +193,13 @@ export default function AdminOverview() {
                 ))}
               </tbody>
             </table>
+            <Pagination
+              page={teachersPage}
+              pageSize={TEACHERS_PAGE_SIZE}
+              total={tutors.length}
+              onPageChange={setTeachersPage}
+              itemLabel="преподавателей"
+            />
           </div>
         </section>
 
@@ -246,9 +272,26 @@ export default function AdminOverview() {
               <h3 className="font-headline-sm text-headline-sm">Новые заявки</h3>
               <span className="bg-error text-white text-[10px] px-2 py-0.5 rounded-full">{applications.length} новых</span>
             </div>
+
+            <div className="relative mb-4">
+              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[18px]">
+                search
+              </span>
+              <input
+                value={applicationSearch}
+                onChange={(e) => setApplicationSearch(e.target.value)}
+                placeholder="Поиск по имени (А-Я)..."
+                className="w-full bg-surface border border-outline-variant rounded-full pl-9 pr-4 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+              />
+            </div>
+
             <div className="space-y-4">
-              {applications.length === 0 && <p className="text-sm text-on-surface-variant">Новых заявок нет.</p>}
-              {applications.map((a) => (
+              {visibleApplications.length === 0 && (
+                <p className="text-sm text-on-surface-variant">
+                  {applicationSearch ? "Ничего не найдено." : "Новых заявок нет."}
+                </p>
+              )}
+              {pagedApplications.map((a) => (
                 <div key={a.id} className="p-3 border border-outline-variant rounded-xl hover:bg-surface-container-low transition-colors">
                   <div className="flex justify-between items-start mb-1">
                     <p className="font-bold text-label-md">{a.name} {a.age ? `(${a.age} лет)` : ""}</p>
@@ -260,6 +303,14 @@ export default function AdminOverview() {
                 </div>
               ))}
             </div>
+
+            <Pagination
+              page={applicationsPage}
+              pageSize={APPLICATIONS_PAGE_SIZE}
+              total={visibleApplications.length}
+              onPageChange={setApplicationsPage}
+              itemLabel="заявок"
+            />
           </div>
         </aside>
       </div>

@@ -2,10 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import ProgressBar from "../../components/ui/ProgressBar.jsx";
+import Pagination from "../../components/ui/Pagination.jsx";
+import { usePagination } from "../../utils/usePagination.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchEnrollments, fetchCourses, fetchLessons } from "../../api/academic.js";
 import { fetchMyPeople } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+
+const PAGE_SIZE = 10;
 
 function todayISO() {
   const d = new Date();
@@ -75,6 +79,8 @@ export default function TutorStudents() {
     return map;
   }, [upcomingLessons]);
 
+  const { page, setPage, pageItems: pagedEnrollments } = usePagination(enrollments, PAGE_SIZE);
+
   return (
     <DashboardShell role="tutor" user={toSidebarUser(user)} searchPlaceholder="Поиск ученика..." userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
       <div className="space-y-stack-md pb-stack-lg mt-4">
@@ -112,7 +118,7 @@ export default function TutorStudents() {
                 </tr>
               )}
               {!loading &&
-                enrollments.map((e) => {
+                pagedEnrollments.map((e) => {
                   const student = studentsById[e.student_id];
                   const course = coursesById[e.course_id];
                   const nextLesson = nextLessonByStudent[e.course_id];
@@ -143,6 +149,7 @@ export default function TutorStudents() {
                 })}
             </tbody>
           </table>
+          <Pagination page={page} pageSize={PAGE_SIZE} total={enrollments.length} onPageChange={setPage} itemLabel="учеников" />
         </div>
       </div>
     </DashboardShell>

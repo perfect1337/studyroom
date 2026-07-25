@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
+import Pagination from "../../components/ui/Pagination.jsx";
+import { usePagination } from "../../utils/usePagination.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople, fetchBranches, createTutor, setTutorStatus } from "../../api/users.js";
 import { fetchEnrollments } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+
+const PAGE_SIZE = 10;
 
 const TUTOR_STATUS_LABEL = {
   active: "Активен",
@@ -128,6 +132,8 @@ export default function TeachersDirectory({ role }) {
   }, [tutors, statusFilter]);
 
   const statusOptions = STATUS_OPTIONS_BY_ROLE[role] ?? STATUS_OPTIONS_BY_ROLE.branch_owner;
+
+  const { page, setPage, pageItems: pagedTutors } = usePagination(visibleTutors, PAGE_SIZE);
 
   async function handleStatusChange(tutorId, newStatus) {
     setRowUpdating(tutorId);
@@ -287,7 +293,7 @@ export default function TeachersDirectory({ role }) {
                   </td>
                 </tr>
               )}
-              {visibleTutors.map((t) => {
+              {pagedTutors.map((t) => {
                 const studentCount = activeStudentsByTutor[t.id]?.size ?? 0;
                 const status = t.tutor_status ?? "active";
                 return (
@@ -336,11 +342,7 @@ export default function TeachersDirectory({ role }) {
               })}
             </tbody>
           </table>
-          <div className="px-6 py-4 bg-surface-container-low border-t border-outline-variant flex justify-between items-center">
-            <span className="text-label-md text-on-surface-variant">
-              {loading ? "Загрузка..." : `Показано ${visibleTutors.length} из ${tutors.length}`}
-            </span>
-          </div>
+          <Pagination page={page} pageSize={PAGE_SIZE} total={visibleTutors.length} onPageChange={setPage} itemLabel="преподавателей" />
         </div>
       </div>
 
