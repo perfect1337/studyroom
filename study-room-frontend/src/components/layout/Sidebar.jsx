@@ -10,12 +10,14 @@ export const NAV_ITEMS = {
     { to: "/student/courses", icon: "school", label: "Курсы" },
     { to: "/student/homework", icon: "assignment", label: "Задания" },
     { to: "/student/profile", icon: "person", label: "Профиль" },
+    { to: "/student/settings", icon: "settings", label: "Настройки" },
   ],
   tutor: [
     { to: "/tutor", icon: "dashboard", label: "Обзор", end: true },
     { to: "/tutor/students", icon: "group", label: "Ученики" },
     { to: "/tutor/schedule", icon: "calendar_today", label: "Расписание" },
     { to: "/tutor/homework", icon: "assignment", label: "Задания" },
+    { to: "/tutor/settings", icon: "settings", label: "Настройки" },
   ],
   parent: [
     { to: "/parent", icon: "dashboard", label: "Обзор", end: true },
@@ -34,6 +36,7 @@ export const NAV_ITEMS = {
     { to: "/branch", icon: "dashboard", label: "Обзор", end: true },
     { to: "/branch/students", icon: "group", label: "Студенты" },
     { to: "/branch/teachers", icon: "school", label: "Учителя" },
+    { to: "/branch/settings", icon: "settings", label: "Настройки" },
   ],
 };
 

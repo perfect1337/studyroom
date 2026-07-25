@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
@@ -213,9 +214,12 @@ export default function BranchOverview() {
                   </div>
                 ))}
               </div>
-              <button className="w-full mt-8 py-3 border border-outline text-primary font-bold rounded-lg hover:bg-primary-fixed/30 transition-colors duration-200">
+              <Link
+                to="/branch/teachers"
+                className="w-full mt-8 py-3 border border-outline text-primary font-bold rounded-lg hover:bg-primary-fixed/30 transition-colors duration-200 flex items-center justify-center"
+              >
                 Все преподаватели
-              </button>
+              </Link>
             </div>
           </div>
         </div>

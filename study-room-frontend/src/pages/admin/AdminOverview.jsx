@@ -134,7 +134,7 @@ export default function AdminOverview() {
               className="bg-primary text-on-primary px-6 py-2 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:bg-on-primary-fixed-variant transition-colors active:scale-95"
             >
               <span className="material-symbols-outlined">person_add</span>
-              Все учителя
+              Добавить учителя
             </Link>
           </div>
 
