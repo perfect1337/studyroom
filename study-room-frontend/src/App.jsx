@@ -23,6 +23,7 @@ import AdminStudents from "./pages/admin/AdminStudents.jsx";
 import AdminFinance from "./pages/admin/AdminFinance.jsx";
 import AdminTeachers from "./pages/admin/AdminTeachers.jsx";
 import BranchOverview from "./pages/admin/BranchOverview.jsx";
+import BranchStudents from "./pages/admin/BranchStudents.jsx";
 import BranchTeachers from "./pages/admin/BranchTeachers.jsx";
 
 import PlaceholderPage from "./components/ui/PlaceholderPage.jsx";
@@ -70,7 +71,7 @@ export default function App() {
 
           {/* Управляющий филиалом (role: branch_owner) — отдельный раздел /branch */}
           <Route path="/branch" element={<ProtectedRoute roles={["branch_owner"]}><BranchOverview /></ProtectedRoute>} />
-          <Route path="/branch/students" element={<ProtectedRoute roles={["branch_owner"]}><PlaceholderPage title="Студенты филиала" /></ProtectedRoute>} />
+          <Route path="/branch/students" element={<ProtectedRoute roles={["branch_owner"]}><BranchStudents /></ProtectedRoute>} />
           <Route path="/branch/teachers" element={<ProtectedRoute roles={["branch_owner"]}><BranchTeachers /></ProtectedRoute>} />
           <Route path="/branch/settings" element={<ProtectedRoute roles={["branch_owner"]}><SettingsPage role="branch_owner" /></ProtectedRoute>} />
 
