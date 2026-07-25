@@ -12,9 +12,11 @@ import StudentSchedule from "./pages/student/StudentSchedule.jsx";
 import TutorOverview from "./pages/tutor/TutorOverview.jsx";
 import TutorStudents from "./pages/tutor/TutorStudents.jsx";
 import TutorNewLesson from "./pages/tutor/TutorNewLesson.jsx";
+import TutorSchedule from "./pages/tutor/TutorSchedule.jsx";
 
 import ParentOverview from "./pages/parent/ParentOverview.jsx";
 import ParentChildDetail from "./pages/parent/ParentChildDetail.jsx";
+import ParentSchedule from "./pages/parent/ParentSchedule.jsx";
 
 import AdminOverview from "./pages/admin/AdminOverview.jsx";
 import AdminStudents from "./pages/admin/AdminStudents.jsx";
@@ -43,7 +45,7 @@ export default function App() {
           {/* Репетитор (role: tutor) */}
           <Route path="/tutor" element={<ProtectedRoute roles={["tutor"]}><TutorOverview /></ProtectedRoute>} />
           <Route path="/tutor/students" element={<ProtectedRoute roles={["tutor"]}><TutorStudents /></ProtectedRoute>} />
-          <Route path="/tutor/schedule" element={<ProtectedRoute roles={["tutor"]}><PlaceholderPage title="Расписание репетитора" /></ProtectedRoute>} />
+          <Route path="/tutor/schedule" element={<ProtectedRoute roles={["tutor"]}><TutorSchedule /></ProtectedRoute>} />
           <Route path="/tutor/schedule/new" element={<ProtectedRoute roles={["tutor"]}><TutorNewLesson /></ProtectedRoute>} />
           <Route path="/tutor/homework" element={<ProtectedRoute roles={["tutor"]}><PlaceholderPage title="Домашние задания (репетитор)" /></ProtectedRoute>} />
 
@@ -51,7 +53,7 @@ export default function App() {
           <Route path="/parent" element={<ProtectedRoute roles={["parent"]}><ParentOverview /></ProtectedRoute>} />
           <Route path="/parent/children" element={<Navigate to="/parent" replace />} />
           <Route path="/parent/children/:childId" element={<ProtectedRoute roles={["parent"]}><ParentChildDetail /></ProtectedRoute>} />
-          <Route path="/parent/schedule" element={<ProtectedRoute roles={["parent"]}><PlaceholderPage title="Расписание всех детей" /></ProtectedRoute>} />
+          <Route path="/parent/schedule" element={<ProtectedRoute roles={["parent"]}><ParentSchedule /></ProtectedRoute>} />
           <Route path="/parent/settings" element={<ProtectedRoute roles={["parent"]}><PlaceholderPage title="Настройки родителя" /></ProtectedRoute>} />
 
           {/* Владелец сети филиалов (role: owner) — раздел /admin */}

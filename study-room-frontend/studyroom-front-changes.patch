@@ -1,0 +1,3433 @@
+diff --git a/study-room-frontend/src/App.jsx b/study-room-frontend/src/App.jsx
+index 5892391..f46f76b 100644
+--- a/study-room-frontend/src/App.jsx
++++ b/study-room-frontend/src/App.jsx
+@@ -19,7 +19,9 @@ import ParentChildDetail from "./pages/parent/ParentChildDetail.jsx";
+ import AdminOverview from "./pages/admin/AdminOverview.jsx";
+ import AdminStudents from "./pages/admin/AdminStudents.jsx";
+ import AdminFinance from "./pages/admin/AdminFinance.jsx";
++import AdminTeachers from "./pages/admin/AdminTeachers.jsx";
+ import BranchOverview from "./pages/admin/BranchOverview.jsx";
++import BranchTeachers from "./pages/admin/BranchTeachers.jsx";
+ 
+ import PlaceholderPage from "./components/ui/PlaceholderPage.jsx";
+ 
+@@ -57,14 +59,14 @@ export default function App() {
+           {/* Владелец сети филиалов (role: owner) — раздел /admin */}
+           <Route path="/admin" element={<ProtectedRoute roles={["owner"]}><AdminOverview /></ProtectedRoute>} />
+           <Route path="/admin/students" element={<ProtectedRoute roles={["owner"]}><AdminStudents /></ProtectedRoute>} />
+-          <Route path="/admin/teachers" element={<ProtectedRoute roles={["owner"]}><PlaceholderPage title="Все преподаватели" /></ProtectedRoute>} />
++          <Route path="/admin/teachers" element={<ProtectedRoute roles={["owner"]}><AdminTeachers /></ProtectedRoute>} />
+           <Route path="/admin/finance" element={<ProtectedRoute roles={["owner"]}><AdminFinance /></ProtectedRoute>} />
+           <Route path="/admin/settings" element={<ProtectedRoute roles={["owner"]}><PlaceholderPage title="Настройки платформы" /></ProtectedRoute>} />
+ 
+           {/* Управляющий филиалом (role: branch_owner) — отдельный раздел /branch */}
+           <Route path="/branch" element={<ProtectedRoute roles={["branch_owner"]}><BranchOverview /></ProtectedRoute>} />
+           <Route path="/branch/students" element={<ProtectedRoute roles={["branch_owner"]}><PlaceholderPage title="Студенты филиала" /></ProtectedRoute>} />
+-          <Route path="/branch/teachers" element={<ProtectedRoute roles={["branch_owner"]}><PlaceholderPage title="Учителя филиала" /></ProtectedRoute>} />
++          <Route path="/branch/teachers" element={<ProtectedRoute roles={["branch_owner"]}><BranchTeachers /></ProtectedRoute>} />
+ 
+           {/* 404 */}
+           <Route path="*" element={<PlaceholderPage title="Страница не найдена" />} />
+diff --git a/study-room-frontend/src/data/mockData.js b/study-room-frontend/src/data/mockData.js
+deleted file mode 100644
+index a2dcfa6..0000000
+--- a/study-room-frontend/src/data/mockData.js
++++ /dev/null
+@@ -1,330 +0,0 @@
+-// Моковые данные для демонстрации интерфейса.
+-// В боевой версии эти объекты заменяются результатами вызовов API (см. ТЗ, раздел 9).
+-
+-export const currentStudent = {
+-  id: 105932,
+-  name: "Алексей",
+-  fullName: "Алексей Смирнов",
+-  classInfo: "Ученик 11-А класса | Физико-математический профиль",
+-  avatarUrl:
+-    "https://lh3.googleusercontent.com/aida-public/AB6AXuCbxX-aNUwCfePni5ogdNDnXiwnKg9yy-bcYkYq-qzDCIyzeFOdwEFpfSOYkh5vrIxxZhLh-mwaJhKaw_VoOrf0Msf8Z-NejAXtEpSWsZhjd4-eyLz5szQouRyWApRCFdJqvwTowX5NZe-Rx5K25KR2aN6yG60ILkETKfFHQgFnsYyWtMJ-2xAscJUP5XU-v7u4yfi53xRYXyeu5KGUfE_vQJcLYddofmVYBaaqiEpU2R2M6BTyXmasGI3wLaz9iG-ThSWnUqcO5GY",
+-  subjects: [
+-    { name: "Математика", grade: "4.8 / 5", attendance: "4.8 / 5" },
+-    { name: "Английский язык", grade: "4.5 / 5", attendance: "4.5 / 5" },
+-  ],
+-  courses: [
+-    {
+-      id: "math-ege",
+-      icon: "calculate",
+-      accent: "primary",
+-      hoursPerWeek: "2ч / нед",
+-      title: "Математика - Подготовка к ЕГЭ",
+-      description: "Профильный уровень. Разбор сложных задач второй части.",
+-      teacher: "Иванов И.И.",
+-      nextLesson: "Завтра, 16:00",
+-    },
+-    {
+-      id: "english-b2",
+-      icon: "language",
+-      accent: "secondary",
+-      hoursPerWeek: "3ч / нед",
+-      title: "Английский язык (B2)",
+-      description: "Практика разговорной речи и подготовка к IELTS.",
+-      teacher: "Смирнова А.В.",
+-      nextLesson: "Пт, 18:00",
+-    },
+-  ],
+-  homework: [
+-    {
+-      id: "hw-1",
+-      icon: "edit_document",
+-      status: "in_progress",
+-      title: "Эссе по литературе",
+-      subtitle: "Тема: Образ Обломова",
+-      dueLabel: "Сдать через 1 день",
+-    },
+-    {
+-      id: "hw-2",
+-      icon: "warning",
+-      status: "overdue",
+-      title: "Тест по физике",
+-      subtitle: "Кинематика",
+-      dueLabel: "Сдать через 5 часов",
+-    },
+-    {
+-      id: "hw-3",
+-      icon: "check_circle",
+-      status: "submitted",
+-      title: "Уравнения по математике",
+-      subtitle: "Вариант 5",
+-      dueLabel: "Сдать через 4 дня",
+-    },
+-  ],
+-};
+-
+-export const currentTutor = {
+-  id: "TUT-55291",
+-  name: "Иван Петров",
+-  avatarUrl:
+-    "https://lh3.googleusercontent.com/aida-public/AB6AXuDV-Mg8037pzJUsMpN67TSCQY1yzt0FSyKQbnVOqEWU0AsWwukKsMfk7RicKxZDolCBXh7yoXvSQZ-TirYG-ExLxue90VSzj7UYwGpdQLVIwApRI5aYuQmx9K7Dllz4ApYzoOfVPPZeLrMw-0YClDGL4rXtKOESoeIUG5_AWVisSF8k0CCoFaJwp-hWMBdBPbnos1cNyMgbnjcUDvx2-KFjxjEFWl5g380jaWJBCtvMvBqOjR5fURk80U5ciHIU9uVkgYi2o57g1zo",
+-  todaySchedule: [
+-    {
+-      id: "l-1",
+-      time: "10:00",
+-      endTime: "11:30",
+-      subject: "Математика",
+-      statusTag: "Прошедшее",
+-      title: "Алгебра - Функции",
+-      isPast: true,
+-      absentStudent: "Михаил Иванов",
+-      absentReason: "По болезни (справка предоставлена)",
+-    },
+-    {
+-      id: "l-2",
+-      time: "15:00",
+-      endTime: "16:30",
+-      subject: "Математика",
+-      statusTag: "Групповое / Дистанционно",
+-      title: "Подготовка к ОГЭ - Алгебра",
+-      participants: "Группа 10-А (5 учеников)",
+-    },
+-    {
+-      id: "l-3",
+-      time: "17:00",
+-      endTime: "18:00",
+-      subject: "Физика",
+-      statusTag: "Индивидуально / Очно",
+-      title: "Кинематика - Повторение",
+-      participants: "Анна Смирнова",
+-      isLast: true,
+-    },
+-  ],
+-  students: [
+-    { id: "st-1", initials: "АС", name: "Анна Смирнова", subject: "Физика", progress: 85 },
+-    { id: "st-2", initials: "МИ", name: "Михаил Иванов", subject: "Математика", progress: 40 },
+-  ],
+-};
+-
+-export const currentParent = {
+-  id: 482910,
+-  name: "Елена Смирнова",
+-  email: "elena.smirnova@example.com",
+-  childrenCount: 2,
+-  avatarUrl:
+-    "https://lh3.googleusercontent.com/aida-public/AB6AXuBQvVsFBdktvyBuUKxakF0Tjr7BSdTxJevIfGqM7RIUsS7HutyG3vhuZcem-kEKUdLpJ1skNCE38hRx0XeY5yOxQOWwC-dN99csUAJhtRVK7-HqAUSeA5XTYUs2uqc9jFeq6Ack21ny4ITrWKJJ7bNKQLfbBbGZuKm-lQh4KtxkKhukcz2DqX8WlLCJ7AspJO7a1nVf7w_4UrlUMwGN4ortMOWNZs47RsPcWMa2o2dKhmg9g0TMvC9y_kqXWlKD3dshmw0dCT64vDU",
+-  children: [
+-    {
+-      id: "4588201",
+-      name: "Алексей Смирнов",
+-      classInfo: "4 Класс, Школа №1502",
+-      avatarUrl:
+-        "https://lh3.googleusercontent.com/aida-public/AB6AXuAbhvu1xfKma70jSne1Vp1BrkbCIIbICHds7StoOUFepXFtD1HR9sZH16osJtTZOMWgyk5AuyEg8R97AGnLMzK-tC2aMo7n16UiYwRWzaqotUY6RY7OshGfUG411Sn0ZcXzH_poKwY7mfzO0eCPwtRfdKrb41q4MB6zK9bnqZVqN-0cSi10aIVC249uBpOumiQNhZx70_gVNdp2iTUoT3ItbmoUWQO2k0GWcE6eNq55_-zFXSagBbhXUxl4LsKm7zD5XXbRxX5MmWg",
+-      photoUrl:
+-        "https://lh3.googleusercontent.com/aida-public/AB6AXuB17p5pxK-VJGlr4FOb7_nGJECreIyvh00ANYm4PhO5_IuDB8Q4PyfRg9_hFS0iYqGQiwpzfpQjpvzb82B1Fu3fxiA9lXtQdd44MJBWiW8nSKp6_whNCXpInZw2u5G8htcBXR16ZFYJ6XuONYpdLW_I4PZw3xRL7nsvFWF2aqTjauLIWmRjPVV7PU5ShE7SS1_sn4JVEGSVQKbzAAVmwUC4fg5d6jMEhGnGGcsCuMVGTlxOQK5kIrTXnD8_-BbiDpgN1Ci9oEa1Fqk",
+-      performance: "4.8/5",
+-      attendance: "98%",
+-      performancePct: 92,
+-      attendancePct: 95,
+-      courseTags: ["Математика - Подготовка к ЕГЭ", "Английский язык"],
+-      teachers: [
+-        { name: "Иван Петров", subject: "Математика" },
+-        { name: "Анна Смирнова", subject: "Английский язык" },
+-      ],
+-      courses: [
+-        {
+-          id: "olymp-math",
+-          icon: "calculate",
+-          title: "Олимпиадная Математика",
+-          teacher: "И. С. Петров",
+-          progress: 75,
+-          status: "Активен",
+-        },
+-        {
+-          id: "english-b1",
+-          icon: "language",
+-          title: "Английский язык (Level B1)",
+-          teacher: "Mary Poppins",
+-          progress: 40,
+-          status: "Активен",
+-        },
+-      ],
+-      homeworkTable: [
+-        {
+-          subject: "Математика",
+-          icon: "calculate",
+-          title: "Задачи на логику №45-52, подготовка к тесту",
+-          status: "В процессе",
+-          statusColor: "orange",
+-          due: "08.06.2024",
+-        },
+-        {
+-          subject: "Английский",
+-          icon: "language",
+-          title: "Present Perfect vs Past Simple Exercise Book",
+-          status: "Выполнено",
+-          statusColor: "green",
+-          due: "05.06.2024",
+-        },
+-        {
+-          subject: "Математика",
+-          icon: "calculate",
+-          title: "Геометрические фигуры: построение проекций",
+-          status: "Просрочено",
+-          statusColor: "error",
+-          due: "01.06.2024",
+-        },
+-      ],
+-      calendarMonth: "Июнь 2024",
+-      calendarDays: [
+-        { day: 27, muted: true },
+-        { day: 28, muted: true },
+-        { day: 29, muted: true },
+-        { day: 30, muted: true },
+-        { day: 31, muted: true },
+-        { day: 1 },
+-        { day: 2 },
+-        { day: 3, dot: "primary" },
+-        { day: 4 },
+-        { day: 5, dot: "secondary" },
+-        { day: 6, active: true },
+-        { day: 7 },
+-        { day: 8 },
+-        { day: 9 },
+-      ],
+-      dailySchedule: [
+-        { date: "06", title: "16:00 - Математика (И. С. Петров)", location: "Вебинар в Zoom", accent: "primary" },
+-        { date: "07", title: "14:30 - Английский (Mary Poppins)", location: "Класс №304", accent: "secondary" },
+-      ],
+-    },
+-  ],
+-  upcomingLessons: [
+-    { id: "up-1", title: "Математика (Алексей)", time: "Завтра, 15:00 - 16:30" },
+-    { id: "up-2", title: "Английский язык (Алексей)", time: "Пятница, 17:00 - 18:00" },
+-  ],
+-  contracts: [
+-    {
+-      id: "284-M",
+-      subject: "Математика (Алексей)",
+-      period: "15.01.2024 — 15.06.2024",
+-      amount: "4 500 ₽",
+-      status: "Активен",
+-    },
+-    {
+-      id: "112-A",
+-      subject: "Английский язык (Алексей)",
+-      period: "01.02.2024 — 01.07.2024",
+-      amount: "3 800 ₽",
+-      status: "Активен",
+-    },
+-  ],
+-  notificationSettings: { email: true, sms: false, messenger: true },
+-};
+-
+-export const adminOverview = {
+-  admin: { name: "Администратор" },
+-  stats: [
+-    { label: "Всего учеников", value: "1,248", icon: "school" },
+-    { label: "Активных учителей", value: "84", icon: "person_pin" },
+-    { label: "Выручка (мес.)", value: "₽4.2M", icon: "trending_up" },
+-    { label: "Заявки на обучение", value: "24", icon: "assignment_ind" },
+-  ],
+-  tutors: [
+-    { id: "T-4402", initials: "ИВ", name: "Игорь Волков", specialty: "Математика, ЕГЭ", status: "Активен" },
+-    { id: "T-3921", initials: "АС", name: "Анна Степанова", specialty: "Английский, IELTS", status: "В отпуске" },
+-    { id: "T-5011", initials: "ДП", name: "Дмитрий Петров", specialty: "Информатика, Python", status: "На больничном" },
+-  ],
+-  applications: [
+-    { id: "app-1", name: "Кирилл Д.", age: 7, course: "Английский с нуля", timeAgo: "10 мин назад", parent: "Елена Д." },
+-    { id: "app-2", name: "Софья Р.", age: 15, course: "Подготовка к ОГЭ (Матем)", timeAgo: "1 час назад", parent: "Игорь Р." },
+-  ],
+-};
+-
+-export const adminStudentsPage = {
+-  stats: [
+-    { label: "Всего учеников", value: "1,284", trend: "+12%" },
+-    { label: "Всего учителей", value: "48", trend: "Стабильно" },
+-    { label: "Ср. успеваемость", value: "4.2", stars: 4 },
+-    { label: "Активные курсы", value: "15" },
+-  ],
+-  students: [
+-    { id: 10293, initials: "АС", name: "Александр Смирнов", courses: ["Python Basics", "Web Design"], contractPeriod: "01.09.23 — 31.05.24", attendance: "96%", avgGrade: "4.8", status: "Активен" },
+-    { id: 10452, initials: "МП", name: "Мария Петрова", courses: ["History"], contractPeriod: "15.01.24 — 15.07.24", attendance: "88%", avgGrade: "3.9", status: "Активен" },
+-    { id: 10118, initials: "ДК", name: "Дарья Ковалёва", courses: ["Математика - ЕГЭ"], contractPeriod: "01.10.23 — 30.06.24", attendance: "72%", avgGrade: "3.4", status: "Риск" },
+-    { id: 10577, initials: "НС", name: "Никита Соколов", courses: ["Английский B2", "IELTS"], contractPeriod: "01.11.23 — 01.11.24", attendance: "94%", avgGrade: "4.5", status: "Активен" },
+-  ],
+-  teachers: [
+-    {
+-      id: "t1",
+-      name: "Дмитрий Волков",
+-      specialty: "Старший разработчик / Python",
+-      status: "Активен",
+-      statusColor: "green",
+-      students: 24,
+-      experience: "8 лет",
+-      rating: "4.9",
+-      avatarUrl:
+-        "https://lh3.googleusercontent.com/aida-public/AB6AXuDQlhflvE7SnmeD-LvWTcw-NQyLm5PF6jwO02WrYZv3YO6oxI9bhQnYxwmg1AAmzQR37-hPyJwpKpukCCW-qcSqbpQdsPmPCe9a_okoYRr3rqMI40Zf_pKEuFfrNvtJ2yizmAemPkJl9yGWgCj__Ty9uWCCITmg_6Eeom4xbaeQkqEl0TUOnwVzY9nsZoHOb8dD-4CET0GYew07PTPCUwyGdpcSrPVjH3s73MRgEVgrg2oDJ8SJ6D6ipBiUrLzdzu7323EJViUQq14",
+-    },
+-    {
+-      id: "t2",
+-      name: "Анна Кузнецова",
+-      specialty: "Искусство и Дизайн",
+-      status: "В отпуске",
+-      statusColor: "amber",
+-      students: 18,
+-      experience: "5 лет",
+-      rating: "4.7",
+-      avatarUrl:
+-        "https://lh3.googleusercontent.com/aida-public/AB6AXuCYDmv66j1EmdNBh-6Bxa3PL_mUcBeUe6ndMYHqDt3ecxXtZ8uDxGgWK9rhMQ0FYM8q2g_j1uJHUTgr7GZFcEvayOfz7dQjJQdclyK7D7ChTRD8blF-AtniAXeUvYiTQXD5P3-5Bv-Oi7YyFeDtTImoUiaGnGvhH4hh0b99fFg8-R_JjZCo0XosiGWactxY2d8wWoYbimKb9oc9fQke2u4dxxr9Sos7He3YLINfTAbe9R9tMwUwv16eNcDJuioMSZ54SqNjCb9_MaA",
+-    },
+-    {
+-      id: "t3",
+-      name: "Сергей Орлов",
+-      specialty: "История и Философия",
+-      status: "На больничном",
+-      statusColor: "red",
+-      students: 32,
+-      experience: "20 лет",
+-      rating: "5.0",
+-      avatarUrl:
+-        "https://lh3.googleusercontent.com/aida-public/AB6AXuBwUqZmib4zqhagb1NtyjqvueRa8UxGdc6Cys9Y6F-KrCPTIYAotOEgR2awiUuZifVmhNk3yZn5cb1YJq5CpVTvKwKsyAkoaKjZNw4zCKDxFhEAKIQrIMT0tOjD2DMOV5nAyADGbzwVQFMtsqAp04qvUyM-R9SH6gGkTqQr9HIEosRyay3o8NrCFSchiJACdpthopI6LJIzawnqpgjwJASz3N4sWaA_sMUS1YpkCIVNlI81XT2IY9-mW5otM1ykNiJFIlfYqw3ma0w",
+-    },
+-  ],
+-};
+-
+-// Полный список домашних заданий ученика — для страницы /student/homework.
+-// Первые 3 совпадают с блоком "Домашние задания" на обзоре (currentStudent.homework),
+-// остальное — история за прошлые недели.
+-export const studentHomeworkFull = [
+-  { id: "hw-1", subject: "Литература", icon: "edit_document", title: "Эссе по литературе", subtitle: "Тема: Образ Обломова", status: "В процессе", statusColor: "orange", due: "13.07.2026" },
+-  { id: "hw-2", subject: "Физика", icon: "warning", title: "Тест по физике", subtitle: "Кинематика", status: "Просрочено", statusColor: "error", due: "12.07.2026" },
+-  { id: "hw-3", subject: "Математика", icon: "calculate", title: "Уравнения по математике", subtitle: "Вариант 5", status: "Выполнено", statusColor: "green", due: "10.07.2026" },
+-  { id: "hw-4", subject: "Английский язык", icon: "language", title: "Present Perfect vs Past Simple", subtitle: "Exercise Book, стр. 24-26", status: "Выполнено", statusColor: "green", due: "05.07.2026" },
+-  { id: "hw-5", subject: "Математика", icon: "calculate", title: "Геометрические фигуры", subtitle: "Построение проекций", status: "Выполнено", statusColor: "green", due: "01.07.2026" },
+-  { id: "hw-6", subject: "Физика", icon: "science", title: "Лабораторная работа №4", subtitle: "Закон сохранения импульса", status: "Выполнено", statusColor: "green", due: "24.06.2026" },
+-  { id: "hw-7", subject: "Английский язык", icon: "language", title: "Эссе Opinion Essay", subtitle: "Тема: Technology in education", status: "Выполнено", statusColor: "green", due: "18.06.2026" },
+-];
+-
+-// Полный список учеников репетитора — для страницы /tutor/students.
+-export const tutorStudentsFull = [
+-  { id: "st-1", initials: "АС", name: "Анна Смирнова", subject: "Физика", parent: "Ольга Смирнова", progress: 85, attendance: "95%", avgGrade: "4.7", contractStatus: "Активен", nextLesson: "Пт, 17:00" },
+-  { id: "st-2", initials: "МИ", name: "Михаил Иванов", subject: "Математика", parent: "Елена Иванова", progress: 40, attendance: "68%", avgGrade: "3.6", contractStatus: "Риск", nextLesson: "Сегодня, 15:00" },
+-  { id: "st-3", initials: "ГП", name: "Group 10-А", subject: "Математика (группа)", parent: "5 учеников", progress: 62, attendance: "89%", avgGrade: "4.1", contractStatus: "Активен", nextLesson: "Пн, 15:00" },
+-  { id: "st-4", initials: "ВК", name: "Виктор Козлов", subject: "Физика", parent: "Наталья Козлова", progress: 78, attendance: "92%", avgGrade: "4.4", contractStatus: "Активен", nextLesson: "Ср, 16:00" },
+-];
+-
+-export const adminFinance = {
+-  totalRevenue: "₽ 1,240,500",
+-  overdueCount: 6,
+-  contracts: [
+-    { student: "Артем Волков", parent: "Елена Волкова (мать)", period: "01.09.23 — 31.05.24", amount: "₽ 85,000", status: "Оплачено" },
+-    { student: "София Морозова", parent: "Игорь Морозов (отец)", period: "15.01.24 — 15.06.24", amount: "₽ 120,000", status: "Ожидание" },
+-    { student: "Даниил Петров", parent: "Анна Петрова (мать)", period: "01.09.23 — 31.12.23", amount: "₽ 45,000", status: "Просрочен" },
+-    { student: "Мария Кузнецова", parent: "Мария Кузнецова", period: "01.02.24 — 01.02.25", amount: "₽ 240,000", status: "Просрочен" },
+-  ],
+-  invoices: [
+-    { number: "INV-2024-089", date: "От 14 Марта, 2024", amount: "₽ 12,500", client: "Дмитрий С." },
+-    { number: "INV-2024-088", date: "От 12 Марта, 2024", amount: "₽ 8,000", client: "Ольга К." },
+-    { number: "INV-2024-087", date: "От 10 Марта, 2024", amount: "₽ 15,200", client: "Константин В." },
+-  ],
+-};
+diff --git a/study-room-frontend/src/pages/admin/AdminFinance.jsx b/study-room-frontend/src/pages/admin/AdminFinance.jsx
+index 7d7e8b1..dbafbbd 100644
+--- a/study-room-frontend/src/pages/admin/AdminFinance.jsx
++++ b/study-room-frontend/src/pages/admin/AdminFinance.jsx
+@@ -1,146 +1,172 @@
++import { useEffect, useMemo, useState } from "react";
+ import DashboardShell from "../../components/layout/DashboardShell.jsx";
+ import StatusBadge from "../../components/ui/StatusBadge.jsx";
+-import { adminFinance, adminOverview } from "../../data/mockData.js";
++import { useAuth } from "../../context/AuthContext.jsx";
++import { fetchContracts } from "../../api/contracts.js";
++import { fetchMyPeople } from "../../api/users.js";
++import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
++
++const PAYMENT_STATUS_LABEL = {
++  paid: "Оплачено",
++  unpaid: "Ожидание",
++};
++
++function formatMoney(n) {
++  return `₽ ${Number(n ?? 0).toLocaleString("ru-RU")}`;
++}
+ 
+ export default function AdminFinance() {
+-  const { totalRevenue, overdueCount, contracts, invoices } = adminFinance;
++  const { user } = useAuth();
++
++  const [contracts, setContracts] = useState([]);
++  const [studentsById, setStudentsById] = useState({});
++  const [parentsById, setParentsById] = useState({});
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState("");
++
++  useEffect(() => {
++    let cancelled = false;
++    async function load() {
++      setLoading(true);
++      setError("");
++      try {
++        const [contractsRes, peopleRes] = await Promise.all([fetchContracts(), fetchMyPeople()]);
++        if (cancelled) return;
++        setContracts(contractsRes?.items ?? []);
++        const sMap = {};
++        (peopleRes?.students ?? []).forEach((s) => (sMap[s.id] = s));
++        setStudentsById(sMap);
++        const pMap = {};
++        (peopleRes?.parents ?? []).forEach((p) => (pMap[p.id] = p));
++        setParentsById(pMap);
++      } catch (e) {
++        if (!cancelled) setError(e.message || "Не удалось загрузить финансовые данные");
++      } finally {
++        if (!cancelled) setLoading(false);
++      }
++    }
++    load();
++    return () => {
++      cancelled = true;
++    };
++  }, []);
++
++  const totalRevenue = useMemo(
++    () => contracts.reduce((sum, c) => sum + (c.payment_status === "paid" ? Number(c.amount) || 0 : 0), 0),
++    [contracts]
++  );
++  const unpaidContracts = useMemo(() => contracts.filter((c) => c.payment_status !== "paid"), [contracts]);
+ 
+   return (
+-    <DashboardShell
+-      role="admin"
+-      user={adminOverview.admin}
+-      searchPlaceholder="Поиск по транзакциям..."
+-      userLabel="Алексей Иванов"
+-    >
++    <DashboardShell role="admin" user={toSidebarUser(user)} searchPlaceholder="Поиск по договорам..." userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
+       <div className="mt-4 pb-stack-lg">
+         <div className="flex justify-between items-end mb-8">
+           <div>
+             <h2 className="font-headline-md text-headline-md text-primary mb-1">Финансовый обзор</h2>
+             <p className="font-body-md text-body-md text-on-surface-variant">
+-              Управление доходами, контрактами и счетами учебного центра.
++              Управление доходами и договорами учебного центра.
+             </p>
+           </div>
+-          <button className="flex items-center gap-2 px-4 py-2 rounded-lg border border-primary text-primary font-label-md text-label-md hover:bg-primary hover:text-on-primary transition-colors">
+-            <span className="material-symbols-outlined">download</span>
+-            Экспорт
+-          </button>
+         </div>
+ 
++        {error && (
++          <div className="mb-6 p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
++        )}
++
+         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+           <div className="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high relative overflow-hidden group">
+             <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+               <span className="material-symbols-outlined text-6xl text-primary">account_balance_wallet</span>
+             </div>
+-            <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-2">Общая выручка</p>
+-            <h3 className="font-display-lg text-display-lg text-on-surface">{totalRevenue}</h3>
++            <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-2">Общая выручка (оплачено)</p>
++            <h3 className="font-display-lg text-display-lg text-on-surface">{loading ? "…" : formatMoney(totalRevenue)}</h3>
+           </div>
+ 
+           <div className="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high relative overflow-hidden group">
+             <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+               <span className="material-symbols-outlined text-6xl text-error">warning</span>
+             </div>
+-            <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-2">Просрочено</p>
++            <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-2">Ожидают оплаты</p>
+             <div className="flex items-center gap-2 mt-4 text-error font-bold">
+               <span className="material-symbols-outlined">priority_high</span>
+-              <span className="text-sm">{overdueCount} контрактов требуют внимания</span>
++              <span className="text-sm">{loading ? "…" : `${unpaidContracts.length} договоров требуют внимания`}</span>
+             </div>
+           </div>
+         </div>
+ 
+         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+-          {/* Действующие контракты */}
+           <div className="lg:col-span-2 bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high overflow-hidden">
+             <div className="p-6 border-b border-surface-container-high flex justify-between items-center">
+-              <h4 className="font-headline-sm text-headline-sm text-on-surface">Действующие контракты</h4>
+-              <button className="text-primary font-label-md text-label-md hover:underline">Все контракты</button>
++              <h4 className="font-headline-sm text-headline-sm text-on-surface">Все договоры</h4>
+             </div>
+             <div className="overflow-x-auto">
+               <table className="w-full text-left border-collapse">
+                 <thead>
+                   <tr className="bg-surface-container-low/50">
+-                    <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">
+-                      Студент / Родитель
+-                    </th>
+-                    <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">
+-                      Период
+-                    </th>
+-                    <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">
+-                      Сумма
+-                    </th>
+-                    <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">
+-                      Статус
+-                    </th>
+-                    <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high text-center">
+-                      Действие
+-                    </th>
++                    <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Ученик / Родитель</th>
++                    <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Период</th>
++                    <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Сумма</th>
++                    <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Оплата</th>
+                   </tr>
+                 </thead>
+                 <tbody className="divide-y divide-surface-container-high">
+-                  {contracts.map((c) => (
+-                    <tr key={c.student} className="hover:bg-surface-container-low/30 transition-colors">
+-                      <td className="px-6 py-4">
+-                        <div className="font-label-md text-label-md font-bold text-on-surface">{c.student}</div>
+-                        <div className="text-xs text-on-surface-variant">{c.parent}</div>
+-                      </td>
+-                      <td className="px-6 py-4 font-body-md text-body-md text-on-surface-variant">{c.period}</td>
+-                      <td className="px-6 py-4 font-body-md text-body-md font-semibold text-on-surface">{c.amount}</td>
+-                      <td className="px-6 py-4">
+-                        <StatusBadge status={c.status} />
+-                      </td>
+-                      <td className="px-6 py-4 text-center">
+-                        <button className="text-on-surface-variant hover:text-primary transition-colors">
+-                          <span className="material-symbols-outlined">more_vert</span>
+-                        </button>
+-                      </td>
++                  {!loading && contracts.length === 0 && (
++                    <tr>
++                      <td colSpan={4} className="px-6 py-8 text-center text-on-surface-variant">Договоров пока нет</td>
+                     </tr>
+-                  ))}
++                  )}
++                  {contracts.map((c) => {
++                    const student = studentsById[c.student_id];
++                    const parent = parentsById[c.parent_id];
++                    return (
++                      <tr key={c.id} className="hover:bg-surface-container-low/30 transition-colors">
++                        <td className="px-6 py-4">
++                          <div className="font-label-md text-label-md font-bold text-on-surface">
++                            {student ? fullName(student) : `Ученик #${c.student_id}`}
++                          </div>
++                          <div className="text-xs text-on-surface-variant">{parent ? fullName(parent) : `Родитель #${c.parent_id}`}</div>
++                        </td>
++                        <td className="px-6 py-4 font-body-md text-body-md text-on-surface-variant">{c.start_date} — {c.end_date}</td>
++                        <td className="px-6 py-4 font-body-md text-body-md font-semibold text-on-surface">{formatMoney(c.amount)}</td>
++                        <td className="px-6 py-4">
++                          <StatusBadge status={PAYMENT_STATUS_LABEL[c.payment_status] ?? c.payment_status} />
++                        </td>
++                      </tr>
++                    );
++                  })}
+                 </tbody>
+               </table>
+             </div>
+           </div>
+ 
+-          {/* Последние счета */}
+           <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high flex flex-col h-full">
+             <div className="p-6 border-b border-surface-container-high flex justify-between items-center">
+-              <h4 className="font-headline-sm text-headline-sm text-on-surface">Последние счета</h4>
+-              <button className="text-primary font-label-md text-label-md hover:underline">Подробнее</button>
++              <h4 className="font-headline-sm text-headline-sm text-on-surface">Ожидают оплаты</h4>
+             </div>
+             <div className="flex-1 overflow-y-auto p-4 space-y-4">
+-              {invoices.map((inv) => (
+-                <div
+-                  key={inv.number}
+-                  className="p-4 rounded-xl border border-surface-container-high hover:border-primary-fixed transition-all group"
+-                >
+-                  <div className="flex justify-between items-start mb-3">
+-                    <div>
+-                      <span className="font-label-md text-label-md font-bold text-on-surface">{inv.number}</span>
+-                      <p className="text-xs text-on-surface-variant">{inv.date}</p>
++              {unpaidContracts.length === 0 && (
++                <p className="text-sm text-on-surface-variant p-2">Все договоры оплачены.</p>
++              )}
++              {unpaidContracts.map((c) => {
++                const student = studentsById[c.student_id];
++                return (
++                  <div key={c.id} className="p-4 rounded-xl border border-surface-container-high hover:border-primary-fixed transition-all group">
++                    <div className="flex justify-between items-start mb-3">
++                      <div>
++                        <span className="font-label-md text-label-md font-bold text-on-surface">Договор №{c.id}</span>
++                        <p className="text-xs text-on-surface-variant">до {c.end_date}</p>
++                      </div>
++                      <span className="text-primary font-bold text-sm">{formatMoney(c.amount)}</span>
+                     </div>
+-                    <span className="text-primary font-bold text-sm">{inv.amount}</span>
+-                  </div>
+-                  <div className="flex items-center gap-3 mb-4">
+-                    <div className="w-8 h-8 rounded-full bg-surface-container-low flex items-center justify-center text-primary">
+-                      <span className="material-symbols-outlined text-sm">person</span>
++                    <div className="flex items-center gap-3">
++                      <div className="w-8 h-8 rounded-full bg-surface-container-low flex items-center justify-center text-primary">
++                        <span className="material-symbols-outlined text-sm">person</span>
++                      </div>
++                      <span className="text-sm font-medium">{student ? fullName(student) : `Ученик #${c.student_id}`}</span>
+                     </div>
+-                    <span className="text-sm font-medium">{inv.client}</span>
+                   </div>
+-                  <div className="grid grid-cols-2 gap-2">
+-                    <button className="flex items-center justify-center gap-1 py-1.5 rounded bg-surface-container-low text-on-surface-variant font-label-md text-xs hover:bg-primary-container hover:text-on-primary-container transition-colors">
+-                      <span className="material-symbols-outlined text-sm">download</span>
+-                      Скачать
+-                    </button>
+-                    <button className="flex items-center justify-center gap-1 py-1.5 rounded bg-surface-container-low text-on-surface-variant font-label-md text-xs hover:bg-secondary-container hover:text-on-secondary-container transition-colors">
+-                      <span className="material-symbols-outlined text-sm">send</span>
+-                      Послать
+-                    </button>
+-                  </div>
+-                </div>
+-              ))}
+-            </div>
+-            <div className="p-4 border-t border-surface-container-high">
+-              <button className="w-full text-center py-2 text-on-surface-variant font-label-md text-sm hover:text-primary transition-colors">
+-                Показать все счета
+-              </button>
++                );
++              })}
+             </div>
+           </div>
+         </div>
+diff --git a/study-room-frontend/src/pages/admin/AdminOverview.jsx b/study-room-frontend/src/pages/admin/AdminOverview.jsx
+index 4509c5e..1554e51 100644
+--- a/study-room-frontend/src/pages/admin/AdminOverview.jsx
++++ b/study-room-frontend/src/pages/admin/AdminOverview.jsx
+@@ -1,13 +1,110 @@
++import { useEffect, useMemo, useState } from "react";
+ import { Link } from "react-router-dom";
+ import DashboardShell from "../../components/layout/DashboardShell.jsx";
+ import StatusBadge from "../../components/ui/StatusBadge.jsx";
+-import { adminOverview } from "../../data/mockData.js";
++import { useAuth } from "../../context/AuthContext.jsx";
++import { fetchMyPeople } from "../../api/users.js";
++import { fetchApplications } from "../../api/crm.js";
++import { fetchContracts } from "../../api/contracts.js";
++import { fetchCourses, createLesson } from "../../api/academic.js";
++import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
++
++const TUTOR_STATUS_LABEL = {
++  active: "Активен",
++  vacation: "В отпуске",
++  sick_leave: "На больничном",
++  inactive: "Неактивен",
++};
++
++function initials(person) {
++  if (!person) return "?";
++  return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
++}
+ 
+ export default function AdminOverview() {
+-  const { admin, stats, tutors, applications } = adminOverview;
++  const { user } = useAuth();
++
++  const [students, setStudents] = useState([]);
++  const [tutors, setTutors] = useState([]);
++  const [applications, setApplications] = useState([]);
++  const [contracts, setContracts] = useState([]);
++  const [courses, setCourses] = useState([]);
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState("");
++
++  const [lessonForm, setLessonForm] = useState({ tutorId: "", courseId: "", date: "", time: "" });
++  const [lessonStatus, setLessonStatus] = useState("");
++
++  useEffect(() => {
++    let cancelled = false;
++    async function load() {
++      setLoading(true);
++      setError("");
++      try {
++        const [peopleRes, applicationsRes, contractsRes, coursesRes] = await Promise.all([
++          fetchMyPeople(),
++          fetchApplications({ status: "new" }).catch(() => ({ items: [] })),
++          fetchContracts().catch(() => ({ items: [] })),
++          fetchCourses(),
++        ]);
++        if (cancelled) return;
++        setStudents(peopleRes?.students ?? []);
++        setTutors(peopleRes?.tutors ?? []);
++        setApplications(applicationsRes?.items ?? []);
++        setContracts(contractsRes?.items ?? []);
++        setCourses(coursesRes?.items ?? []);
++      } catch (e) {
++        if (!cancelled) setError(e.message || "Не удалось загрузить данные");
++      } finally {
++        if (!cancelled) setLoading(false);
++      }
++    }
++    load();
++    return () => {
++      cancelled = true;
++    };
++  }, []);
++
++  const totalRevenue = useMemo(
++    () => contracts.reduce((sum, c) => sum + (c.payment_status === "paid" ? Number(c.amount) || 0 : 0), 0),
++    [contracts]
++  );
++
++  const stats = [
++    { label: "Всего учеников", value: String(students.length), icon: "school" },
++    { label: "Всего репетиторов", value: String(tutors.length), icon: "person_pin" },
++    { label: "Выручка (оплачено)", value: `₽${totalRevenue.toLocaleString("ru-RU")}`, icon: "trending_up" },
++    { label: "Новые заявки", value: String(applications.length), icon: "assignment_ind" },
++  ];
++
++  async function handleCreateLesson(e) {
++    e.preventDefault();
++    if (!lessonForm.tutorId || !lessonForm.courseId || !lessonForm.date || !lessonForm.time) return;
++    setLessonStatus("saving");
++    try {
++      await createLesson({
++        course_id: Number(lessonForm.courseId),
++        tutor_id: Number(lessonForm.tutorId),
++        topic: "Занятие",
++        lesson_date: lessonForm.date,
++        start_time: lessonForm.time,
++        end_time: lessonForm.time,
++        location_type: "offline",
++        group_type: "individual",
++      });
++      setLessonStatus("done");
++      setLessonForm({ tutorId: "", courseId: "", date: "", time: "" });
++    } catch (e) {
++      setLessonStatus(e.message || "Не удалось создать занятие");
++    }
++  }
+ 
+   return (
+-    <DashboardShell role="admin" user={admin} searchPlaceholder="Поиск учеников или учителей...">
++    <DashboardShell role="admin" user={toSidebarUser(user)} searchPlaceholder="Поиск учеников или учителей...">
++      {error && (
++        <div className="mt-4 p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
++      )}
++
+       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-stack-md mb-stack-lg mt-4">
+         {stats.map((s) => (
+           <div
+@@ -19,7 +116,7 @@ export default function AdminOverview() {
+             </div>
+             <div>
+               <p className="text-on-surface-variant font-label-md text-label-md">{s.label}</p>
+-              <p className="text-headline-sm font-headline-sm text-primary">{s.value}</p>
++              <p className="text-headline-sm font-headline-sm text-primary">{loading ? "…" : s.value}</p>
+             </div>
+           </div>
+         ))}
+@@ -30,12 +127,15 @@ export default function AdminOverview() {
+           <div className="flex justify-between items-end">
+             <div>
+               <h2 className="text-headline-sm font-headline-sm text-on-surface">Управление преподавателями</h2>
+-              <p className="text-on-surface-variant text-label-md font-label-md">Список активных репетиторов и их текущий статус</p>
++              <p className="text-on-surface-variant text-label-md font-label-md">Список репетиторов и их текущий статус</p>
+             </div>
+-            <button className="bg-primary text-on-primary px-6 py-2 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:bg-on-primary-fixed-variant transition-colors active:scale-95">
++            <Link
++              to="/admin/teachers"
++              className="bg-primary text-on-primary px-6 py-2 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:bg-on-primary-fixed-variant transition-colors active:scale-95"
++            >
+               <span className="material-symbols-outlined">person_add</span>
+-              Добавить учителя
+-            </button>
++              Все учителя
++            </Link>
+           </div>
+ 
+           <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden overflow-x-auto">
+@@ -45,31 +145,30 @@ export default function AdminOverview() {
+                   <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">ФИО Преподавателя</th>
+                   <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Специализация</th>
+                   <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Статус</th>
+-                  <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right">Действия</th>
+                 </tr>
+               </thead>
+               <tbody className="divide-y divide-outline-variant">
++                {!loading && tutors.length === 0 && (
++                  <tr>
++                    <td colSpan={3} className="px-6 py-8 text-center text-on-surface-variant">Репетиторов пока нет</td>
++                  </tr>
++                )}
+                 {tutors.map((t) => (
+                   <tr key={t.id} className="hover:bg-surface-container-low transition-colors">
+                     <td className="px-6 py-4">
+                       <div className="flex items-center gap-3">
+                         <div className="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center font-bold text-primary">
+-                          {t.initials}
++                          {initials(t)}
+                         </div>
+                         <div>
+-                          <p className="font-label-md text-label-md font-bold">{t.name}</p>
++                          <p className="font-label-md text-label-md font-bold">{fullName(t)}</p>
+                           <p className="text-[12px] text-outline">ID: {t.id}</p>
+                         </div>
+                       </div>
+                     </td>
+-                    <td className="px-6 py-4 text-label-md font-label-md">{t.specialty}</td>
++                    <td className="px-6 py-4 text-label-md font-label-md">{t.specialization ?? "—"}</td>
+                     <td className="px-6 py-4">
+-                      <StatusBadge status={t.status} />
+-                    </td>
+-                    <td className="px-6 py-4 text-right">
+-                      <button className="text-outline hover:text-primary">
+-                        <span className="material-symbols-outlined">more_vert</span>
+-                      </button>
++                      <StatusBadge status={TUTOR_STATUS_LABEL[t.tutor_status] ?? "Активен"} />
+                     </td>
+                   </tr>
+                 ))}
+@@ -85,39 +184,61 @@ export default function AdminOverview() {
+               <h3 className="font-headline-sm text-headline-sm">Назначить урок</h3>
+             </div>
+             <p className="opacity-90 text-label-md font-label-md">Быстрое добавление занятия в расписание</p>
+-            <div className="flex flex-col gap-4 mt-2">
++            <form onSubmit={handleCreateLesson} className="flex flex-col gap-4 mt-2">
+               <div>
+                 <label className="block text-[12px] font-bold text-white mb-1">Преподаватель</label>
+-                <select className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md focus:ring-2 focus:ring-secondary-container appearance-none">
++                <select
++                  value={lessonForm.tutorId}
++                  onChange={(e) => setLessonForm((f) => ({ ...f, tutorId: e.target.value }))}
++                  className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md focus:ring-2 focus:ring-secondary-container appearance-none"
++                >
+                   <option value="">Выберите учителя</option>
+                   {tutors.map((t) => (
+-                    <option key={t.id} value={t.id}>{t.name}</option>
++                    <option key={t.id} value={t.id}>{fullName(t)}</option>
+                   ))}
+                 </select>
+               </div>
+               <div>
+-                <label className="block text-[12px] font-bold text-white mb-1">Ученик</label>
+-                <select className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md focus:ring-2 focus:ring-secondary-container appearance-none">
+-                  <option value="">Выберите ученика</option>
+-                  <option>Алексей К.</option>
+-                  <option>Мария С.</option>
+-                  <option>Иван П.</option>
++                <label className="block text-[12px] font-bold text-white mb-1">Курс</label>
++                <select
++                  value={lessonForm.courseId}
++                  onChange={(e) => setLessonForm((f) => ({ ...f, courseId: e.target.value }))}
++                  className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md focus:ring-2 focus:ring-secondary-container appearance-none"
++                >
++                  <option value="">Выберите курс</option>
++                  {courses.map((c) => (
++                    <option key={c.id} value={c.id}>{c.title}</option>
++                  ))}
+                 </select>
+               </div>
+               <div className="grid grid-cols-2 gap-2">
+                 <div>
+                   <label className="block text-[12px] font-bold text-white mb-1">Дата</label>
+-                  <input className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md" type="date" />
++                  <input
++                    className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md"
++                    type="date"
++                    value={lessonForm.date}
++                    onChange={(e) => setLessonForm((f) => ({ ...f, date: e.target.value }))}
++                  />
+                 </div>
+                 <div>
+                   <label className="block text-[12px] font-bold text-white mb-1">Время</label>
+-                  <input className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md" type="time" />
++                  <input
++                    className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md"
++                    type="time"
++                    value={lessonForm.time}
++                    onChange={(e) => setLessonForm((f) => ({ ...f, time: e.target.value }))}
++                  />
+                 </div>
+               </div>
+-              <button className="bg-secondary-container text-on-secondary-container py-4 rounded-lg font-bold hover:brightness-110 transition-all shadow-md active:scale-95 mt-2">
++              <button type="submit" className="bg-secondary-container text-on-secondary-container py-4 rounded-lg font-bold hover:brightness-110 transition-all shadow-md active:scale-95 mt-2">
+                 Подтвердить
+               </button>
+-            </div>
++              {lessonStatus === "done" && <p className="text-sm text-white">Занятие создано!</p>}
++              {lessonStatus && lessonStatus !== "saving" && lessonStatus !== "done" && (
++                <p className="text-sm text-red-100">{lessonStatus}</p>
++              )}
++            </form>
+           </div>
+ 
+           <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant shadow-sm">
+@@ -126,20 +247,19 @@ export default function AdminOverview() {
+               <span className="bg-error text-white text-[10px] px-2 py-0.5 rounded-full">{applications.length} новых</span>
+             </div>
+             <div className="space-y-4">
++              {applications.length === 0 && <p className="text-sm text-on-surface-variant">Новых заявок нет.</p>}
+               {applications.map((a) => (
+-                <div key={a.id} className="p-3 border border-outline-variant rounded-xl hover:bg-surface-container-low transition-colors cursor-pointer">
++                <div key={a.id} className="p-3 border border-outline-variant rounded-xl hover:bg-surface-container-low transition-colors">
+                   <div className="flex justify-between items-start mb-1">
+-                    <p className="font-bold text-label-md">{a.name} ({a.age} лет)</p>
+-                    <span className="text-[10px] text-outline">{a.timeAgo}</span>
++                    <p className="font-bold text-label-md">{a.name} {a.age ? `(${a.age} лет)` : ""}</p>
++                    <span className="text-[10px] text-outline">
++                      {a.created_at ? new Date(a.created_at).toLocaleDateString("ru-RU") : ""}
++                    </span>
+                   </div>
+-                  <p className="text-[12px] text-on-surface-variant">Курс: {a.course}</p>
+-                  <p className="text-[10px] text-primary font-bold mt-1">Родитель: {a.parent}</p>
++                  <p className="text-[12px] text-on-surface-variant">Интерес: {a.subject_interest ?? a.course ?? "—"}</p>
+                 </div>
+               ))}
+             </div>
+-            <button className="w-full mt-4 text-primary font-bold text-label-md border border-primary py-2 rounded-lg hover:bg-primary hover:text-white transition-all">
+-              Смотреть все заявки
+-            </button>
+           </div>
+         </aside>
+       </div>
+diff --git a/study-room-frontend/src/pages/admin/AdminStudents.jsx b/study-room-frontend/src/pages/admin/AdminStudents.jsx
+index 1178378..8696f38 100644
+--- a/study-room-frontend/src/pages/admin/AdminStudents.jsx
++++ b/study-room-frontend/src/pages/admin/AdminStudents.jsx
+@@ -1,5 +1,10 @@
++import { useEffect, useMemo, useState } from "react";
+ import DashboardShell from "../../components/layout/DashboardShell.jsx";
+-import { adminStudentsPage } from "../../data/mockData.js";
++import { useAuth } from "../../context/AuthContext.jsx";
++import { fetchMyPeople } from "../../api/users.js";
++import { fetchCourses, fetchEnrollments } from "../../api/academic.js";
++import { fetchContracts } from "../../api/contracts.js";
++import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+ 
+ const STATUS_STYLES = {
+   green: { badge: "bg-green-100 text-green-700", dot: "bg-green-500" },
+@@ -7,43 +12,123 @@ const STATUS_STYLES = {
+   red: { badge: "bg-red-100 text-red-700", dot: "bg-red-500" },
+ };
+ 
++const TUTOR_STATUS_LABEL = {
++  active: { label: "Активен", color: "green" },
++  vacation: { label: "В отпуске", color: "amber" },
++  sick_leave: { label: "На больничном", color: "red" },
++  inactive: { label: "Неактивен", color: "red" },
++};
++
++const CONTRACT_STATUS_LABEL = {
++  active: "Активен",
++  terminated: "Расторгнут",
++  completed: "Завершён",
++};
++
++function initials(person) {
++  if (!person) return "?";
++  return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
++}
++
+ export default function AdminStudents() {
+-  const { stats, students, teachers } = adminStudentsPage;
++  const { user } = useAuth();
++
++  const [students, setStudents] = useState([]);
++  const [tutors, setTutors] = useState([]);
++  const [courses, setCourses] = useState([]);
++  const [enrollments, setEnrollments] = useState([]);
++  const [contracts, setContracts] = useState([]);
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState("");
++
++  useEffect(() => {
++    let cancelled = false;
++    async function load() {
++      setLoading(true);
++      setError("");
++      try {
++        const [peopleRes, coursesRes, enrollRes, contractsRes] = await Promise.all([
++          fetchMyPeople(),
++          fetchCourses(),
++          fetchEnrollments(),
++          fetchContracts().catch(() => ({ items: [] })),
++        ]);
++        if (cancelled) return;
++        setStudents(peopleRes?.students ?? []);
++        setTutors(peopleRes?.tutors ?? []);
++        setCourses(coursesRes?.items ?? []);
++        setEnrollments(enrollRes?.items ?? []);
++        setContracts(contractsRes?.items ?? []);
++      } catch (e) {
++        if (!cancelled) setError(e.message || "Не удалось загрузить данные");
++      } finally {
++        if (!cancelled) setLoading(false);
++      }
++    }
++    load();
++    return () => {
++      cancelled = true;
++    };
++  }, []);
++
++  const coursesById = useMemo(() => {
++    const map = {};
++    courses.forEach((c) => (map[c.id] = c));
++    return map;
++  }, [courses]);
++
++  const enrollmentsByStudent = useMemo(() => {
++    const map = {};
++    enrollments.forEach((e) => (map[e.student_id] ??= []).push(e));
++    return map;
++  }, [enrollments]);
++
++  const enrollmentsByTutor = useMemo(() => {
++    const map = {};
++    enrollments.forEach((e) => {
++      if (!e.tutor_id) return;
++      (map[e.tutor_id] ??= new Set()).add(e.student_id);
++    });
++    return map;
++  }, [enrollments]);
++
++  const contractsByStudent = useMemo(() => {
++    const map = {};
++    contracts.forEach((c) => (map[c.student_id] ??= []).push(c));
++    return map;
++  }, [contracts]);
++
++  const avgProgress = enrollments.length
++    ? Math.round(enrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / enrollments.length)
++    : 0;
++
++  const stats = [
++    { label: "Всего учеников", value: String(students.length) },
++    { label: "Всего учителей", value: String(tutors.length) },
++    { label: "Средний прогресс", value: `${avgProgress}%` },
++    { label: "Активные курсы", value: String(courses.length) },
++  ];
+ 
+   return (
+-    <DashboardShell role="admin" user={{ name: "Администратор" }} searchPlaceholder="Поиск студентов или учителей...">
++    <DashboardShell role="admin" user={toSidebarUser(user)} searchPlaceholder="Поиск студентов или учителей...">
+       <div className="space-y-10 pb-10 mt-4">
+         <div className="flex justify-between items-end">
+           <div>
+             <h2 className="font-headline-md text-headline-md text-primary mb-2">Академический состав</h2>
+             <p className="font-body-md text-body-md text-on-surface-variant">Управление всеми участниками образовательного процесса</p>
+           </div>
+-          <button className="flex items-center gap-2 px-6 py-3 bg-secondary-container text-on-secondary-container rounded-lg font-label-md text-label-md shadow-md hover:translate-y-[-2px] transition-all">
+-            <span className="material-symbols-outlined">school</span>
+-            Добавить учителя
+-          </button>
+         </div>
+ 
++        {error && (
++          <div className="p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
++        )}
++
+         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+           {stats.map((s) => (
+             <div key={s.label} className="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30">
+               <p className="text-label-md text-on-surface-variant mb-1">{s.label}</p>
+               <div className="flex items-end gap-2">
+-                <span className="text-3xl font-bold text-primary">{s.value}</span>
+-                {s.trend && <span className="text-green-600 font-bold flex items-center text-sm mb-1">{s.trend}</span>}
+-                {s.stars && (
+-                  <div className="flex mb-1.5">
+-                    {Array.from({ length: 5 }).map((_, i) => (
+-                      <span
+-                        key={i}
+-                        className="material-symbols-outlined text-secondary text-sm"
+-                        style={i < s.stars ? { fontVariationSettings: "'FILL' 1" } : undefined}
+-                      >
+-                        star
+-                      </span>
+-                    ))}
+-                  </div>
+-                )}
++                <span className="text-3xl font-bold text-primary">{loading ? "…" : s.value}</span>
+               </div>
+             </div>
+           ))}
+@@ -52,12 +137,6 @@ export default function AdminStudents() {
+         <section className="space-y-4">
+           <div className="flex items-center justify-between">
+             <h3 className="font-headline-sm text-headline-sm text-on-surface">Список учеников</h3>
+-            <select className="bg-surface border-outline-variant rounded-lg text-label-md px-4 py-2 outline-none focus:border-primary">
+-              <option>Все курсы</option>
+-              <option>Математика</option>
+-              <option>Программирование</option>
+-              <option>История</option>
+-            </select>
+           </div>
+           <div className="bg-surface-container-lowest rounded-2xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] overflow-hidden border border-outline-variant/30 overflow-x-auto">
+             <table className="w-full text-left border-collapse min-w-[760px]">
+@@ -65,62 +144,69 @@ export default function AdminStudents() {
+                 <tr className="bg-surface-container-low text-on-surface-variant font-label-md">
+                   <th className="px-6 py-4 font-semibold">Ученик</th>
+                   <th className="px-6 py-4 font-semibold">Курсы</th>
+-                  <th className="px-6 py-4 font-semibold">Срок контракта</th>
+-                  <th className="px-6 py-4 font-semibold">Посещаемость</th>
+-                  <th className="px-6 py-4 font-semibold">Ср. балл</th>
++                  <th className="px-6 py-4 font-semibold">Срок договора</th>
++                  <th className="px-6 py-4 font-semibold">Прогресс</th>
+                   <th className="px-6 py-4 font-semibold">Статус</th>
+-                  <th className="px-6 py-4" />
+                 </tr>
+               </thead>
+               <tbody className="divide-y divide-outline-variant/20">
+-                {students.map((st) => (
+-                  <tr key={st.id} className="hover:bg-surface-container-low transition-colors group">
+-                    <td className="px-6 py-4">
+-                      <div className="flex items-center gap-3">
+-                        <div className="w-10 h-10 rounded-full bg-primary-container/20 flex items-center justify-center text-primary font-bold">
+-                          {st.initials}
++                {!loading && students.length === 0 && (
++                  <tr>
++                    <td colSpan={5} className="px-6 py-8 text-center text-on-surface-variant">Учеников пока нет</td>
++                  </tr>
++                )}
++                {students.map((st) => {
++                  const studentEnrollments = enrollmentsByStudent[st.id] ?? [];
++                  const avg = studentEnrollments.length
++                    ? Math.round(studentEnrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / studentEnrollments.length)
++                    : 0;
++                  const studentContracts = contractsByStudent[st.id] ?? [];
++                  const latestContract = studentContracts[0];
++                  return (
++                    <tr key={st.id} className="hover:bg-surface-container-low transition-colors group">
++                      <td className="px-6 py-4">
++                        <div className="flex items-center gap-3">
++                          <div className="w-10 h-10 rounded-full bg-primary-container/20 flex items-center justify-center text-primary font-bold">
++                            {initials(st)}
++                          </div>
++                          <div>
++                            <div className="font-bold text-on-surface">{fullName(st)}</div>
++                            <div className="text-[12px] text-on-surface-variant">ID: {st.id}</div>
++                          </div>
+                         </div>
+-                        <div>
+-                          <div className="font-bold text-on-surface">{st.name}</div>
+-                          <div className="text-[12px] text-on-surface-variant">ID: {st.id}</div>
++                      </td>
++                      <td className="px-6 py-4">
++                        <div className="flex flex-wrap gap-1">
++                          {studentEnrollments.length === 0 && <span className="text-[12px] text-on-surface-variant">—</span>}
++                          {studentEnrollments.map((e) => (
++                            <span key={e.id} className="px-2 py-1 bg-surface-variant rounded text-[11px] font-bold text-primary">
++                              {coursesById[e.course_id]?.title ?? coursesById[e.course_id]?.subject ?? `#${e.course_id}`}
++                            </span>
++                          ))}
+                         </div>
+-                      </div>
+-                    </td>
+-                    <td className="px-6 py-4">
+-                      <div className="flex flex-wrap gap-1">
+-                        {st.courses.map((c) => (
+-                          <span key={c} className="px-2 py-1 bg-surface-variant rounded text-[11px] font-bold text-primary">
+-                            {c}
+-                          </span>
+-                        ))}
+-                      </div>
+-                    </td>
+-                    <td className="px-6 py-4"><div className="text-[13px] text-on-surface">{st.contractPeriod}</div></td>
+-                    <td className="px-6 py-4"><div className="text-[13px] font-semibold text-on-surface">{st.attendance}</div></td>
+-                    <td className="px-6 py-4">
+-                      <div className="flex items-center gap-1">
+-                        <span className="font-bold text-on-surface">{st.avgGrade}</span>
+-                        <span className="material-symbols-outlined text-secondary text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>
+-                          star
++                      </td>
++                      <td className="px-6 py-4">
++                        <div className="text-[13px] text-on-surface">
++                          {latestContract ? `${latestContract.start_date} — ${latestContract.end_date}` : "—"}
++                        </div>
++                      </td>
++                      <td className="px-6 py-4">
++                        <div className="flex items-center gap-1">
++                          <span className="font-bold text-on-surface">{avg}%</span>
++                        </div>
++                      </td>
++                      <td className="px-6 py-4">
++                        <span
++                          className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase ${
++                            !latestContract || latestContract.status === "active" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
++                          }`}
++                        >
++                          {latestContract ? CONTRACT_STATUS_LABEL[latestContract.status] ?? latestContract.status : "Без договора"}
+                         </span>
+-                      </div>
+-                    </td>
+-                    <td className="px-6 py-4">
+-                      <span
+-                        className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase ${
+-                          st.status === "Активен" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
+-                        }`}
+-                      >
+-                        {st.status}
+-                      </span>
+-                    </td>
+-                    <td className="px-6 py-4 text-right">
+-                      <span className="material-symbols-outlined text-on-surface-variant cursor-pointer hover:bg-surface-container-highest rounded-full p-1">
+-                        more_vert
+-                      </span>
+-                    </td>
+-                  </tr>
+-                ))}
++                      </td>
++                    </tr>
++                  );
++                })}
+               </tbody>
+             </table>
+           </div>
+@@ -129,13 +215,15 @@ export default function AdminStudents() {
+         <section className="space-y-6">
+           <div className="flex items-center justify-between">
+             <h3 className="font-headline-sm text-headline-sm text-on-surface">Наши преподаватели</h3>
+-            <button className="text-primary font-bold font-label-md flex items-center gap-1 hover:underline">
+-              Смотреть всех <span className="material-symbols-outlined">arrow_forward</span>
+-            </button>
+           </div>
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+-            {teachers.map((t) => {
+-              const style = STATUS_STYLES[t.statusColor];
++            {!loading && tutors.length === 0 && (
++              <p className="text-on-surface-variant font-body-md">Преподавателей пока нет.</p>
++            )}
++            {tutors.map((t) => {
++              const statusInfo = TUTOR_STATUS_LABEL[t.tutor_status] ?? { label: "Активен", color: "green" };
++              const style = STATUS_STYLES[statusInfo.color];
++              const studentCount = enrollmentsByTutor[t.id]?.size ?? 0;
+               return (
+                 <div
+                   key={t.id}
+@@ -143,43 +231,24 @@ export default function AdminStudents() {
+                 >
+                   <div className="flex justify-between items-start">
+                     <div className="relative">
+-                      <img src={t.avatarUrl} alt={t.name} className="w-16 h-16 rounded-xl object-cover" />
++                      <div className="w-16 h-16 rounded-xl bg-primary-fixed flex items-center justify-center text-primary font-bold text-xl">
++                        {initials(t)}
++                      </div>
+                       <div className={`absolute -bottom-1 -right-1 w-4 h-4 ${style.dot} border-2 border-white rounded-full`} />
+                     </div>
+                     <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${style.badge}`}>
+-                      {t.status}
++                      {statusInfo.label}
+                     </span>
+                   </div>
+                   <div>
+-                    <h4 className="font-bold text-body-lg text-on-surface">{t.name}</h4>
+-                    <p className="text-label-md text-primary font-semibold">{t.specialty}</p>
++                    <h4 className="font-bold text-body-lg text-on-surface">{fullName(t)}</h4>
++                    <p className="text-label-md text-primary font-semibold">{t.specialization ?? "—"}</p>
+                   </div>
+-                  <div className="flex justify-between items-center py-3 border-y border-outline-variant/20">
+-                    <div className="text-center">
+-                      <p className="text-[10px] text-outline uppercase font-bold">Студенты</p>
+-                      <p className="font-bold text-on-surface">{t.students}</p>
+-                    </div>
++                  <div className="flex justify-center items-center py-3 border-y border-outline-variant/20">
+                     <div className="text-center">
+-                      <p className="text-[10px] text-outline uppercase font-bold">Опыт</p>
+-                      <p className="font-bold text-on-surface">{t.experience}</p>
++                      <p className="text-[10px] text-outline uppercase font-bold">Учеников</p>
++                      <p className="font-bold text-on-surface">{studentCount}</p>
+                     </div>
+-                    <div className="text-center">
+-                      <p className="text-[10px] text-outline uppercase font-bold">Рейтинг</p>
+-                      <p className="font-bold text-on-surface flex items-center justify-center gap-0.5">
+-                        {t.rating}
+-                        <span className="material-symbols-outlined text-[12px] text-secondary" style={{ fontVariationSettings: "'FILL' 1" }}>
+-                          star
+-                        </span>
+-                      </p>
+-                    </div>
+-                  </div>
+-                  <div className="flex gap-2">
+-                    <button className="flex-1 py-2 bg-surface-variant text-on-surface-variant rounded-lg font-bold text-[12px] hover:bg-primary-container hover:text-on-primary-container transition-all">
+-                      Профиль
+-                    </button>
+-                    <button className="px-3 py-2 bg-surface-variant text-on-surface-variant rounded-lg transition-all hover:bg-surface-container-highest">
+-                      <span className="material-symbols-outlined text-sm">mail</span>
+-                    </button>
+                   </div>
+                 </div>
+               );
+diff --git a/study-room-frontend/src/pages/admin/AdminTeachers.jsx b/study-room-frontend/src/pages/admin/AdminTeachers.jsx
+new file mode 100644
+index 0000000..3e345a7
+--- /dev/null
++++ b/study-room-frontend/src/pages/admin/AdminTeachers.jsx
+@@ -0,0 +1,6 @@
++import TeachersPage from "./TeachersPage.jsx";
++
++// /admin/teachers — owner видит преподавателей всей сети (см. TeachersPage.jsx).
++export default function AdminTeachers() {
++  return <TeachersPage role="admin" />;
++}
+diff --git a/study-room-frontend/src/pages/admin/BranchTeachers.jsx b/study-room-frontend/src/pages/admin/BranchTeachers.jsx
+new file mode 100644
+index 0000000..fdfca90
+--- /dev/null
++++ b/study-room-frontend/src/pages/admin/BranchTeachers.jsx
+@@ -0,0 +1,7 @@
++import TeachersPage from "./TeachersPage.jsx";
++
++// /branch/teachers — branch_owner видит только преподавателей своего филиала
++// (бэкенд сам фильтрует GET /users по branch_id из JWT, см. api-contracts.md 1.9).
++export default function BranchTeachers() {
++  return <TeachersPage role="branch_owner" />;
++}
+diff --git a/study-room-frontend/src/pages/admin/TeachersPage.jsx b/study-room-frontend/src/pages/admin/TeachersPage.jsx
+new file mode 100644
+index 0000000..b6e7bed
+--- /dev/null
++++ b/study-room-frontend/src/pages/admin/TeachersPage.jsx
+@@ -0,0 +1,503 @@
++import { useEffect, useMemo, useState } from "react";
++import DashboardShell from "../../components/layout/DashboardShell.jsx";
++import StatusBadge from "../../components/ui/StatusBadge.jsx";
++import { useAuth } from "../../context/AuthContext.jsx";
++import { fetchMyPeople, fetchBranches, createTutor, setUserActive, setTutorStatus } from "../../api/users.js";
++import { fetchCourses, fetchEnrollments } from "../../api/academic.js";
++import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
++
++const PAGE_SIZE = 10;
++
++const TUTOR_STATUS_OPTIONS = [
++  { value: "active", label: "Активен" },
++  { value: "vacation", label: "В отпуске" },
++  { value: "sick_leave", label: "На больничном" },
++  { value: "inactive", label: "Неактивен (уволен)" },
++];
++
++function initials(person) {
++  if (!person) return "?";
++  return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
++}
++
++/**
++ * Общая реализация "Список преподавателей" для owner (/admin/teachers) и
++ * branch_owner (/branch/teachers). Роль влияет на оформление шелла (DashboardShell/Sidebar)
++ * и на набор доступных действий: создание репетитора и деактивация аккаунта — только owner
++ * (см. api-contracts.md 1.11 и 1.14, там RequireRoles(RoleOwner) на бэкенде), а вот
++ * изменение рабочего статуса (отпуск/болен) доступно и branch_owner (1.15).
++ *
++ * Важный нюанс реального API: GET /users не возвращает specialization репетитора
++ * (эти поля в отдельной таблице tutor_profiles и не джойнятся в справочнике) —
++ * поэтому "предмет" мы честно показываем на основе курсов, которые репетитор
++ * реально ведёт (fetchEnrollments -> course.subject), а не выдумываем поле.
++ */
++export default function TeachersPage({ role }) {
++  const { user } = useAuth();
++  const isOwner = role === "admin";
++
++  const [tutors, setTutors] = useState([]);
++  const [courses, setCourses] = useState([]);
++  const [enrollments, setEnrollments] = useState([]);
++  const [branches, setBranches] = useState([]);
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState("");
++
++  const [search, setSearch] = useState("");
++  const [activeSubject, setActiveSubject] = useState("all");
++  const [page, setPage] = useState(1);
++
++  const [rowActionError, setRowActionError] = useState("");
++  const [rowActionBusyId, setRowActionBusyId] = useState(null);
++
++  const [showAddModal, setShowAddModal] = useState(false);
++  const [addForm, setAddForm] = useState({
++    email: "",
++    lastName: "",
++    firstName: "",
++    patronymic: "",
++    specialization: "",
++    branchId: "",
++  });
++  const [addSubmitting, setAddSubmitting] = useState(false);
++  const [addError, setAddError] = useState("");
++  const [addResult, setAddResult] = useState(null);
++
++  async function loadAll() {
++    setLoading(true);
++    setError("");
++    try {
++      const requests = [fetchMyPeople(), fetchCourses(), fetchEnrollments()];
++      if (isOwner) requests.push(fetchBranches().catch(() => ({ items: [] })));
++      const results = await Promise.all(requests);
++      const [peopleRes, coursesRes, enrollRes, branchesRes] = results;
++      setTutors(peopleRes?.tutors ?? []);
++      setCourses(coursesRes?.items ?? []);
++      setEnrollments(enrollRes?.items ?? []);
++      if (isOwner) setBranches(branchesRes?.items ?? []);
++    } catch (e) {
++      setError(e.message || "Не удалось загрузить список преподавателей");
++    } finally {
++      setLoading(false);
++    }
++  }
++
++  useEffect(() => {
++    loadAll();
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [role]);
++
++  const coursesById = useMemo(() => {
++    const map = {};
++    courses.forEach((c) => (map[c.id] = c));
++    return map;
++  }, [courses]);
++
++  // tutor_id -> { subjects: Set, activeStudents: Set(student_id) }
++  const tutorMeta = useMemo(() => {
++    const map = {};
++    for (const e of enrollments) {
++      if (!e.tutor_id) continue;
++      const bucket = (map[e.tutor_id] ??= { subjects: new Set(), activeStudents: new Set() });
++      const course = coursesById[e.course_id];
++      if (course?.subject) bucket.subjects.add(course.subject);
++      if (e.status === "active") bucket.activeStudents.add(e.student_id);
++    }
++    return map;
++  }, [enrollments, coursesById]);
++
++  const subjectList = useMemo(() => {
++    const set = new Set();
++    for (const meta of Object.values(tutorMeta)) {
++      meta.subjects.forEach((s) => set.add(s));
++    }
++    return Array.from(set).sort();
++  }, [tutorMeta]);
++
++  const tutorsEnriched = useMemo(
++    () =>
++      tutors.map((t) => {
++        const meta = tutorMeta[t.id];
++        return {
++          ...t,
++          subjects: meta ? Array.from(meta.subjects) : [],
++          activeStudents: meta ? meta.activeStudents.size : 0,
++        };
++      }),
++    [tutors, tutorMeta]
++  );
++
++  const filteredTutors = useMemo(() => {
++    const q = search.trim().toLowerCase();
++    return tutorsEnriched.filter((t) => {
++      if (activeSubject !== "all" && !t.subjects.includes(activeSubject)) return false;
++      if (!q) return true;
++      return fullName(t).toLowerCase().includes(q) || t.email?.toLowerCase().includes(q);
++    });
++  }, [tutorsEnriched, search, activeSubject]);
++
++  const totalPages = Math.max(1, Math.ceil(filteredTutors.length / PAGE_SIZE));
++  const currentPage = Math.min(page, totalPages);
++  const pageTutors = filteredTutors.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
++
++  useEffect(() => {
++    setPage(1);
++  }, [search, activeSubject]);
++
++  async function handleToggleActive(t) {
++    setRowActionError("");
++    setRowActionBusyId(t.id);
++    try {
++      await setUserActive(t.id, !t.is_active);
++      setTutors((prev) => prev.map((x) => (x.id === t.id ? { ...x, is_active: !t.is_active } : x)));
++    } catch (e) {
++      setRowActionError(e.message || "Не удалось изменить статус аккаунта");
++    } finally {
++      setRowActionBusyId(null);
++    }
++  }
++
++  async function handleSetTutorStatus(t, status) {
++    if (!status) return;
++    setRowActionError("");
++    setRowActionBusyId(t.id);
++    try {
++      await setTutorStatus(t.id, status);
++    } catch (e) {
++      setRowActionError(e.message || "Не удалось изменить рабочий статус");
++    } finally {
++      setRowActionBusyId(null);
++    }
++  }
++
++  async function handleAddTutor(e) {
++    e.preventDefault();
++    setAddError("");
++    setAddResult(null);
++    if (!addForm.email || !addForm.lastName || !addForm.firstName) {
++      setAddError("Email, фамилия и имя обязательны");
++      return;
++    }
++    setAddSubmitting(true);
++    try {
++      const res = await createTutor({
++        email: addForm.email,
++        last_name: addForm.lastName,
++        first_name: addForm.firstName,
++        patronymic: addForm.patronymic || undefined,
++        specialization: addForm.specialization || undefined,
++        branch_id: addForm.branchId ? Number(addForm.branchId) : undefined,
++      });
++      setAddResult(res);
++      await loadAll();
++      setAddForm({ email: "", lastName: "", firstName: "", patronymic: "", specialization: "", branchId: "" });
++    } catch (e) {
++      setAddError(e.message || "Не удалось создать преподавателя");
++    } finally {
++      setAddSubmitting(false);
++    }
++  }
++
++  const shellProps =
++    role === "admin"
++      ? { role: "admin", user: toSidebarUser(user), searchPlaceholder: "Поиск учеников или учителей..." }
++      : {
++          role: "branch_owner",
++          user: toSidebarUser(user),
++          searchPlaceholder: "Поиск по филиалу...",
++          userLabel: fullName(user),
++          avatarUrl: user?.avatar_url,
++        };
++
++  return (
++    <DashboardShell {...shellProps}>
++      <div className="p-gutter max-w-container-max mx-auto space-y-stack-lg">
++        <div className="flex items-center justify-between mt-4">
++          <h2 className="font-headline-md text-headline-md font-bold text-primary">Список преподавателей</h2>
++          <div className="relative hidden lg:block">
++            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">
++              search
++            </span>
++            <input
++              value={search}
++              onChange={(e) => setSearch(e.target.value)}
++              className="bg-surface-container-low border-none rounded-full py-2 pl-10 pr-4 w-64 text-label-md focus:ring-2 focus:ring-primary-container outline-none transition-all"
++              placeholder="Поиск преподавателя..."
++              type="text"
++            />
++          </div>
++        </div>
++
++        {error && (
++          <div className="p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
++        )}
++        {rowActionError && (
++          <div className="p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">
++            {rowActionError}
++          </div>
++        )}
++
++        <section className="flex flex-col md:flex-row justify-between items-start md:items-center gap-stack-md">
++          <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0 w-full md:w-auto">
++            <button
++              onClick={() => setActiveSubject("all")}
++              className={`px-4 py-2 rounded-full font-label-md text-label-md flex items-center gap-2 transition-all whitespace-nowrap ${
++                activeSubject === "all" ? "bg-primary text-on-primary hover:shadow-md" : "bg-surface-container-highest text-on-surface-variant hover:bg-primary-container hover:text-on-primary-container"
++              }`}
++            >
++              Все ({tutorsEnriched.length})
++            </button>
++            {subjectList.map((s) => (
++              <button
++                key={s}
++                onClick={() => setActiveSubject(s)}
++                className={`px-4 py-2 rounded-full font-label-md text-label-md whitespace-nowrap transition-all ${
++                  activeSubject === s ? "bg-primary text-on-primary hover:shadow-md" : "bg-surface-container-highest text-on-surface-variant hover:bg-primary-container hover:text-on-primary-container"
++                }`}
++              >
++                {s}
++              </button>
++            ))}
++          </div>
++          {isOwner && (
++            <button
++              onClick={() => {
++                setShowAddModal(true);
++                setAddError("");
++                setAddResult(null);
++              }}
++              className="bg-secondary-container text-on-secondary-container px-6 py-2.5 rounded-lg font-bold flex items-center gap-2 hover:shadow-[0px_4px_12px_rgba(254,208,27,0.3)] transition-all active:scale-95 whitespace-nowrap"
++            >
++              <span className="material-symbols-outlined">person_add</span>
++              Добавить преподавателя
++            </button>
++          )}
++        </section>
++
++        <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant overflow-hidden">
++          <div className="overflow-x-auto">
++            <table className="w-full text-left border-collapse min-w-[860px]">
++              <thead className="bg-surface-container-low text-on-surface-variant border-b border-outline-variant">
++                <tr>
++                  <th className="px-6 py-4 font-label-md text-label-md">ФИО Преподавателя</th>
++                  <th className="px-6 py-4 font-label-md text-label-md">Предметы</th>
++                  <th className="px-6 py-4 font-label-md text-label-md">Активные ученики</th>
++                  <th className="px-6 py-4 font-label-md text-label-md">Статус аккаунта</th>
++                  <th className="px-6 py-4 font-label-md text-label-md text-right">Рабочий статус</th>
++                </tr>
++              </thead>
++              <tbody className="divide-y divide-outline-variant">
++                {loading && (
++                  <tr>
++                    <td colSpan={5} className="px-6 py-10 text-center text-on-surface-variant">Загрузка…</td>
++                  </tr>
++                )}
++                {!loading && pageTutors.length === 0 && (
++                  <tr>
++                    <td colSpan={5} className="px-6 py-10 text-center text-on-surface-variant">
++                      {tutorsEnriched.length === 0 ? "Преподавателей пока нет" : "Ничего не найдено по вашему запросу"}
++                    </td>
++                  </tr>
++                )}
++                {pageTutors.map((t) => (
++                  <tr key={t.id} className="group hover:bg-surface-container-low transition-colors">
++                    <td className="px-6 py-4">
++                      <div className="flex items-center gap-4">
++                        <div className="h-12 w-12 rounded-lg bg-surface-variant overflow-hidden flex items-center justify-center font-bold text-primary shrink-0">
++                          {t.avatar_url ? (
++                            <img src={t.avatar_url} alt={fullName(t)} className="w-full h-full object-cover" />
++                          ) : (
++                            initials(t)
++                          )}
++                        </div>
++                        <div>
++                          <div className="font-body-md text-body-md font-bold text-on-surface">{fullName(t)}</div>
++                          <div className="text-label-md text-on-surface-variant">ID: {t.id}</div>
++                        </div>
++                      </div>
++                    </td>
++                    <td className="px-6 py-4">
++                      <div className="flex flex-wrap gap-1 max-w-[220px]">
++                        {t.subjects.length === 0 && <span className="text-label-md text-on-surface-variant">—</span>}
++                        {t.subjects.map((s) => (
++                          <span key={s} className="bg-primary-fixed text-on-primary-fixed px-3 py-1 rounded-full text-label-md font-medium">
++                            {s}
++                          </span>
++                        ))}
++                      </div>
++                    </td>
++                    <td className="px-6 py-4">
++                      <span className="font-body-md text-body-md font-bold">{t.activeStudents}</span>
++                    </td>
++                    <td className="px-6 py-4">
++                      <div className="flex items-center gap-3">
++                        <StatusBadge status={t.is_active ? "Активен" : "Неактивен"} color={t.is_active ? "green" : "red"} />
++                        {isOwner && (
++                          <button
++                            disabled={rowActionBusyId === t.id}
++                            onClick={() => handleToggleActive(t)}
++                            className="text-label-md text-primary hover:underline disabled:opacity-50 whitespace-nowrap"
++                          >
++                            {t.is_active ? "Деактивировать" : "Активировать"}
++                          </button>
++                        )}
++                      </div>
++                    </td>
++                    <td className="px-6 py-4 text-right">
++                      <select
++                        disabled={rowActionBusyId === t.id}
++                        defaultValue=""
++                        onChange={(e) => {
++                          handleSetTutorStatus(t, e.target.value);
++                          e.target.value = "";
++                        }}
++                        className="bg-surface border border-outline-variant rounded-lg text-label-md py-1.5 px-2 focus:outline-none focus:border-primary"
++                      >
++                        <option value="" disabled>
++                          Изменить…
++                        </option>
++                        {TUTOR_STATUS_OPTIONS.filter((o) => o.value !== "inactive" || isOwner).map((o) => (
++                          <option key={o.value} value={o.value}>
++                            {o.label}
++                          </option>
++                        ))}
++                      </select>
++                    </td>
++                  </tr>
++                ))}
++              </tbody>
++            </table>
++          </div>
++
++          <div className="px-6 py-4 bg-surface-container-low border-t border-outline-variant flex flex-col sm:flex-row gap-3 justify-between items-center">
++            <span className="text-label-md text-on-surface-variant">
++              {filteredTutors.length === 0
++                ? "Нет результатов"
++                : `Показано ${(currentPage - 1) * PAGE_SIZE + 1}-${Math.min(currentPage * PAGE_SIZE, filteredTutors.length)} из ${filteredTutors.length}`}
++            </span>
++            <div className="flex gap-2">
++              <button
++                disabled={currentPage <= 1}
++                onClick={() => setPage((p) => Math.max(1, p - 1))}
++                className="p-2 rounded-lg border border-outline-variant hover:bg-surface-container-highest transition-all active:scale-95 disabled:opacity-40"
++              >
++                <span className="material-symbols-outlined">chevron_left</span>
++              </button>
++              {Array.from({ length: totalPages }).slice(0, 5).map((_, i) => (
++                <button
++                  key={i}
++                  onClick={() => setPage(i + 1)}
++                  className={`px-4 py-2 rounded-lg font-bold text-label-md transition-all active:scale-95 ${
++                    currentPage === i + 1 ? "bg-primary text-on-primary shadow-sm" : "hover:bg-surface-container-highest text-on-surface-variant"
++                  }`}
++                >
++                  {i + 1}
++                </button>
++              ))}
++              <button
++                disabled={currentPage >= totalPages}
++                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
++                className="p-2 rounded-lg border border-outline-variant hover:bg-surface-container-highest transition-all active:scale-95 disabled:opacity-40"
++              >
++                <span className="material-symbols-outlined">chevron_right</span>
++              </button>
++            </div>
++          </div>
++        </div>
++      </div>
++
++      {showAddModal && (
++        <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4" onClick={() => setShowAddModal(false)}>
++          <div
++            className="bg-surface-container-lowest rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4"
++            onClick={(e) => e.stopPropagation()}
++          >
++            <div className="flex justify-between items-center">
++              <h3 className="font-headline-sm text-headline-sm text-on-surface">Новый преподаватель</h3>
++              <button onClick={() => setShowAddModal(false)} className="text-on-surface-variant hover:text-primary">
++                <span className="material-symbols-outlined">close</span>
++              </button>
++            </div>
++
++            {addResult ? (
++              <div className="space-y-3">
++                <p className="text-primary font-medium">Преподаватель создан.</p>
++                <p className="text-sm text-on-surface-variant">
++                  Временный пароль отправлен на почту событием <code>user.created</code> (см. notification-service).
++                  Если письмо не настроено — сообщите пароль преподавателю вручную через раздел «Активировать/Деактивировать».
++                </p>
++                <button
++                  onClick={() => setShowAddModal(false)}
++                  className="w-full bg-primary text-on-primary py-2.5 rounded-lg font-label-md text-label-md"
++                >
++                  Готово
++                </button>
++              </div>
++            ) : (
++              <form onSubmit={handleAddTutor} className="space-y-4">
++                {addError && (
++                  <div className="p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">
++                    {addError}
++                  </div>
++                )}
++                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
++                  <input
++                    required
++                    type="email"
++                    placeholder="Email"
++                    value={addForm.email}
++                    onChange={(e) => setAddForm((f) => ({ ...f, email: e.target.value }))}
++                    className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg text-body-md focus:border-primary outline-none"
++                  />
++                  <input
++                    placeholder="Специализация (например: Математика)"
++                    value={addForm.specialization}
++                    onChange={(e) => setAddForm((f) => ({ ...f, specialization: e.target.value }))}
++                    className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg text-body-md focus:border-primary outline-none"
++                  />
++                  <input
++                    required
++                    placeholder="Фамилия"
++                    value={addForm.lastName}
++                    onChange={(e) => setAddForm((f) => ({ ...f, lastName: e.target.value }))}
++                    className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg text-body-md focus:border-primary outline-none"
++                  />
++                  <input
++                    required
++                    placeholder="Имя"
++                    value={addForm.firstName}
++                    onChange={(e) => setAddForm((f) => ({ ...f, firstName: e.target.value }))}
++                    className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg text-body-md focus:border-primary outline-none"
++                  />
++                  <input
++                    placeholder="Отчество (необязательно)"
++                    value={addForm.patronymic}
++                    onChange={(e) => setAddForm((f) => ({ ...f, patronymic: e.target.value }))}
++                    className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg text-body-md focus:border-primary outline-none"
++                  />
++                  <select
++                    value={addForm.branchId}
++                    onChange={(e) => setAddForm((f) => ({ ...f, branchId: e.target.value }))}
++                    className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg text-body-md focus:border-primary outline-none"
++                  >
++                    <option value="">Без филиала</option>
++                    {branches.map((b) => (
++                      <option key={b.id} value={b.id}>{b.name} ({b.city})</option>
++                    ))}
++                  </select>
++                </div>
++                <button
++                  type="submit"
++                  disabled={addSubmitting}
++                  className="w-full bg-primary text-on-primary py-2.5 rounded-lg font-label-md text-label-md disabled:opacity-60"
++                >
++                  {addSubmitting ? "Создание…" : "Создать преподавателя"}
++                </button>
++              </form>
++            )}
++          </div>
++        </div>
++      )}
++    </DashboardShell>
++  );
++}
+diff --git a/study-room-frontend/src/pages/parent/ParentChildDetail.jsx b/study-room-frontend/src/pages/parent/ParentChildDetail.jsx
+index 2524c04..446cb56 100644
+--- a/study-room-frontend/src/pages/parent/ParentChildDetail.jsx
++++ b/study-room-frontend/src/pages/parent/ParentChildDetail.jsx
+@@ -1,65 +1,161 @@
++import { useEffect, useMemo, useState } from "react";
+ import { Link, useParams } from "react-router-dom";
+ import DashboardShell from "../../components/layout/DashboardShell.jsx";
+-import { currentParent } from "../../data/mockData.js";
+-
+-const STATUS_TEXT_COLOR = {
+-  orange: "text-orange-600",
+-  green: "text-green-600",
+-  error: "text-error",
+-};
+-const STATUS_DOT_COLOR = {
+-  orange: "bg-orange-600",
+-  green: "bg-green-600",
+-  error: "bg-error",
+-};
++import { useAuth } from "../../context/AuthContext.jsx";
++import { fetchUserById } from "../../api/users.js";
++import { fetchEnrollments, fetchCourses, fetchHomework, fetchLessons } from "../../api/academic.js";
++import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
++
++const WEEKDAYS = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"];
++const MONTH_NAMES = [
++  "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
++  "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
++];
++
++function pad(n) {
++  return String(n).padStart(2, "0");
++}
++function toISODate(year, monthIndex, day) {
++  return `${year}-${pad(monthIndex + 1)}-${pad(day)}`;
++}
++function initials(person) {
++  if (!person) return "?";
++  return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
++}
+ 
+ export default function ParentChildDetail() {
+   const { childId } = useParams();
+-  const p = currentParent;
+-  const child = p.children.find((c) => c.id === childId) ?? p.children[0];
++  const { user } = useAuth();
++
++  const [child, setChild] = useState(null);
++  const [enrollments, setEnrollments] = useState([]);
++  const [courses, setCourses] = useState([]);
++  const [homework, setHomework] = useState([]);
++  const [lessons, setLessons] = useState([]);
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState("");
++
++  const today = new Date();
++  const viewYear = today.getFullYear();
++  const viewMonth = today.getMonth();
++  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
++  const firstWeekday = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7;
++
++  useEffect(() => {
++    if (!childId) return;
++    let cancelled = false;
++
++    async function load() {
++      setLoading(true);
++      setError("");
++      try {
++        const date_from = toISODate(viewYear, viewMonth, 1);
++        const date_to = toISODate(viewYear, viewMonth, daysInMonth);
++        const [childRes, enrollRes, coursesRes, homeworkRes, lessonsRes] = await Promise.all([
++          fetchUserById(childId),
++          fetchEnrollments({ student_id: childId }),
++          fetchCourses(),
++          fetchHomework({ student_id: childId }),
++          fetchLessons({ student_id: childId, date_from, date_to }),
++        ]);
++        if (cancelled) return;
++        setChild(childRes);
++        setEnrollments(enrollRes?.items ?? []);
++        setCourses(coursesRes?.items ?? []);
++        setHomework(homeworkRes?.items ?? []);
++        setLessons(lessonsRes?.items ?? []);
++      } catch (e) {
++        if (!cancelled) setError(e.message || "Не удалось загрузить данные ребёнка");
++      } finally {
++        if (!cancelled) setLoading(false);
++      }
++    }
++
++    load();
++    return () => {
++      cancelled = true;
++    };
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [childId]);
++
++  const coursesById = useMemo(() => {
++    const map = {};
++    courses.forEach((c) => (map[c.id] = c));
++    return map;
++  }, [courses]);
++
++  const lessonsByDay = useMemo(() => {
++    const map = {};
++    for (const l of lessons) {
++      const day = Number(l.lesson_date?.slice(8, 10));
++      if (!day) continue;
++      (map[day] ??= []).push(l);
++    }
++    return map;
++  }, [lessons]);
++
++  const avgProgress = enrollments.length
++    ? Math.round(enrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / enrollments.length)
++    : 0;
++  const homeworkDone = homework.filter((h) => h.status === "viewed").length;
++
++  const todayDay = today.getDate();
++  const upcomingDaily = lessons
++    .filter((l) => l.lesson_date >= toISODate(viewYear, viewMonth, todayDay))
++    .sort((a, b) => (a.lesson_date + a.start_time).localeCompare(b.lesson_date + b.start_time))
++    .slice(0, 5);
++
++  if (loading) {
++    return (
++      <DashboardShell role="parent" user={toSidebarUser(user)} searchPlaceholder="Поиск по кабинету..." userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
++        <p className="mt-8 text-on-surface-variant font-body-md">Загрузка…</p>
++      </DashboardShell>
++    );
++  }
+ 
+   return (
+-    <DashboardShell role="parent" user={p} searchPlaceholder="Поиск по кабинету..." userLabel={p.name} avatarUrl={p.avatarUrl}>
++    <DashboardShell role="parent" user={toSidebarUser(user)} searchPlaceholder="Поиск по кабинету..." userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
+       <div className="space-y-stack-lg pb-stack-lg">
+         <nav className="flex items-center gap-2 text-label-md text-on-surface-variant mt-4">
+           <Link to="/parent" className="hover:text-primary">Главная</Link>
+           <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+           <Link to="/parent/children" className="hover:text-primary">Мои дети</Link>
+           <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+-          <span className="text-on-surface font-bold">{child.name}</span>
++          <span className="text-on-surface font-bold">{child ? fullName(child) : "—"}</span>
+         </nav>
+ 
++        {error && (
++          <div className="p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
++        )}
++
+         <div className="bg-surface-container-lowest p-stack-lg rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30">
+           <div className="flex flex-col md:flex-row items-center gap-gutter">
+             <div className="relative">
+-              <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-primary/10">
+-                <img src={child.photoUrl} alt={child.name} className="w-full h-full object-cover" />
+-              </div>
+-              <div className="absolute bottom-0 right-0 bg-primary text-white p-1 rounded-full border-2 border-white">
+-                <span className="material-symbols-outlined text-[18px]">verified</span>
++              <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-primary/10 bg-primary-fixed flex items-center justify-center text-primary font-headline-md font-bold text-3xl">
++                {child?.avatar_url ? (
++                  <img src={child.avatar_url} alt={fullName(child)} className="w-full h-full object-cover" />
++                ) : (
++                  initials(child)
++                )}
+               </div>
+             </div>
+             <div className="flex-1 text-center md:text-left">
+               <div className="flex flex-col md:flex-row md:items-end gap-2 mb-1">
+-                <h2 className="font-headline-md text-headline-md text-on-surface">{child.name}</h2>
+-                <span className="text-on-surface-variant font-label-md mb-1.5 opacity-60">ID: {child.id}</span>
++                <h2 className="font-headline-md text-headline-md text-on-surface">{child ? fullName(child) : "—"}</h2>
++                <span className="text-on-surface-variant font-label-md mb-1.5 opacity-60">ID: {child?.id}</span>
+               </div>
+-              <p className="text-on-surface-variant font-body-md mb-4">{child.classInfo}</p>
++              <p className="text-on-surface-variant font-body-md mb-4">{child?.class_info ?? "—"}</p>
+               <div className="flex flex-wrap justify-center md:justify-start gap-4">
+                 <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg">
+-                  <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>
+-                    star
+-                  </span>
++                  <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
+                   <span className="font-label-md text-on-surface">
+-                    Успеваемость: <strong className="text-primary">{child.performance}</strong>
++                    Средний прогресс: <strong className="text-primary">{avgProgress}%</strong>
+                   </span>
+                 </div>
+                 <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg">
+-                  <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>
+-                    calendar_month
+-                  </span>
++                  <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>assignment_turned_in</span>
+                   <span className="font-label-md text-on-surface">
+-                    Посещаемость: <strong className="text-primary">{child.attendance}</strong>
++                    Заданий выполнено: <strong className="text-primary">{homeworkDone}/{homework.length}</strong>
+                   </span>
+                 </div>
+               </div>
+@@ -71,35 +167,39 @@ export default function ParentChildDetail() {
+           <section className="col-span-12 lg:col-span-8 space-y-stack-md">
+             <div className="flex justify-between items-center">
+               <h3 className="font-headline-sm text-headline-sm text-on-surface">Курсы ребёнка</h3>
+-              <a className="text-primary font-label-md hover:underline" href="#">Все курсы</a>
+             </div>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-stack-md">
+-              {child.courses.map((course) => (
+-                <div
+-                  key={course.id}
+-                  className="bg-surface-container-lowest p-stack-md rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 flex flex-col justify-between group hover:border-primary/50 transition-colors cursor-pointer"
+-                >
+-                  <div>
+-                    <div className="flex justify-between items-start mb-4">
+-                      <div className="p-2 bg-primary/10 text-primary rounded-lg">
+-                        <span className="material-symbols-outlined">{course.icon}</span>
++              {enrollments.length === 0 && (
++                <p className="text-on-surface-variant font-body-md">Ребёнок пока не записан ни на один курс.</p>
++              )}
++              {enrollments.map((e) => {
++                const course = coursesById[e.course_id];
++                return (
++                  <div
++                    key={e.id}
++                    className="bg-surface-container-lowest p-stack-md rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 flex flex-col justify-between group hover:border-primary/50 transition-colors"
++                  >
++                    <div>
++                      <div className="flex justify-between items-start mb-4">
++                        <div className="p-2 bg-primary/10 text-primary rounded-lg">
++                          <span className="material-symbols-outlined">calculate</span>
++                        </div>
++                        <span className="bg-green-100 text-green-700 text-[12px] font-bold px-2 py-0.5 rounded-full uppercase">
++                          {e.status === "active" ? "Активен" : e.status}
++                        </span>
++                      </div>
++                      <h4 className="font-headline-sm text-[20px] mb-1">{course?.title ?? course?.subject ?? `Курс #${e.course_id}`}</h4>
++                      <div className="w-full bg-surface-container-high h-2 rounded-full mb-2">
++                        <div className="bg-primary h-2 rounded-full" style={{ width: `${e.progress_pct ?? 0}%` }} />
++                      </div>
++                      <div className="flex justify-between text-[12px] text-on-surface-variant font-bold mb-4">
++                        <span>ПРОГРЕСС</span>
++                        <span>{e.progress_pct ?? 0}%</span>
+                       </div>
+-                      <span className="bg-green-100 text-green-700 text-[12px] font-bold px-2 py-0.5 rounded-full uppercase">
+-                        {course.status}
+-                      </span>
+-                    </div>
+-                    <h4 className="font-headline-sm text-[20px] mb-1">{course.title}</h4>
+-                    <p className="text-on-surface-variant text-label-md mb-4">Преподаватель: {course.teacher}</p>
+-                    <div className="w-full bg-surface-container-high h-2 rounded-full mb-2">
+-                      <div className="bg-primary h-2 rounded-full" style={{ width: `${course.progress}%` }} />
+-                    </div>
+-                    <div className="flex justify-between text-[12px] text-on-surface-variant font-bold mb-4">
+-                      <span>ПРОГРЕСС</span>
+-                      <span>{course.progress}%</span>
+                     </div>
+                   </div>
+-                </div>
+-              ))}
++                );
++              })}
+             </div>
+ 
+             <div className="pt-stack-lg">
+@@ -108,35 +208,36 @@ export default function ParentChildDetail() {
+                 <table className="w-full text-left">
+                   <thead className="bg-surface-container text-on-surface-variant text-label-md font-bold uppercase tracking-wider">
+                     <tr>
+-                      <th className="px-6 py-4">Предмет</th>
+                       <th className="px-6 py-4">Задание</th>
+                       <th className="px-6 py-4">Статус</th>
+-                      <th className="px-6 py-4 text-right">Срок сдачи</th>
++                      <th className="px-6 py-4 text-right">Выдано</th>
+                     </tr>
+                   </thead>
+                   <tbody className="divide-y divide-outline-variant/30">
+-                    {child.homeworkTable.map((hw, idx) => (
+-                      <tr key={idx} className="hover:bg-surface-container-low transition-colors">
+-                        <td className="px-6 py-5">
+-                          <div className="flex items-center gap-3">
+-                            <div className="p-1.5 bg-primary/10 text-primary rounded">
+-                              <span className="material-symbols-outlined text-[18px]">{hw.icon}</span>
+-                            </div>
+-                            <span className="font-label-md text-on-surface">{hw.subject}</span>
+-                          </div>
+-                        </td>
+-                        <td className="px-6 py-5">
+-                          <p className="font-label-md text-on-surface max-w-xs truncate">{hw.title}</p>
+-                        </td>
+-                        <td className="px-6 py-5">
+-                          <span className={`flex items-center gap-1.5 font-bold text-[13px] ${STATUS_TEXT_COLOR[hw.statusColor]}`}>
+-                            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT_COLOR[hw.statusColor]}`} />
+-                            {hw.status}
+-                          </span>
+-                        </td>
+-                        <td className="px-6 py-5 text-right font-bold text-on-surface-variant text-label-md">{hw.due}</td>
++                    {homework.length === 0 && (
++                      <tr>
++                        <td colSpan={3} className="px-6 py-8 text-center text-on-surface-variant">Заданий пока нет</td>
+                       </tr>
+-                    ))}
++                    )}
++                    {homework.map((hw) => {
++                      const isViewed = hw.status === "viewed";
++                      return (
++                        <tr key={hw.id} className="hover:bg-surface-container-low transition-colors">
++                          <td className="px-6 py-5">
++                            <p className="font-label-md text-on-surface max-w-xs truncate">{hw.link_url}</p>
++                          </td>
++                          <td className="px-6 py-5">
++                            <span className={`flex items-center gap-1.5 font-bold text-[13px] ${isViewed ? "text-green-600" : "text-orange-600"}`}>
++                              <span className={`w-1.5 h-1.5 rounded-full ${isViewed ? "bg-green-600" : "bg-orange-600"}`} />
++                              {isViewed ? "Открыто" : "Не открыто"}
++                            </span>
++                          </td>
++                          <td className="px-6 py-5 text-right font-bold text-on-surface-variant text-label-md">
++                            {hw.created_at ? new Date(hw.created_at).toLocaleDateString("ru-RU") : "—"}
++                          </td>
++                        </tr>
++                      );
++                    })}
+                   </tbody>
+                 </table>
+               </div>
+@@ -146,52 +247,56 @@ export default function ParentChildDetail() {
+           <aside className="col-span-12 lg:col-span-4 space-y-stack-lg">
+             <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 p-4">
+               <div className="flex justify-between items-center mb-2">
+-                <h4 className="font-bold text-on-surface">{child.calendarMonth}</h4>
++                <h4 className="font-bold text-on-surface">{MONTH_NAMES[viewMonth]} {viewYear}</h4>
+               </div>
+               <div className="grid grid-cols-7 gap-1 text-center text-on-surface-variant font-bold text-[11px] mb-1">
+-                {["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"].map((d) => (
++                {WEEKDAYS.map((d) => (
+                   <div key={d}>{d}</div>
+                 ))}
+               </div>
+               <div className="grid grid-cols-7 gap-1 text-center">
+-                {child.calendarDays.map((d, idx) => (
+-                  <div
+-                    key={idx}
+-                    className={`text-label-md py-1 rounded-lg relative flex justify-center items-center cursor-pointer ${
+-                      d.muted
+-                        ? "text-outline-variant"
+-                        : d.active
+-                        ? "font-bold bg-primary text-white"
+-                        : "text-on-surface hover:bg-primary/10"
+-                    }`}
+-                  >
+-                    {d.day}
+-                    {d.dot && (
+-                      <span
+-                        className={`absolute bottom-1 w-1 h-1 rounded-full ${
+-                          d.dot === "primary" ? "bg-primary" : "bg-secondary-container"
+-                        }`}
+-                      />
+-                    )}
+-                  </div>
++                {Array.from({ length: firstWeekday }).map((_, i) => (
++                  <div key={`pad-${i}`} />
+                 ))}
+-              </div>
+-              <div className="mt-4 pt-4 border-t border-outline-variant space-y-3">
+-                {child.dailySchedule.map((item, idx) => (
+-                  <div key={idx} className="flex items-center gap-3">
++                {Array.from({ length: daysInMonth }).map((_, i) => {
++                  const day = i + 1;
++                  const hasLessons = (lessonsByDay[day] ?? []).length > 0;
++                  const isToday = day === todayDay;
++                  return (
+                     <div
+-                      className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold ${
+-                        item.accent === "primary" ? "bg-primary/10 text-primary" : "bg-secondary-container/20 text-on-secondary-container"
++                      key={day}
++                      className={`text-label-md py-1 rounded-lg relative flex justify-center items-center ${
++                        isToday ? "font-bold bg-primary text-white" : "text-on-surface hover:bg-primary/10"
+                       }`}
+                     >
+-                      {item.date}
++                      {day}
++                      {hasLessons && !isToday && <span className="absolute bottom-1 w-1 h-1 rounded-full bg-primary" />}
+                     </div>
+-                    <div className="flex-1">
+-                      <p className="text-label-md font-bold leading-tight">{item.title}</p>
+-                      <p className="text-[12px] text-on-surface-variant">{item.location}</p>
++                  );
++                })}
++              </div>
++              <div className="mt-4 pt-4 border-t border-outline-variant space-y-3">
++                {upcomingDaily.length === 0 && (
++                  <p className="text-sm text-on-surface-variant">Занятий в этом месяце не запланировано.</p>
++                )}
++                {upcomingDaily.map((l) => {
++                  const course = coursesById[l.course_id];
++                  return (
++                    <div key={l.id} className="flex items-center gap-3">
++                      <div className="w-10 h-10 rounded-lg flex items-center justify-center font-bold bg-primary/10 text-primary">
++                        {Number(l.lesson_date.slice(8, 10))}
++                      </div>
++                      <div className="flex-1">
++                        <p className="text-label-md font-bold leading-tight">
++                          {l.start_time} - {course?.subject ?? course?.title ?? l.topic}
++                        </p>
++                        <p className="text-[12px] text-on-surface-variant">
++                          {l.location_type === "remote" ? "Дистанционно" : "Очно"}
++                        </p>
++                      </div>
+                     </div>
+-                  </div>
+-                ))}
++                  );
++                })}
+               </div>
+             </div>
+           </aside>
+diff --git a/study-room-frontend/src/pages/parent/ParentOverview.jsx b/study-room-frontend/src/pages/parent/ParentOverview.jsx
+index 766358b..b45685f 100644
+--- a/study-room-frontend/src/pages/parent/ParentOverview.jsx
++++ b/study-room-frontend/src/pages/parent/ParentOverview.jsx
+@@ -1,32 +1,155 @@
+-import { useState } from "react";
++import { useEffect, useMemo, useState } from "react";
+ import { Link } from "react-router-dom";
+ import DashboardShell from "../../components/layout/DashboardShell.jsx";
+-import { currentParent } from "../../data/mockData.js";
++import { useAuth } from "../../context/AuthContext.jsx";
++import { fetchParentChildren } from "../../api/users.js";
++import { fetchEnrollments, fetchCourses, fetchLessons } from "../../api/academic.js";
++import { createInternalApplication } from "../../api/crm.js";
++import { fetchNotificationSettings, updateNotificationSettings } from "../../api/notifications.js";
++import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
++
++const SUBJECT_OPTIONS = ["Математика", "Физика", "Английский язык", "Информатика", "Русский язык", "История"];
++
++function todayISO() {
++  const d = new Date();
++  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
++}
++function initials(person) {
++  if (!person) return "?";
++  return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
++}
+ 
+ export default function ParentOverview() {
+-  const p = currentParent;
++  const { user } = useAuth();
++
++  const [children, setChildren] = useState([]);
++  const [courses, setCourses] = useState([]);
++  const [enrollmentsByChild, setEnrollmentsByChild] = useState({});
++  const [upcomingLessons, setUpcomingLessons] = useState([]);
++  const [notif, setNotif] = useState(null);
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState("");
++
+   const [format, setFormat] = useState("group");
+-  const [notif, setNotif] = useState(p.notificationSettings);
++  const [applyChildId, setApplyChildId] = useState("");
++  const [applySubject, setApplySubject] = useState(SUBJECT_OPTIONS[0]);
++  const [applyStatus, setApplyStatus] = useState("");
++
++  useEffect(() => {
++    if (!user?.id) return;
++    let cancelled = false;
++
++    async function load() {
++      setLoading(true);
++      setError("");
++      try {
++        const [childrenRes, coursesRes, settingsRes] = await Promise.all([
++          fetchParentChildren(user.id),
++          fetchCourses(),
++          fetchNotificationSettings().catch(() => null),
++        ]);
++        if (cancelled) return;
++
++        const kids = childrenRes?.items ?? [];
++        setChildren(kids);
++        setCourses(coursesRes?.items ?? []);
++        setNotif(settingsRes ?? { email_enabled: true, sms_enabled: false, messenger_enabled: true });
++        if (kids[0]) setApplyChildId(String(kids[0].id));
++
++        if (kids.length) {
++          const enrollResults = await Promise.all(
++            kids.map((c) => fetchEnrollments({ student_id: c.id }).catch(() => ({ items: [] })))
++          );
++          if (!cancelled) {
++            const map = {};
++            kids.forEach((c, i) => (map[c.id] = enrollResults[i]?.items ?? []));
++            setEnrollmentsByChild(map);
++          }
++
++          const lessonResults = await Promise.all(
++            kids.map((c) => fetchLessons({ student_id: c.id, date_from: todayISO() }).catch(() => ({ items: [] })))
++          );
++          if (!cancelled) {
++            const all = kids.flatMap((c, i) =>
++              (lessonResults[i]?.items ?? []).map((l) => ({ ...l, _childId: c.id, _childName: fullName(c) }))
++            );
++            all.sort((a, b) => (a.lesson_date + a.start_time).localeCompare(b.lesson_date + b.start_time));
++            setUpcomingLessons(all.slice(0, 5));
++          }
++        }
++      } catch (e) {
++        if (!cancelled) setError(e.message || "Не удалось загрузить данные");
++      } finally {
++        if (!cancelled) setLoading(false);
++      }
++    }
++
++    load();
++    return () => {
++      cancelled = true;
++    };
++  }, [user?.id]);
++
++  const coursesById = useMemo(() => {
++    const map = {};
++    courses.forEach((c) => (map[c.id] = c));
++    return map;
++  }, [courses]);
++
++  async function toggleNotif(key) {
++    const next = { ...notif, [key]: !notif[key] };
++    setNotif(next);
++    try {
++      await updateNotificationSettings(next);
++    } catch {
++      setNotif(notif); // откатываем при ошибке
++    }
++  }
++
++  async function handleApply(e) {
++    e.preventDefault();
++    if (!applyChildId) return;
++    setApplyStatus("saving");
++    try {
++      await createInternalApplication({
++        student_id: Number(applyChildId),
++        subject_interest: applySubject,
++        format,
++      });
++      setApplyStatus("done");
++    } catch (e) {
++      setApplyStatus(e.message || "Не удалось отправить заявку");
++    }
++  }
+ 
+   return (
+-    <DashboardShell role="parent" user={p} searchPlaceholder="Поиск..." userLabel={p.name} avatarUrl={p.avatarUrl}>
++    <DashboardShell role="parent" user={toSidebarUser(user)} searchPlaceholder="Поиск..." userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
+       <div className="space-y-stack-lg pb-stack-lg">
+         <header className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant flex flex-col md:flex-row items-center md:items-start justify-between gap-6 mt-4">
+           <div className="flex items-center gap-6 z-10">
+-            <img src={p.avatarUrl} alt={p.name} className="w-24 h-24 rounded-full object-cover border-4 border-surface shadow-sm" />
++            <div className="w-24 h-24 rounded-full bg-primary-fixed flex items-center justify-center text-primary font-headline-md font-bold border-4 border-surface shadow-sm shrink-0">
++              {initials(user)}
++            </div>
+             <div>
+-              <h2 className="font-headline-md text-headline-md text-on-surface">{p.name}</h2>
+-              <p className="font-body-md text-body-md text-on-surface-variant">{p.email}</p>
+-              <p className="font-body-md text-body-md text-on-surface-variant opacity-70 mt-1">ID: {p.id}</p>
++              <h2 className="font-headline-md text-headline-md text-on-surface">{fullName(user)}</h2>
++              <p className="font-body-md text-body-md text-on-surface-variant">{user?.email}</p>
++              <p className="font-body-md text-body-md text-on-surface-variant opacity-70 mt-1">ID: {user?.id}</p>
+             </div>
+           </div>
+         </header>
+ 
++        {error && (
++          <div className="p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
++        )}
++
+         <div className="grid grid-cols-1 lg:grid-cols-3 gap-gutter">
+           <div className="space-y-stack-md lg:col-span-2">
+             <h3 className="font-headline-sm text-headline-sm text-on-surface">Мои дети и курсы</h3>
+ 
+-            <div className="bg-surface-container-low border border-dashed border-primary rounded-xl p-6 flex flex-col items-center text-center cursor-pointer hover:bg-surface-container transition-colors group">
++            <Link
++              to="/parent/children"
++              className="bg-surface-container-low border border-dashed border-primary rounded-xl p-6 flex flex-col items-center text-center cursor-pointer hover:bg-surface-container transition-colors group"
++            >
+               <div className="w-12 h-12 rounded-full bg-primary-container text-primary flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                 <span className="material-symbols-outlined">add</span>
+               </div>
+@@ -34,56 +157,73 @@ export default function ParentOverview() {
+               <p className="font-body-md text-body-md text-on-surface-variant text-sm max-w-md">
+                 При добавлении для ученика будет автоматически создан личный кабинет. Данные для входа будут отправлены на почту родителя.
+               </p>
+-            </div>
++            </Link>
++
++            {loading && <p className="text-on-surface-variant font-body-md">Загрузка…</p>}
++            {!loading && children.length === 0 && (
++              <p className="text-on-surface-variant font-body-md">У вас пока нет добавленных детей.</p>
++            )}
+ 
+             <div className="space-y-4">
+-              {p.children.map((child) => (
+-                <div key={child.id} className="bg-surface-container-lowest rounded-xl p-5 shadow-sm border border-outline-variant flex flex-col gap-5">
+-                  <div className="flex flex-col md:flex-row gap-5 items-start">
+-                    <img src={child.photoUrl} alt={child.name} className="w-16 h-16 rounded-lg object-cover shadow-sm" />
+-                    <div className="flex-1 w-full">
+-                      <div className="flex justify-between items-center w-full">
+-                        <h4 className="font-label-md text-label-md font-bold text-on-surface text-lg mb-1">{child.name}</h4>
+-                        <Link to={`/parent/children/${child.id}`} className="text-primary hover:bg-surface-container-low p-2 rounded-full transition-colors">
+-                          <span className="material-symbols-outlined">chevron_right</span>
+-                        </Link>
+-                      </div>
+-                      <div className="space-y-2 mt-3">
+-                        {child.courseTags.map((tag) => (
+-                          <div key={tag} className="flex items-center gap-3 bg-surface-container-lowest p-2 rounded border border-outline-variant">
+-                            <div className="w-8 h-8 rounded bg-surface-tint/10 flex items-center justify-center text-primary">
+-                              <span className="material-symbols-outlined text-sm">calculate</span>
+-                            </div>
+-                            <span className="font-body-md text-body-md text-sm text-on-surface-variant">{tag}</span>
+-                          </div>
+-                        ))}
+-                      </div>
+-                    </div>
+-                  </div>
+-                  <div className="border-t border-outline-variant pt-4 mt-2">
+-                    <h5 className="font-label-md font-bold text-on-surface mb-3">Статистика</h5>
+-                    <div className="flex gap-6 mb-4">
+-                      <div>
+-                        <span className="text-on-surface-variant text-sm">Успеваемость:</span>
+-                        <span className="font-bold text-primary ml-1">{child.performancePct}%</span>
++              {children.map((child) => {
++                const childEnrollments = enrollmentsByChild[child.id] ?? [];
++                const avgProgress = childEnrollments.length
++                  ? Math.round(childEnrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / childEnrollments.length)
++                  : 0;
++                return (
++                  <div key={child.id} className="bg-surface-container-lowest rounded-xl p-5 shadow-sm border border-outline-variant flex flex-col gap-5">
++                    <div className="flex flex-col md:flex-row gap-5 items-start">
++                      <div className="w-16 h-16 rounded-lg bg-primary-fixed flex items-center justify-center text-primary font-bold shadow-sm shrink-0">
++                        {initials(child)}
+                       </div>
+-                      <div>
+-                        <span className="text-on-surface-variant text-sm">Посещаемость:</span>
+-                        <span className="font-bold text-primary ml-1">{child.attendancePct}%</span>
++                      <div className="flex-1 w-full">
++                        <div className="flex justify-between items-center w-full">
++                          <h4 className="font-label-md text-label-md font-bold text-on-surface text-lg mb-1">{fullName(child)}</h4>
++                          <Link to={`/parent/children/${child.id}`} className="text-primary hover:bg-surface-container-low p-2 rounded-full transition-colors">
++                            <span className="material-symbols-outlined">chevron_right</span>
++                          </Link>
++                        </div>
++                        {child.class_info && <p className="text-sm text-on-surface-variant mb-2">{child.class_info}</p>}
++                        <div className="space-y-2 mt-3">
++                          {childEnrollments.length === 0 && (
++                            <p className="text-sm text-on-surface-variant">Пока не записан ни на один курс</p>
++                          )}
++                          {childEnrollments.map((e) => {
++                            const course = coursesById[e.course_id];
++                            return (
++                              <div key={e.id} className="flex items-center gap-3 bg-surface-container-lowest p-2 rounded border border-outline-variant">
++                                <div className="w-8 h-8 rounded bg-surface-tint/10 flex items-center justify-center text-primary">
++                                  <span className="material-symbols-outlined text-sm">calculate</span>
++                                </div>
++                                <span className="font-body-md text-body-md text-sm text-on-surface-variant">
++                                  {course?.title ?? course?.subject ?? `Курс #${e.course_id}`}
++                                </span>
++                              </div>
++                            );
++                          })}
++                        </div>
+                       </div>
+                     </div>
+-                    <h5 className="font-label-md font-bold text-on-surface mb-2">Преподаватели</h5>
+-                    <div className="space-y-2">
+-                      {child.teachers.map((t) => (
+-                        <div key={t.name} className="flex justify-between text-sm bg-surface-container-lowest p-2 rounded border border-outline-variant">
+-                          <span className="text-on-surface font-medium">{t.name}</span>
+-                          <span className="text-on-surface-variant">{t.subject}</span>
++                    {childEnrollments.length > 0 && (
++                      <div className="border-t border-outline-variant pt-4 mt-2">
++                        <h5 className="font-label-md font-bold text-on-surface mb-3">Статистика</h5>
++                        <div className="flex gap-6 mb-4">
++                          <div>
++                            <span className="text-on-surface-variant text-sm">Средний прогресс:</span>
++                            <span className="font-bold text-primary ml-1">{avgProgress}%</span>
++                          </div>
++                          <div>
++                            <span className="text-on-surface-variant text-sm">Активных курсов:</span>
++                            <span className="font-bold text-primary ml-1">
++                              {childEnrollments.filter((e) => e.status === "active").length}
++                            </span>
++                          </div>
+                         </div>
+-                      ))}
+-                    </div>
++                      </div>
++                    )}
+                   </div>
+-                </div>
+-              ))}
++                );
++              })}
+             </div>
+ 
+             <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant mt-8">
+@@ -92,17 +232,27 @@ export default function ParentOverview() {
+                 Предстоящие занятия
+               </h3>
+               <div className="space-y-3">
+-                {p.upcomingLessons.map((l) => (
+-                  <div key={l.id} className="flex justify-between items-center bg-surface-container-lowest border border-outline-variant p-3 rounded-lg">
+-                    <div>
+-                      <p className="font-label-md text-on-surface font-bold">{l.title}</p>
+-                      <p className="text-sm text-on-surface-variant flex items-center gap-1 mt-1">
+-                        <span className="material-symbols-outlined text-[16px]">schedule</span> {l.time}
+-                      </p>
++                {!loading && upcomingLessons.length === 0 && (
++                  <p className="text-sm text-on-surface-variant">Занятий не запланировано.</p>
++                )}
++                {upcomingLessons.map((l) => {
++                  const course = coursesById[l.course_id];
++                  return (
++                    <div key={l.id} className="flex justify-between items-center bg-surface-container-lowest border border-outline-variant p-3 rounded-lg">
++                      <div>
++                        <p className="font-label-md text-on-surface font-bold">
++                          {course?.title ?? course?.subject ?? l.topic} ({l._childName})
++                        </p>
++                        <p className="text-sm text-on-surface-variant flex items-center gap-1 mt-1">
++                          <span className="material-symbols-outlined text-[16px]">schedule</span> {l.lesson_date}, {l.start_time} - {l.end_time}
++                        </p>
++                      </div>
++                      <span className="material-symbols-outlined text-primary bg-primary-container/10 p-2 rounded-full">
++                        {l.location_type === "remote" ? "video_camera_front" : "location_on"}
++                      </span>
+                     </div>
+-                    <span className="material-symbols-outlined text-primary bg-primary-container/10 p-2 rounded-full">video_camera_front</span>
+-                  </div>
+-                ))}
++                  );
++                })}
+               </div>
+             </div>
+ 
+@@ -110,23 +260,24 @@ export default function ParentOverview() {
+               <h4 className="font-label-md text-label-md font-bold text-on-surface mb-4 flex items-center gap-2">
+                 <span className="material-symbols-outlined text-outline">notifications</span>Настройка уведомлений
+               </h4>
+-              <p className="text-sm text-on-surface-variant mb-3">Получать уведомления об окончании договора:</p>
++              <p className="text-sm text-on-surface-variant mb-3">Каналы для получения уведомлений:</p>
+               <div className="space-y-3">
+-                {[
+-                  { key: "email", label: "Почта" },
+-                  { key: "sms", label: "SMS" },
+-                  { key: "messenger", label: "Мессенджеры" },
+-                ].map((ch) => (
+-                  <label key={ch.key} className="flex items-center gap-3 cursor-pointer">
+-                    <input
+-                      type="checkbox"
+-                      checked={notif[ch.key]}
+-                      onChange={() => setNotif((n) => ({ ...n, [ch.key]: !n[ch.key] }))}
+-                      className="w-5 h-5 rounded text-primary focus:ring-primary border-outline-variant"
+-                    />
+-                    <span className="text-sm text-on-surface font-medium">{ch.label}</span>
+-                  </label>
+-                ))}
++                {notif &&
++                  [
++                    { key: "email_enabled", label: "Почта" },
++                    { key: "sms_enabled", label: "SMS" },
++                    { key: "messenger_enabled", label: "Мессенджеры" },
++                  ].map((ch) => (
++                    <label key={ch.key} className="flex items-center gap-3 cursor-pointer">
++                      <input
++                        type="checkbox"
++                        checked={!!notif[ch.key]}
++                        onChange={() => toggleNotif(ch.key)}
++                        className="w-5 h-5 rounded text-primary focus:ring-primary border-outline-variant"
++                      />
++                      <span className="text-sm text-on-surface font-medium">{ch.label}</span>
++                    </label>
++                  ))}
+               </div>
+             </div>
+           </div>
+@@ -137,26 +288,10 @@ export default function ParentOverview() {
+                 <span className="material-symbols-outlined text-primary">payments</span>
+                 Договоры и Оплата
+               </h3>
+-              <div className="space-y-4">
+-                {p.contracts.map((c) => (
+-                  <div key={c.id} className="p-4 rounded-lg bg-surface-container-low border border-outline-variant">
+-                    <div className="flex justify-between items-start mb-2">
+-                      <span className="font-label-md font-bold text-on-surface">Договор №{c.id}</span>
+-                      <span className="px-2 py-1 rounded bg-secondary-container/30 text-on-secondary-container text-[10px] font-bold uppercase">
+-                        {c.status}
+-                      </span>
+-                    </div>
+-                    <p className="text-sm text-on-surface-variant mb-3">{c.subject}</p>
+-                    <p className="text-[12px] text-on-surface-variant mb-3 opacity-70">Срок: {c.period}</p>
+-                    <div className="flex justify-between items-center">
+-                      <span className="text-headline-sm font-bold text-on-surface">{c.amount}</span>
+-                      <button className="bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-primary-container transition-colors">
+-                        Оплатить
+-                      </button>
+-                    </div>
+-                  </div>
+-                ))}
+-              </div>
++              <p className="text-sm text-on-surface-variant">
++                Подробная информация о договорах, суммах и статусе оплаты доступна администрации учебного центра.
++                Обратитесь к вашему филиалу, чтобы получить актуальные данные по договору ребёнка.
++              </p>
+             </div>
+ 
+             <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant">
+@@ -164,23 +299,29 @@ export default function ParentOverview() {
+                 <span className="material-symbols-outlined text-primary">add_task</span>
+                 Записаться на новый курс
+               </h3>
+-              <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
++              <form className="space-y-4" onSubmit={handleApply}>
+                 <div>
+                   <label className="block font-label-md text-label-md text-on-surface mb-2">Выберите ребёнка</label>
+-                  <select className="w-full rounded-lg border-outline-variant bg-surface-container-lowest text-on-surface focus:ring-primary">
+-                    {p.children.map((c) => (
+-                      <option key={c.id}>{c.name}</option>
++                  <select
++                    value={applyChildId}
++                    onChange={(e) => setApplyChildId(e.target.value)}
++                    className="w-full rounded-lg border-outline-variant bg-surface-container-lowest text-on-surface focus:ring-primary"
++                  >
++                    {children.map((c) => (
++                      <option key={c.id} value={c.id}>{fullName(c)}</option>
+                     ))}
+-                    <option>Добавить нового ребёнка...</option>
+                   </select>
+                 </div>
+                 <div>
+                   <label className="block font-label-md text-label-md text-on-surface mb-2">Предмет</label>
+-                  <select className="w-full rounded-lg border-outline-variant bg-surface-container-lowest text-on-surface focus:ring-primary">
+-                    <option>Физика</option>
+-                    <option>Информатика</option>
+-                    <option>Русский язык</option>
+-                    <option>История</option>
++                  <select
++                    value={applySubject}
++                    onChange={(e) => setApplySubject(e.target.value)}
++                    className="w-full rounded-lg border-outline-variant bg-surface-container-lowest text-on-surface focus:ring-primary"
++                  >
++                    {SUBJECT_OPTIONS.map((s) => (
++                      <option key={s}>{s}</option>
++                    ))}
+                   </select>
+                 </div>
+                 <div>
+@@ -208,10 +349,15 @@ export default function ParentOverview() {
+                 </div>
+                 <button
+                   type="submit"
+-                  className="w-full bg-primary text-on-primary py-3 rounded-lg font-label-md text-label-md hover:bg-primary-container transition-all mt-2"
++                  disabled={!applyChildId}
++                  className="w-full bg-primary text-on-primary py-3 rounded-lg font-label-md text-label-md hover:bg-primary-container transition-all mt-2 disabled:opacity-60"
+                 >
+                   Отправить заявку
+                 </button>
++                {applyStatus === "done" && <p className="text-sm text-primary">Заявка отправлена!</p>}
++                {applyStatus && applyStatus !== "saving" && applyStatus !== "done" && (
++                  <p className="text-sm text-error">{applyStatus}</p>
++                )}
+               </form>
+             </div>
+           </div>
+diff --git a/study-room-frontend/src/pages/tutor/TutorNewLesson.jsx b/study-room-frontend/src/pages/tutor/TutorNewLesson.jsx
+index 7d8d96d..b333c71 100644
+--- a/study-room-frontend/src/pages/tutor/TutorNewLesson.jsx
++++ b/study-room-frontend/src/pages/tutor/TutorNewLesson.jsx
+@@ -1,13 +1,24 @@
+-import { useState } from "react";
++import { useEffect, useState } from "react";
+ import { useNavigate } from "react-router-dom";
+ import DashboardShell from "../../components/layout/DashboardShell.jsx";
+-import { currentTutor } from "../../data/mockData.js";
++import { useAuth } from "../../context/AuthContext.jsx";
++import { fetchEnrollments, fetchCourses, createLesson } from "../../api/academic.js";
++import { fetchMyPeople } from "../../api/users.js";
++import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+ 
+ export default function TutorNewLesson() {
+   const navigate = useNavigate();
+-  const t = currentTutor;
++  const { user } = useAuth();
++
++  const [enrollments, setEnrollments] = useState([]);
++  const [courses, setCourses] = useState([]);
++  const [studentsById, setStudentsById] = useState({});
++  const [loadingOptions, setLoadingOptions] = useState(true);
++  const [submitError, setSubmitError] = useState("");
++  const [submitting, setSubmitting] = useState(false);
++
+   const [form, setForm] = useState({
+-    student: "",
++    enrollmentId: "",
+     topic: "",
+     date: "",
+     startTime: "",
+@@ -17,18 +28,72 @@ export default function TutorNewLesson() {
+     comment: "",
+   });
+ 
++  useEffect(() => {
++    if (!user?.id) return;
++    let cancelled = false;
++    async function load() {
++      setLoadingOptions(true);
++      try {
++        const [enrollRes, coursesRes, peopleRes] = await Promise.all([
++          fetchEnrollments({ tutor_id: user.id }),
++          fetchCourses(),
++          fetchMyPeople(),
++        ]);
++        if (cancelled) return;
++        setEnrollments(enrollRes?.items ?? []);
++        setCourses(coursesRes?.items ?? []);
++        const byId = {};
++        (peopleRes?.students ?? []).forEach((s) => (byId[s.id] = s));
++        setStudentsById(byId);
++      } catch (e) {
++        if (!cancelled) setSubmitError(e.message || "Не удалось загрузить список учеников");
++      } finally {
++        if (!cancelled) setLoadingOptions(false);
++      }
++    }
++    load();
++    return () => {
++      cancelled = true;
++    };
++  }, [user?.id]);
++
++  const coursesById = Object.fromEntries(courses.map((c) => [c.id, c]));
++
+   function update(field, value) {
+     setForm((f) => ({ ...f, [field]: value }));
+   }
+ 
+-  function handleSubmit(e) {
++  async function handleSubmit(e) {
+     e.preventDefault();
+-    // В боевой версии — POST /api/v1/lessons, затем редирект в расписание.
+-    navigate("/tutor");
++    setSubmitError("");
++    const enrollment = enrollments.find((en) => String(en.id) === String(form.enrollmentId));
++    if (!enrollment) {
++      setSubmitError("Выберите ученика/группу из списка");
++      return;
++    }
++    setSubmitting(true);
++    try {
++      await createLesson({
++        course_id: enrollment.course_id,
++        tutor_id: user.id,
++        topic: form.topic,
++        lesson_date: form.date,
++        start_time: form.startTime,
++        end_time: form.endTime,
++        location_type: form.lessonType === "online" ? "remote" : "offline",
++        group_type: form.lessonFormat,
++        comment: form.comment || undefined,
++      });
++      navigate("/tutor");
++    } catch (e) {
++      setSubmitError(e.message || "Не удалось создать занятие");
++    } finally {
++      setSubmitting(false);
++    }
+   }
+ 
+   return (
+-    <DashboardShell role="tutor" user={t} searchPlaceholder="Поиск..." userLabel={t.name} avatarUrl={t.avatarUrl}>
++    <DashboardShell role="tutor" user={toSidebarUser(user)} searchPlaceholder="Поиск..." userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
+       <div className="flex-1 flex justify-center py-4">
+         <div className="w-full max-w-3xl bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] p-stack-lg border border-outline-variant/30">
+           <div className="mb-stack-lg pb-stack-md border-b border-outline-variant/50 flex items-center justify-between">
+@@ -39,24 +104,34 @@ export default function TutorNewLesson() {
+             <span className="material-symbols-outlined text-primary text-4xl">event_note</span>
+           </div>
+ 
++          {submitError && (
++            <div className="mb-4 p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{submitError}</div>
++          )}
++
+           <form onSubmit={handleSubmit} className="space-y-stack-lg">
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-stack-md">
+               <div className="flex flex-col gap-stack-sm">
+-                <label className="font-label-md text-label-md text-on-surface" htmlFor="student-select">
+-                  Выбор ученика/группы <span className="text-error">*</span>
++                <label className="font-label-md text-label-md text-on-surface" htmlFor="enrollment-select">
++                  Выбор ученика/курса <span className="text-error">*</span>
+                 </label>
+-                <div className="relative">
+-                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+-                  <input
+-                    id="student-select"
+-                    required
+-                    type="text"
+-                    placeholder="Поиск ученика..."
+-                    value={form.student}
+-                    onChange={(e) => update("student", e.target.value)}
+-                    className="w-full pl-10 pr-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
+-                  />
+-                </div>
++                <select
++                  id="enrollment-select"
++                  required
++                  value={form.enrollmentId}
++                  onChange={(e) => update("enrollmentId", e.target.value)}
++                  className="w-full px-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
++                >
++                  <option value="">{loadingOptions ? "Загрузка…" : "Выберите ученика и курс"}</option>
++                  {enrollments.map((e) => {
++                    const student = studentsById[e.student_id];
++                    const course = coursesById[e.course_id];
++                    return (
++                      <option key={e.id} value={e.id}>
++                        {(student ? fullName(student) : `Ученик #${e.student_id}`)} — {course?.title ?? course?.subject ?? `Курс #${e.course_id}`}
++                      </option>
++                    );
++                  })}
++                </select>
+               </div>
+               <div className="flex flex-col gap-stack-sm">
+                 <label className="font-label-md text-label-md text-on-surface" htmlFor="lesson-topic">
+@@ -163,10 +238,11 @@ export default function TutorNewLesson() {
+               </button>
+               <button
+                 type="submit"
+-                className="px-6 py-2 rounded-lg font-label-md text-label-md bg-primary text-on-primary hover:bg-on-primary-fixed-variant shadow-sm hover:shadow-md transition-all active:scale-95 duration-150 flex items-center gap-2"
++                disabled={submitting}
++                className="px-6 py-2 rounded-lg font-label-md text-label-md bg-primary text-on-primary hover:bg-on-primary-fixed-variant shadow-sm hover:shadow-md transition-all active:scale-95 duration-150 flex items-center gap-2 disabled:opacity-60"
+               >
+                 <span className="material-symbols-outlined text-sm">check</span>
+-                Создать занятие
++                {submitting ? "Создание…" : "Создать занятие"}
+               </button>
+             </div>
+           </form>
+diff --git a/study-room-frontend/src/pages/tutor/TutorOverview.jsx b/study-room-frontend/src/pages/tutor/TutorOverview.jsx
+index b37f21b..d0f2176 100644
+--- a/study-room-frontend/src/pages/tutor/TutorOverview.jsx
++++ b/study-room-frontend/src/pages/tutor/TutorOverview.jsx
+@@ -1,17 +1,126 @@
++import { useEffect, useMemo, useState } from "react";
+ import { Link } from "react-router-dom";
+ import DashboardShell from "../../components/layout/DashboardShell.jsx";
+-import { currentTutor } from "../../data/mockData.js";
++import { useAuth } from "../../context/AuthContext.jsx";
++import { fetchLessons, fetchEnrollments, fetchCourses, fetchAttendance, assignHomework } from "../../api/academic.js";
++import { fetchMyPeople } from "../../api/users.js";
++import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
++
++function pad(n) {
++  return String(n).padStart(2, "0");
++}
++function todayISO() {
++  const d = new Date();
++  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
++}
++function nowHHMM() {
++  const d = new Date();
++  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
++}
++function initials(person) {
++  if (!person) return "?";
++  return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
++}
+ 
+ export default function TutorOverview() {
+-  const t = currentTutor;
++  const { user } = useAuth();
++
++  const [todayLessons, setTodayLessons] = useState([]);
++  const [enrollments, setEnrollments] = useState([]);
++  const [courses, setCourses] = useState([]);
++  const [studentsById, setStudentsById] = useState({});
++  const [attendanceByLesson, setAttendanceByLesson] = useState({});
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState("");
++
++  const [hwStudentId, setHwStudentId] = useState("");
++  const [hwLink, setHwLink] = useState("");
++  const [hwStatus, setHwStatus] = useState("");
++
++  useEffect(() => {
++    if (!user?.id) return;
++    let cancelled = false;
++
++    async function load() {
++      setLoading(true);
++      setError("");
++      try {
++        const today = todayISO();
++        const [lessonsRes, enrollRes, coursesRes, peopleRes] = await Promise.all([
++          fetchLessons({ tutor_id: user.id, date_from: today, date_to: today }),
++          fetchEnrollments({ tutor_id: user.id }),
++          fetchCourses(),
++          fetchMyPeople(),
++        ]);
++        if (cancelled) return;
++
++        const lessonItems = (lessonsRes?.items ?? []).slice().sort((a, b) => a.start_time.localeCompare(b.start_time));
++        setTodayLessons(lessonItems);
++        setEnrollments(enrollRes?.items ?? []);
++        setCourses(coursesRes?.items ?? []);
++
++        const byId = {};
++        (peopleRes?.students ?? []).forEach((s) => (byId[s.id] = s));
++        setStudentsById(byId);
++
++        // Для прошедших сегодняшних занятий подтягиваем посещаемость, чтобы показать отсутствующих.
++        const now = nowHHMM();
++        const pastLessons = lessonItems.filter((l) => l.end_time && l.end_time <= now);
++        if (pastLessons.length) {
++          const results = await Promise.all(pastLessons.map((l) => fetchAttendance(l.id).catch(() => null)));
++          if (!cancelled) {
++            const map = {};
++            pastLessons.forEach((l, i) => {
++              if (results[i]) map[l.id] = results[i]?.items ?? [];
++            });
++            setAttendanceByLesson(map);
++          }
++        }
++      } catch (e) {
++        if (!cancelled) setError(e.message || "Не удалось загрузить данные");
++      } finally {
++        if (!cancelled) setLoading(false);
++      }
++    }
++
++    load();
++    return () => {
++      cancelled = true;
++    };
++  }, [user?.id]);
++
++  const coursesById = useMemo(() => {
++    const map = {};
++    courses.forEach((c) => (map[c.id] = c));
++    return map;
++  }, [courses]);
++
++  const now = nowHHMM();
++
++  async function handleAssignHomework(e) {
++    e.preventDefault();
++    if (!hwStudentId || !hwLink) return;
++    setHwStatus("saving");
++    try {
++      await assignHomework({ student_id: Number(hwStudentId), link_url: hwLink });
++      setHwStatus("done");
++      setHwLink("");
++    } catch (e) {
++      setHwStatus(e.message || "Ошибка");
++    }
++  }
+ 
+   return (
+-    <DashboardShell role="tutor" user={t} searchPlaceholder="Поиск..." userLabel={t.name} avatarUrl={t.avatarUrl}>
++    <DashboardShell role="tutor" user={toSidebarUser(user)} searchPlaceholder="Поиск..." userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
+       <div className="mb-stack-lg mt-4">
+         <h1 className="font-headline-md text-headline-md text-on-background mb-2">Панель управления репетитора</h1>
+-        <p className="font-body-lg text-body-lg text-on-surface-variant">Добро пожаловать, {t.name.split(" ")[0]}. Вот сводка вашей активности.</p>
++        <p className="font-body-lg text-body-lg text-on-surface-variant">Добро пожаловать, {user?.first_name}. Вот сводка вашей активности.</p>
+       </div>
+ 
++      {error && (
++        <div className="mb-4 p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
++      )}
++
+       <div className="grid grid-cols-1 lg:grid-cols-3 gap-stack-lg pb-stack-lg">
+         <section className="lg:col-span-2 bg-surface-container-lowest rounded-xl p-6 shadow-[0px_10px_30px_rgba(0,0,0,0.05)]">
+           <div className="flex justify-between items-center mb-6">
+@@ -25,56 +134,74 @@ export default function TutorOverview() {
+           </div>
+ 
+           <div className="flex flex-col gap-4">
+-            {t.todaySchedule.map((lesson) => (
+-              <div
+-                key={lesson.id}
+-                className={`flex flex-col sm:flex-row rounded-lg border border-outline-variant p-4 gap-4 items-start sm:items-center relative overflow-hidden ${
+-                  lesson.isPast ? "bg-surface-container-low opacity-80" : "bg-surface hover:shadow-md transition-shadow"
+-                }`}
+-              >
+-                {lesson.isLast && (
+-                  <div className="absolute top-0 right-0 bg-tertiary-container text-on-tertiary-container px-3 py-1 rounded-bl-lg font-label-md text-[10px] font-bold uppercase tracking-wider">
+-                    Последнее занятие
+-                  </div>
+-                )}
+-                <div className="flex flex-col min-w-[120px]">
+-                  <span className="font-headline-sm text-headline-sm text-on-surface font-semibold">{lesson.time}</span>
+-                  <span className="font-label-md text-label-md text-on-surface-variant">{lesson.endTime}</span>
+-                </div>
+-                <div className="flex-1">
+-                  <div className="flex items-center gap-2 mb-1">
+-                    <span className="bg-primary-container text-on-primary-container px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
+-                      {lesson.subject}
+-                    </span>
+-                    <span className="bg-surface-variant text-on-surface-variant px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
+-                      {lesson.statusTag}
+-                    </span>
+-                  </div>
+-                  <h3 className="font-body-lg text-body-lg text-on-surface font-medium">{lesson.title}</h3>
+-                  {lesson.participants && (
+-                    <p className="font-label-md text-label-md text-on-surface-variant mt-1">{lesson.participants}</p>
+-                  )}
+-                  {lesson.isPast && (
+-                    <div className="mt-2 flex flex-col gap-2">
+-                      <div className="flex items-center gap-2 text-error font-medium text-label-md">
+-                        <span className="material-symbols-outlined text-body-md">person_off</span>
+-                        Отсутствовал: {lesson.absentStudent}
+-                      </div>
+-                      <div className="text-label-md text-on-surface-variant italic">Причина отсутствия: {lesson.absentReason}</div>
++            {loading && <p className="text-on-surface-variant font-body-md">Загрузка…</p>}
++            {!loading && todayLessons.length === 0 && (
++              <p className="text-on-surface-variant font-body-md">На сегодня занятий не запланировано.</p>
++            )}
++            {todayLessons.map((lesson, idx) => {
++              const isPast = lesson.end_time <= now;
++              const isLast = idx === todayLessons.length - 1;
++              const course = coursesById[lesson.course_id];
++              const records = attendanceByLesson[lesson.id] ?? [];
++              const absentRecords = records.filter((r) => r.status === "absent");
++
++              return (
++                <div
++                  key={lesson.id}
++                  className={`flex flex-col sm:flex-row rounded-lg border border-outline-variant p-4 gap-4 items-start sm:items-center relative overflow-hidden ${
++                    isPast ? "bg-surface-container-low opacity-80" : "bg-surface hover:shadow-md transition-shadow"
++                  }`}
++                >
++                  {isLast && (
++                    <div className="absolute top-0 right-0 bg-tertiary-container text-on-tertiary-container px-3 py-1 rounded-bl-lg font-label-md text-[10px] font-bold uppercase tracking-wider">
++                      Последнее занятие
+                     </div>
+                   )}
++                  <div className="flex flex-col min-w-[120px]">
++                    <span className="font-headline-sm text-headline-sm text-on-surface font-semibold">{lesson.start_time}</span>
++                    <span className="font-label-md text-label-md text-on-surface-variant">{lesson.end_time}</span>
++                  </div>
++                  <div className="flex-1">
++                    <div className="flex items-center gap-2 mb-1">
++                      <span className="bg-primary-container text-on-primary-container px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
++                        {course?.subject ?? course?.title ?? "—"}
++                      </span>
++                      <span className="bg-surface-variant text-on-surface-variant px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
++                        {lesson.group_type === "group" ? "Групповое" : "Индивидуально"} / {lesson.location_type === "remote" ? "Дистанционно" : "Очно"}
++                      </span>
++                      {isPast && (
++                        <span className="bg-surface-variant text-on-surface-variant px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">Прошедшее</span>
++                      )}
++                    </div>
++                    <h3 className="font-body-lg text-body-lg text-on-surface font-medium">{lesson.topic}</h3>
++                    {isPast && absentRecords.length > 0 && (
++                      <div className="mt-2 flex flex-col gap-2">
++                        {absentRecords.map((r) => (
++                          <div key={r.student_id}>
++                            <div className="flex items-center gap-2 text-error font-medium text-label-md">
++                              <span className="material-symbols-outlined text-body-md">person_off</span>
++                              Отсутствовал: {studentsById[r.student_id] ? fullName(studentsById[r.student_id]) : `Ученик #${r.student_id}`}
++                            </div>
++                            {r.absence_reason && (
++                              <div className="text-label-md text-on-surface-variant italic">Причина отсутствия: {r.absence_reason}</div>
++                            )}
++                          </div>
++                        ))}
++                      </div>
++                    )}
++                  </div>
++                  <div>
++                    {isPast ? (
++                      <Link to="/tutor/schedule" className="text-primary font-label-md text-label-md hover:underline">Отчёт</Link>
++                    ) : (
++                      <Link to="/tutor/schedule" className="border border-primary text-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container transition-colors">
++                        Детали
++                      </Link>
++                    )}
++                  </div>
+                 </div>
+-                <div>
+-                  {lesson.isPast ? (
+-                    <button className="text-primary font-label-md text-label-md hover:underline">Отчёт</button>
+-                  ) : (
+-                    <button className="border border-primary text-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container transition-colors">
+-                      Детали
+-                    </button>
+-                  )}
+-                </div>
+-              </div>
+-            ))}
++              );
++            })}
+           </div>
+         </section>
+ 
+@@ -85,23 +212,32 @@ export default function TutorOverview() {
+               Мои ученики
+             </h2>
+             <div className="flex flex-col gap-3">
+-              {t.students.map((st) => (
+-                <div key={st.id} className="flex items-center gap-3 p-2 hover:bg-surface-container rounded-lg cursor-pointer transition-colors">
+-                  <div className="w-10 h-10 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant font-bold">
+-                    {st.initials}
+-                  </div>
+-                  <div className="flex-1">
+-                    <div className="font-body-md text-body-md font-medium text-on-surface">{st.name}</div>
+-                    <div className="font-label-md text-label-md text-on-surface-variant">{st.subject}</div>
+-                  </div>
+-                  <div className="w-12 bg-surface-container-high rounded-full h-2">
+-                    <div
+-                      className={`h-2 rounded-full ${st.progress >= 60 ? "bg-primary" : "bg-secondary-container"}`}
+-                      style={{ width: `${st.progress}%` }}
+-                    />
++              {!loading && enrollments.length === 0 && (
++                <p className="text-on-surface-variant font-body-md text-sm">Пока нет закреплённых учеников.</p>
++              )}
++              {enrollments.slice(0, 6).map((e) => {
++                const student = studentsById[e.student_id];
++                const course = coursesById[e.course_id];
++                return (
++                  <div key={e.id} className="flex items-center gap-3 p-2 hover:bg-surface-container rounded-lg cursor-pointer transition-colors">
++                    <div className="w-10 h-10 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant font-bold">
++                      {initials(student)}
++                    </div>
++                    <div className="flex-1">
++                      <div className="font-body-md text-body-md font-medium text-on-surface">
++                        {student ? fullName(student) : `Ученик #${e.student_id}`}
++                      </div>
++                      <div className="font-label-md text-label-md text-on-surface-variant">{course?.subject ?? course?.title ?? "—"}</div>
++                    </div>
++                    <div className="w-12 bg-surface-container-high rounded-full h-2">
++                      <div
++                        className={`h-2 rounded-full ${(e.progress_pct ?? 0) >= 60 ? "bg-primary" : "bg-secondary-container"}`}
++                        style={{ width: `${e.progress_pct ?? 0}%` }}
++                      />
++                    </div>
+                   </div>
+-                </div>
+-              ))}
++                );
++              })}
+             </div>
+             <Link to="/tutor/students" className="mt-4 w-full block text-center text-primary font-label-md text-label-md hover:underline">
+               Все ученики
+@@ -111,35 +247,47 @@ export default function TutorOverview() {
+           <section className="bg-surface-container-lowest rounded-xl p-6 shadow-[0px_10px_30px_rgba(0,0,0,0.05)] flex-1">
+             <h2 className="font-headline-sm text-headline-sm text-on-background flex items-center gap-2 mb-6">
+               <span className="material-symbols-outlined text-primary">school</span>
+-              Управление обучением
++              Выдать домашнее задание
+             </h2>
+-            <div className="flex flex-col gap-6">
++            <form onSubmit={handleAssignHomework} className="flex flex-col gap-4">
+               <div>
+-                <label className="block font-label-md text-label-md text-on-surface-variant mb-2">Назначить тему урока</label>
++                <label className="block font-label-md text-label-md text-on-surface-variant mb-2">Ученик</label>
+                 <div className="relative">
+-                  <select className="w-full bg-surface border border-outline-variant rounded-lg p-3 appearance-none focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-body-md text-body-md text-on-surface transition-all shadow-sm">
+-                    <option>Выберите ученика/группу</option>
+-                    <option>Группа 10-А (Математика)</option>
+-                    <option>Анна Смирнова (Физика)</option>
++                  <select
++                    value={hwStudentId}
++                    onChange={(e) => setHwStudentId(e.target.value)}
++                    className="w-full bg-surface border border-outline-variant rounded-lg p-3 appearance-none focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-body-md text-body-md text-on-surface transition-all shadow-sm"
++                  >
++                    <option value="">Выберите ученика</option>
++                    {enrollments.map((e) => (
++                      <option key={e.id} value={e.student_id}>
++                        {studentsById[e.student_id] ? fullName(studentsById[e.student_id]) : `Ученик #${e.student_id}`}
++                      </option>
++                    ))}
+                   </select>
+-                  <span className="material-symbols-outlined absolute right-3 top-3 text-on-surface-variant pointer-events-none">
+-                    expand_more
+-                  </span>
++                  <span className="material-symbols-outlined absolute right-3 top-3 text-on-surface-variant pointer-events-none">expand_more</span>
+                 </div>
++              </div>
++              <div>
++                <label className="block font-label-md text-label-md text-on-surface-variant mb-2">Ссылка на задание</label>
+                 <input
+-                  className="mt-2 w-full bg-surface border border-outline-variant rounded-lg p-3 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-body-md text-body-md text-on-surface transition-all shadow-sm"
+-                  placeholder="Введите тему..."
+-                  type="text"
++                  value={hwLink}
++                  onChange={(e) => setHwLink(e.target.value)}
++                  className="mt-0 w-full bg-surface border border-outline-variant rounded-lg p-3 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-body-md text-body-md text-on-surface transition-all shadow-sm"
++                  placeholder="https://example.com/hw/..."
++                  type="url"
+                 />
+               </div>
+-              <div className="border-t border-outline-variant pt-6">
+-                <h3 className="font-label-md text-label-md text-on-surface-variant mb-3">Выдать задание</h3>
+-                <button className="w-full border-2 border-dashed border-primary-fixed-dim bg-surface-container-low text-primary hover:bg-surface-container hover:border-primary py-4 rounded-lg flex flex-col items-center justify-center gap-2 transition-all group">
+-                  <span className="material-symbols-outlined text-3xl group-hover:scale-110 transition-transform">upload_file</span>
+-                  <span className="font-label-md text-label-md font-medium">Загрузить файл задания</span>
+-                </button>
+-              </div>
+-            </div>
++              <button
++                type="submit"
++                className="w-full border-2 border-dashed border-primary-fixed-dim bg-surface-container-low text-primary hover:bg-surface-container hover:border-primary py-3 rounded-lg flex items-center justify-center gap-2 transition-all"
++              >
++                <span className="material-symbols-outlined">upload_file</span>
++                <span className="font-label-md text-label-md font-medium">Выдать задание</span>
++              </button>
++              {hwStatus === "done" && <p className="text-sm text-primary">Задание успешно выдано.</p>}
++              {hwStatus && hwStatus !== "saving" && hwStatus !== "done" && <p className="text-sm text-error">{hwStatus}</p>}
++            </form>
+           </section>
+         </div>
+       </div>
+diff --git a/study-room-frontend/src/pages/tutor/TutorStudents.jsx b/study-room-frontend/src/pages/tutor/TutorStudents.jsx
+index 6a8fd43..bfe94e4 100644
+--- a/study-room-frontend/src/pages/tutor/TutorStudents.jsx
++++ b/study-room-frontend/src/pages/tutor/TutorStudents.jsx
+@@ -1,11 +1,82 @@
++import { useEffect, useMemo, useState } from "react";
+ import DashboardShell from "../../components/layout/DashboardShell.jsx";
+ import StatusBadge from "../../components/ui/StatusBadge.jsx";
+ import ProgressBar from "../../components/ui/ProgressBar.jsx";
+-import { currentTutor, tutorStudentsFull } from "../../data/mockData.js";
++import { useAuth } from "../../context/AuthContext.jsx";
++import { fetchEnrollments, fetchCourses, fetchLessons } from "../../api/academic.js";
++import { fetchMyPeople } from "../../api/users.js";
++import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
++
++function todayISO() {
++  const d = new Date();
++  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
++}
++function initials(person) {
++  if (!person) return "?";
++  return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
++}
+ 
+ export default function TutorStudents() {
++  const { user } = useAuth();
++
++  const [enrollments, setEnrollments] = useState([]);
++  const [courses, setCourses] = useState([]);
++  const [studentsById, setStudentsById] = useState({});
++  const [upcomingLessons, setUpcomingLessons] = useState([]);
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState("");
++
++  useEffect(() => {
++    if (!user?.id) return;
++    let cancelled = false;
++
++    async function load() {
++      setLoading(true);
++      setError("");
++      try {
++        const [enrollRes, coursesRes, peopleRes, lessonsRes] = await Promise.all([
++          fetchEnrollments({ tutor_id: user.id }),
++          fetchCourses(),
++          fetchMyPeople(),
++          fetchLessons({ tutor_id: user.id, date_from: todayISO() }),
++        ]);
++        if (cancelled) return;
++
++        setEnrollments(enrollRes?.items ?? []);
++        setCourses(coursesRes?.items ?? []);
++        const byId = {};
++        (peopleRes?.students ?? []).forEach((s) => (byId[s.id] = s));
++        setStudentsById(byId);
++        setUpcomingLessons((lessonsRes?.items ?? []).slice().sort((a, b) => a.lesson_date.localeCompare(b.lesson_date)));
++      } catch (e) {
++        if (!cancelled) setError(e.message || "Не удалось загрузить данные");
++      } finally {
++        if (!cancelled) setLoading(false);
++      }
++    }
++
++    load();
++    return () => {
++      cancelled = true;
++    };
++  }, [user?.id]);
++
++  const coursesById = useMemo(() => {
++    const map = {};
++    courses.forEach((c) => (map[c.id] = c));
++    return map;
++  }, [courses]);
++
++  const nextLessonByStudent = useMemo(() => {
++    const map = {};
++    for (const l of upcomingLessons) {
++      if (!map[l.course_id]) map[l.course_id] = l;
++    }
++    return map;
++  }, [upcomingLessons]);
++
+   return (
+-    <DashboardShell role="tutor" user={currentTutor} searchPlaceholder="Поиск ученика...">
++    <DashboardShell role="tutor" user={toSidebarUser(user)} searchPlaceholder="Поиск ученика..." userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
+       <div className="space-y-stack-md pb-stack-lg mt-4">
+         <div>
+           <h2 className="font-headline-md text-headline-md text-on-background mb-1">Мои ученики</h2>
+@@ -14,44 +85,62 @@ export default function TutorStudents() {
+           </p>
+         </div>
+ 
++        {error && (
++          <div className="p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
++        )}
++
+         <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden overflow-x-auto">
+-          <table className="w-full text-left min-w-[820px]">
++          <table className="w-full text-left min-w-[760px]">
+             <thead className="bg-surface-container-low text-on-surface-variant font-label-md">
+               <tr>
+-                <th className="px-6 py-4 font-semibold">Ученик / группа</th>
+-                <th className="px-6 py-4 font-semibold">Предмет</th>
+-                <th className="px-6 py-4 font-semibold">Родитель</th>
++                <th className="px-6 py-4 font-semibold">Ученик</th>
++                <th className="px-6 py-4 font-semibold">Курс / предмет</th>
+                 <th className="px-6 py-4 font-semibold">Прогресс</th>
+-                <th className="px-6 py-4 font-semibold">Посещаемость</th>
+-                <th className="px-6 py-4 font-semibold">Ср. балл</th>
+                 <th className="px-6 py-4 font-semibold">След. занятие</th>
+-                <th className="px-6 py-4 font-semibold">Статус</th>
++                <th className="px-6 py-4 font-semibold">Статус записи</th>
+               </tr>
+             </thead>
+             <tbody className="divide-y divide-outline-variant/20">
+-              {tutorStudentsFull.map((st) => (
+-                <tr key={st.id} className="hover:bg-surface-container-low transition-colors">
+-                  <td className="px-6 py-4">
+-                    <div className="flex items-center gap-3">
+-                      <div className="w-10 h-10 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant font-bold shrink-0">
+-                        {st.initials}
+-                      </div>
+-                      <span className="font-bold text-on-surface">{st.name}</span>
+-                    </div>
+-                  </td>
+-                  <td className="px-6 py-4 text-on-surface-variant text-sm">{st.subject}</td>
+-                  <td className="px-6 py-4 text-on-surface-variant text-sm">{st.parent}</td>
+-                  <td className="px-6 py-4 w-40">
+-                    <ProgressBar value={st.progress} />
+-                  </td>
+-                  <td className="px-6 py-4 text-sm font-semibold text-on-surface">{st.attendance}</td>
+-                  <td className="px-6 py-4 text-sm font-semibold text-on-surface">{st.avgGrade}</td>
+-                  <td className="px-6 py-4 text-sm text-on-surface-variant">{st.nextLesson}</td>
+-                  <td className="px-6 py-4">
+-                    <StatusBadge status={st.contractStatus} color={st.contractStatus === "Активен" ? "green" : "amber"} />
+-                  </td>
++              {loading && (
++                <tr>
++                  <td colSpan={5} className="px-6 py-10 text-center text-on-surface-variant">Загрузка…</td>
++                </tr>
++              )}
++              {!loading && enrollments.length === 0 && (
++                <tr>
++                  <td colSpan={5} className="px-6 py-10 text-center text-on-surface-variant">Пока нет закреплённых учеников.</td>
+                 </tr>
+-              ))}
++              )}
++              {!loading &&
++                enrollments.map((e) => {
++                  const student = studentsById[e.student_id];
++                  const course = coursesById[e.course_id];
++                  const nextLesson = nextLessonByStudent[e.course_id];
++                  return (
++                    <tr key={e.id} className="hover:bg-surface-container-low transition-colors">
++                      <td className="px-6 py-4">
++                        <div className="flex items-center gap-3">
++                          <div className="w-10 h-10 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant font-bold shrink-0">
++                            {initials(student)}
++                          </div>
++                          <span className="font-bold text-on-surface">
++                            {student ? fullName(student) : `Ученик #${e.student_id}`}
++                          </span>
++                        </div>
++                      </td>
++                      <td className="px-6 py-4 text-on-surface-variant text-sm">{course?.title ?? course?.subject ?? "—"}</td>
++                      <td className="px-6 py-4 w-40">
++                        <ProgressBar value={e.progress_pct ?? 0} />
++                      </td>
++                      <td className="px-6 py-4 text-sm text-on-surface-variant">
++                        {nextLesson ? `${nextLesson.lesson_date}, ${nextLesson.start_time}` : "—"}
++                      </td>
++                      <td className="px-6 py-4">
++                        <StatusBadge status={e.status === "active" ? "Активен" : e.status} color={e.status === "active" ? "green" : "amber"} />
++                      </td>
++                    </tr>
++                  );
++                })}
+             </tbody>
+           </table>
+         </div>
+diff --git a/study-room-frontend/vite.config.js b/study-room-frontend/vite.config.js
+index 081c8d9..6301b25 100644
+--- a/study-room-frontend/vite.config.js
++++ b/study-room-frontend/vite.config.js
+@@ -3,4 +3,9 @@ import react from "@vitejs/plugin-react";
+ 
+ export default defineConfig({
+   plugins: [react()],
++  server: {
++    host: true, // слушать на 0.0.0.0 (и IPv4, и IPv6) — чинит проблему с localhost на Windows
++    port: 5173,
++    strictPort: true,
++  },
+ });
