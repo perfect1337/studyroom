@@ -1,11 +1,82 @@
+import { useEffect, useMemo, useState } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import ProgressBar from "../../components/ui/ProgressBar.jsx";
-import { currentTutor, tutorStudentsFull } from "../../data/mockData.js";
+import { useAuth } from "../../context/AuthContext.jsx";
+import { fetchEnrollments, fetchCourses, fetchLessons } from "../../api/academic.js";
+import { fetchMyPeople } from "../../api/users.js";
+import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function initials(person) {
+  if (!person) return "?";
+  return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
+}
 
 export default function TutorStudents() {
+  const { user } = useAuth();
+
+  const [enrollments, setEnrollments] = useState([]);
+  const [courses, setCourses] = useState([]);
+  const [studentsById, setStudentsById] = useState({});
+  const [upcomingLessons, setUpcomingLessons] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setError("");
+      try {
+        const [enrollRes, coursesRes, peopleRes, lessonsRes] = await Promise.all([
+          fetchEnrollments({ tutor_id: user.id }),
+          fetchCourses(),
+          fetchMyPeople(),
+          fetchLessons({ tutor_id: user.id, date_from: todayISO() }),
+        ]);
+        if (cancelled) return;
+
+        setEnrollments(enrollRes?.items ?? []);
+        setCourses(coursesRes?.items ?? []);
+        const byId = {};
+        (peopleRes?.students ?? []).forEach((s) => (byId[s.id] = s));
+        setStudentsById(byId);
+        setUpcomingLessons((lessonsRes?.items ?? []).slice().sort((a, b) => a.lesson_date.localeCompare(b.lesson_date)));
+      } catch (e) {
+        if (!cancelled) setError(e.message || "Не удалось загрузить данные");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  const coursesById = useMemo(() => {
+    const map = {};
+    courses.forEach((c) => (map[c.id] = c));
+    return map;
+  }, [courses]);
+
+  const nextLessonByStudent = useMemo(() => {
+    const map = {};
+    for (const l of upcomingLessons) {
+      if (!map[l.course_id]) map[l.course_id] = l;
+    }
+    return map;
+  }, [upcomingLessons]);
+
   return (
-    <DashboardShell role="tutor" user={currentTutor} searchPlaceholder="Поиск ученика...">
+    <DashboardShell role="tutor" user={toSidebarUser(user)} searchPlaceholder="Поиск ученика..." userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
       <div className="space-y-stack-md pb-stack-lg mt-4">
         <div>
           <h2 className="font-headline-md text-headline-md text-on-background mb-1">Мои ученики</h2>
@@ -14,44 +85,62 @@ export default function TutorStudents() {
           </p>
         </div>
 
+        {error && (
+          <div className="p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
+        )}
+
         <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden overflow-x-auto">
-          <table className="w-full text-left min-w-[820px]">
+          <table className="w-full text-left min-w-[760px]">
             <thead className="bg-surface-container-low text-on-surface-variant font-label-md">
               <tr>
-                <th className="px-6 py-4 font-semibold">Ученик / группа</th>
-                <th className="px-6 py-4 font-semibold">Предмет</th>
-                <th className="px-6 py-4 font-semibold">Родитель</th>
+                <th className="px-6 py-4 font-semibold">Ученик</th>
+                <th className="px-6 py-4 font-semibold">Курс / предмет</th>
                 <th className="px-6 py-4 font-semibold">Прогресс</th>
-                <th className="px-6 py-4 font-semibold">Посещаемость</th>
-                <th className="px-6 py-4 font-semibold">Ср. балл</th>
                 <th className="px-6 py-4 font-semibold">След. занятие</th>
-                <th className="px-6 py-4 font-semibold">Статус</th>
+                <th className="px-6 py-4 font-semibold">Статус записи</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant/20">
-              {tutorStudentsFull.map((st) => (
-                <tr key={st.id} className="hover:bg-surface-container-low transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant font-bold shrink-0">
-                        {st.initials}
-                      </div>
-                      <span className="font-bold text-on-surface">{st.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-on-surface-variant text-sm">{st.subject}</td>
-                  <td className="px-6 py-4 text-on-surface-variant text-sm">{st.parent}</td>
-                  <td className="px-6 py-4 w-40">
-                    <ProgressBar value={st.progress} />
-                  </td>
-                  <td className="px-6 py-4 text-sm font-semibold text-on-surface">{st.attendance}</td>
-                  <td className="px-6 py-4 text-sm font-semibold text-on-surface">{st.avgGrade}</td>
-                  <td className="px-6 py-4 text-sm text-on-surface-variant">{st.nextLesson}</td>
-                  <td className="px-6 py-4">
-                    <StatusBadge status={st.contractStatus} color={st.contractStatus === "Активен" ? "green" : "amber"} />
-                  </td>
+              {loading && (
+                <tr>
+                  <td colSpan={5} className="px-6 py-10 text-center text-on-surface-variant">Загрузка…</td>
                 </tr>
-              ))}
+              )}
+              {!loading && enrollments.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-6 py-10 text-center text-on-surface-variant">Пока нет закреплённых учеников.</td>
+                </tr>
+              )}
+              {!loading &&
+                enrollments.map((e) => {
+                  const student = studentsById[e.student_id];
+                  const course = coursesById[e.course_id];
+                  const nextLesson = nextLessonByStudent[e.course_id];
+                  return (
+                    <tr key={e.id} className="hover:bg-surface-container-low transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant font-bold shrink-0">
+                            {initials(student)}
+                          </div>
+                          <span className="font-bold text-on-surface">
+                            {student ? fullName(student) : `Ученик #${e.student_id}`}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-on-surface-variant text-sm">{course?.title ?? course?.subject ?? "—"}</td>
+                      <td className="px-6 py-4 w-40">
+                        <ProgressBar value={e.progress_pct ?? 0} />
+                      </td>
+                      <td className="px-6 py-4 text-sm text-on-surface-variant">
+                        {nextLesson ? `${nextLesson.lesson_date}, ${nextLesson.start_time}` : "—"}
+                      </td>
+                      <td className="px-6 py-4">
+                        <StatusBadge status={e.status === "active" ? "Активен" : e.status} color={e.status === "active" ? "green" : "amber"} />
+                      </td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>

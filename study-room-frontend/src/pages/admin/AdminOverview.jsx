@@ -1,13 +1,110 @@
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
-import { adminOverview } from "../../data/mockData.js";
+import { useAuth } from "../../context/AuthContext.jsx";
+import { fetchMyPeople } from "../../api/users.js";
+import { fetchApplications } from "../../api/crm.js";
+import { fetchContracts } from "../../api/contracts.js";
+import { fetchCourses, createLesson } from "../../api/academic.js";
+import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+
+const TUTOR_STATUS_LABEL = {
+  active: "Активен",
+  vacation: "В отпуске",
+  sick_leave: "На больничном",
+  inactive: "Неактивен",
+};
+
+function initials(person) {
+  if (!person) return "?";
+  return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
+}
 
 export default function AdminOverview() {
-  const { admin, stats, tutors, applications } = adminOverview;
+  const { user } = useAuth();
+
+  const [students, setStudents] = useState([]);
+  const [tutors, setTutors] = useState([]);
+  const [applications, setApplications] = useState([]);
+  const [contracts, setContracts] = useState([]);
+  const [courses, setCourses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const [lessonForm, setLessonForm] = useState({ tutorId: "", courseId: "", date: "", time: "" });
+  const [lessonStatus, setLessonStatus] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError("");
+      try {
+        const [peopleRes, applicationsRes, contractsRes, coursesRes] = await Promise.all([
+          fetchMyPeople(),
+          fetchApplications({ status: "new" }).catch(() => ({ items: [] })),
+          fetchContracts().catch(() => ({ items: [] })),
+          fetchCourses(),
+        ]);
+        if (cancelled) return;
+        setStudents(peopleRes?.students ?? []);
+        setTutors(peopleRes?.tutors ?? []);
+        setApplications(applicationsRes?.items ?? []);
+        setContracts(contractsRes?.items ?? []);
+        setCourses(coursesRes?.items ?? []);
+      } catch (e) {
+        if (!cancelled) setError(e.message || "Не удалось загрузить данные");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const totalRevenue = useMemo(
+    () => contracts.reduce((sum, c) => sum + (c.payment_status === "paid" ? Number(c.amount) || 0 : 0), 0),
+    [contracts]
+  );
+
+  const stats = [
+    { label: "Всего учеников", value: String(students.length), icon: "school" },
+    { label: "Всего репетиторов", value: String(tutors.length), icon: "person_pin" },
+    { label: "Выручка (оплачено)", value: `₽${totalRevenue.toLocaleString("ru-RU")}`, icon: "trending_up" },
+    { label: "Новые заявки", value: String(applications.length), icon: "assignment_ind" },
+  ];
+
+  async function handleCreateLesson(e) {
+    e.preventDefault();
+    if (!lessonForm.tutorId || !lessonForm.courseId || !lessonForm.date || !lessonForm.time) return;
+    setLessonStatus("saving");
+    try {
+      await createLesson({
+        course_id: Number(lessonForm.courseId),
+        tutor_id: Number(lessonForm.tutorId),
+        topic: "Занятие",
+        lesson_date: lessonForm.date,
+        start_time: lessonForm.time,
+        end_time: lessonForm.time,
+        location_type: "offline",
+        group_type: "individual",
+      });
+      setLessonStatus("done");
+      setLessonForm({ tutorId: "", courseId: "", date: "", time: "" });
+    } catch (e) {
+      setLessonStatus(e.message || "Не удалось создать занятие");
+    }
+  }
 
   return (
-    <DashboardShell role="admin" user={admin} searchPlaceholder="Поиск учеников или учителей...">
+    <DashboardShell role="admin" user={toSidebarUser(user)} searchPlaceholder="Поиск учеников или учителей...">
+      {error && (
+        <div className="mt-4 p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
+      )}
+
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-stack-md mb-stack-lg mt-4">
         {stats.map((s) => (
           <div
@@ -19,7 +116,7 @@ export default function AdminOverview() {
             </div>
             <div>
               <p className="text-on-surface-variant font-label-md text-label-md">{s.label}</p>
-              <p className="text-headline-sm font-headline-sm text-primary">{s.value}</p>
+              <p className="text-headline-sm font-headline-sm text-primary">{loading ? "…" : s.value}</p>
             </div>
           </div>
         ))}
@@ -30,12 +127,15 @@ export default function AdminOverview() {
           <div className="flex justify-between items-end">
             <div>
               <h2 className="text-headline-sm font-headline-sm text-on-surface">Управление преподавателями</h2>
-              <p className="text-on-surface-variant text-label-md font-label-md">Список активных репетиторов и их текущий статус</p>
+              <p className="text-on-surface-variant text-label-md font-label-md">Список репетиторов и их текущий статус</p>
             </div>
-            <button className="bg-primary text-on-primary px-6 py-2 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:bg-on-primary-fixed-variant transition-colors active:scale-95">
+            <Link
+              to="/admin/teachers"
+              className="bg-primary text-on-primary px-6 py-2 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:bg-on-primary-fixed-variant transition-colors active:scale-95"
+            >
               <span className="material-symbols-outlined">person_add</span>
-              Добавить учителя
-            </button>
+              Все учителя
+            </Link>
           </div>
 
           <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden overflow-x-auto">
@@ -45,31 +145,30 @@ export default function AdminOverview() {
                   <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">ФИО Преподавателя</th>
                   <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Специализация</th>
                   <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Статус</th>
-                  <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right">Действия</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant">
+                {!loading && tutors.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-6 py-8 text-center text-on-surface-variant">Репетиторов пока нет</td>
+                  </tr>
+                )}
                 {tutors.map((t) => (
                   <tr key={t.id} className="hover:bg-surface-container-low transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center font-bold text-primary">
-                          {t.initials}
+                          {initials(t)}
                         </div>
                         <div>
-                          <p className="font-label-md text-label-md font-bold">{t.name}</p>
+                          <p className="font-label-md text-label-md font-bold">{fullName(t)}</p>
                           <p className="text-[12px] text-outline">ID: {t.id}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-label-md font-label-md">{t.specialty}</td>
+                    <td className="px-6 py-4 text-label-md font-label-md">{t.specialization ?? "—"}</td>
                     <td className="px-6 py-4">
-                      <StatusBadge status={t.status} />
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <button className="text-outline hover:text-primary">
-                        <span className="material-symbols-outlined">more_vert</span>
-                      </button>
+                      <StatusBadge status={TUTOR_STATUS_LABEL[t.tutor_status] ?? "Активен"} />
                     </td>
                   </tr>
                 ))}
@@ -85,39 +184,61 @@ export default function AdminOverview() {
               <h3 className="font-headline-sm text-headline-sm">Назначить урок</h3>
             </div>
             <p className="opacity-90 text-label-md font-label-md">Быстрое добавление занятия в расписание</p>
-            <div className="flex flex-col gap-4 mt-2">
+            <form onSubmit={handleCreateLesson} className="flex flex-col gap-4 mt-2">
               <div>
                 <label className="block text-[12px] font-bold text-white mb-1">Преподаватель</label>
-                <select className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md focus:ring-2 focus:ring-secondary-container appearance-none">
+                <select
+                  value={lessonForm.tutorId}
+                  onChange={(e) => setLessonForm((f) => ({ ...f, tutorId: e.target.value }))}
+                  className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md focus:ring-2 focus:ring-secondary-container appearance-none"
+                >
                   <option value="">Выберите учителя</option>
                   {tutors.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
+                    <option key={t.id} value={t.id}>{fullName(t)}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-[12px] font-bold text-white mb-1">Ученик</label>
-                <select className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md focus:ring-2 focus:ring-secondary-container appearance-none">
-                  <option value="">Выберите ученика</option>
-                  <option>Алексей К.</option>
-                  <option>Мария С.</option>
-                  <option>Иван П.</option>
+                <label className="block text-[12px] font-bold text-white mb-1">Курс</label>
+                <select
+                  value={lessonForm.courseId}
+                  onChange={(e) => setLessonForm((f) => ({ ...f, courseId: e.target.value }))}
+                  className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md focus:ring-2 focus:ring-secondary-container appearance-none"
+                >
+                  <option value="">Выберите курс</option>
+                  {courses.map((c) => (
+                    <option key={c.id} value={c.id}>{c.title}</option>
+                  ))}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-[12px] font-bold text-white mb-1">Дата</label>
-                  <input className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md" type="date" />
+                  <input
+                    className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md"
+                    type="date"
+                    value={lessonForm.date}
+                    onChange={(e) => setLessonForm((f) => ({ ...f, date: e.target.value }))}
+                  />
                 </div>
                 <div>
                   <label className="block text-[12px] font-bold text-white mb-1">Время</label>
-                  <input className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md" type="time" />
+                  <input
+                    className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md"
+                    type="time"
+                    value={lessonForm.time}
+                    onChange={(e) => setLessonForm((f) => ({ ...f, time: e.target.value }))}
+                  />
                 </div>
               </div>
-              <button className="bg-secondary-container text-on-secondary-container py-4 rounded-lg font-bold hover:brightness-110 transition-all shadow-md active:scale-95 mt-2">
+              <button type="submit" className="bg-secondary-container text-on-secondary-container py-4 rounded-lg font-bold hover:brightness-110 transition-all shadow-md active:scale-95 mt-2">
                 Подтвердить
               </button>
-            </div>
+              {lessonStatus === "done" && <p className="text-sm text-white">Занятие создано!</p>}
+              {lessonStatus && lessonStatus !== "saving" && lessonStatus !== "done" && (
+                <p className="text-sm text-red-100">{lessonStatus}</p>
+              )}
+            </form>
           </div>
 
           <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant shadow-sm">
@@ -126,20 +247,19 @@ export default function AdminOverview() {
               <span className="bg-error text-white text-[10px] px-2 py-0.5 rounded-full">{applications.length} новых</span>
             </div>
             <div className="space-y-4">
+              {applications.length === 0 && <p className="text-sm text-on-surface-variant">Новых заявок нет.</p>}
               {applications.map((a) => (
-                <div key={a.id} className="p-3 border border-outline-variant rounded-xl hover:bg-surface-container-low transition-colors cursor-pointer">
+                <div key={a.id} className="p-3 border border-outline-variant rounded-xl hover:bg-surface-container-low transition-colors">
                   <div className="flex justify-between items-start mb-1">
-                    <p className="font-bold text-label-md">{a.name} ({a.age} лет)</p>
-                    <span className="text-[10px] text-outline">{a.timeAgo}</span>
+                    <p className="font-bold text-label-md">{a.name} {a.age ? `(${a.age} лет)` : ""}</p>
+                    <span className="text-[10px] text-outline">
+                      {a.created_at ? new Date(a.created_at).toLocaleDateString("ru-RU") : ""}
+                    </span>
                   </div>
-                  <p className="text-[12px] text-on-surface-variant">Курс: {a.course}</p>
-                  <p className="text-[10px] text-primary font-bold mt-1">Родитель: {a.parent}</p>
+                  <p className="text-[12px] text-on-surface-variant">Интерес: {a.subject_interest ?? a.course ?? "—"}</p>
                 </div>
               ))}
             </div>
-            <button className="w-full mt-4 text-primary font-bold text-label-md border border-primary py-2 rounded-lg hover:bg-primary hover:text-white transition-all">
-              Смотреть все заявки
-            </button>
           </div>
         </aside>
       </div>
