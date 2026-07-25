@@ -71,9 +71,19 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
+  // Локально мержит патч в текущего пользователя (после успешного PATCH /users/me) —
+  // чтобы sidebar/topbar сразу отобразили новое имя/аватар без лишнего запроса.
+  const updateUser = useCallback((patch) => {
+    setUser((prev) => {
+      const next = prev ? { ...prev, ...patch } : prev;
+      if (next) setStoredUser(next);
+      return next;
+    });
+  }, []);
+
   const value = useMemo(
-    () => ({ user, loading, isAuthenticated: !!user, login, registerParent, logout }),
-    [user, loading, login, registerParent, logout]
+    () => ({ user, loading, isAuthenticated: !!user, login, registerParent, logout, updateUser }),
+    [user, loading, login, registerParent, logout, updateUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

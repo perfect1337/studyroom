@@ -26,6 +26,7 @@ import BranchOverview from "./pages/admin/BranchOverview.jsx";
 import BranchTeachers from "./pages/admin/BranchTeachers.jsx";
 
 import PlaceholderPage from "./components/ui/PlaceholderPage.jsx";
+import SettingsPage from "./pages/settings/SettingsPage.jsx";
 
 export default function App() {
   return (
@@ -43,7 +44,7 @@ export default function App() {
           <Route path="/student/courses" element={<ProtectedRoute roles={["student"]}><PlaceholderPage title="Курсы ученика" /></ProtectedRoute>} />
           <Route path="/student/homework" element={<ProtectedRoute roles={["student"]}><StudentHomework /></ProtectedRoute>} />
           <Route path="/student/profile" element={<ProtectedRoute roles={["student"]}><PlaceholderPage title="Профиль ученика" /></ProtectedRoute>} />
-          <Route path="/student/settings" element={<ProtectedRoute roles={["student"]}><PlaceholderPage title="Настройки ученика" /></ProtectedRoute>} />
+          <Route path="/student/settings" element={<ProtectedRoute roles={["student"]}><SettingsPage role="student" /></ProtectedRoute>} />
 
           {/* Репетитор (role: tutor) */}
           <Route path="/tutor" element={<ProtectedRoute roles={["tutor"]}><TutorOverview /></ProtectedRoute>} />
@@ -51,27 +52,27 @@ export default function App() {
           <Route path="/tutor/schedule" element={<ProtectedRoute roles={["tutor"]}><TutorSchedule /></ProtectedRoute>} />
           <Route path="/tutor/schedule/new" element={<ProtectedRoute roles={["tutor"]}><TutorNewLesson /></ProtectedRoute>} />
           <Route path="/tutor/homework" element={<ProtectedRoute roles={["tutor"]}><PlaceholderPage title="Домашние задания (репетитор)" /></ProtectedRoute>} />
-          <Route path="/tutor/settings" element={<ProtectedRoute roles={["tutor"]}><PlaceholderPage title="Настройки преподавателя" /></ProtectedRoute>} />
+          <Route path="/tutor/settings" element={<ProtectedRoute roles={["tutor"]}><SettingsPage role="tutor" /></ProtectedRoute>} />
 
           {/* Родитель (role: parent) */}
           <Route path="/parent" element={<ProtectedRoute roles={["parent"]}><ParentOverview /></ProtectedRoute>} />
           <Route path="/parent/children" element={<Navigate to="/parent" replace />} />
           <Route path="/parent/children/:childId" element={<ProtectedRoute roles={["parent"]}><ParentChildDetail /></ProtectedRoute>} />
           <Route path="/parent/schedule" element={<ProtectedRoute roles={["parent"]}><ParentSchedule /></ProtectedRoute>} />
-          <Route path="/parent/settings" element={<ProtectedRoute roles={["parent"]}><PlaceholderPage title="Настройки родителя" /></ProtectedRoute>} />
+          <Route path="/parent/settings" element={<ProtectedRoute roles={["parent"]}><SettingsPage role="parent" /></ProtectedRoute>} />
 
           {/* Владелец сети филиалов (role: owner) — раздел /admin */}
           <Route path="/admin" element={<ProtectedRoute roles={["owner"]}><AdminOverview /></ProtectedRoute>} />
           <Route path="/admin/students" element={<ProtectedRoute roles={["owner"]}><AdminStudents /></ProtectedRoute>} />
           <Route path="/admin/teachers" element={<ProtectedRoute roles={["owner"]}><AdminTeachers /></ProtectedRoute>} />
           <Route path="/admin/finance" element={<ProtectedRoute roles={["owner"]}><AdminFinance /></ProtectedRoute>} />
-          <Route path="/admin/settings" element={<ProtectedRoute roles={["owner"]}><PlaceholderPage title="Настройки платформы" /></ProtectedRoute>} />
+          <Route path="/admin/settings" element={<ProtectedRoute roles={["owner"]}><SettingsPage role="owner" /></ProtectedRoute>} />
 
           {/* Управляющий филиалом (role: branch_owner) — отдельный раздел /branch */}
           <Route path="/branch" element={<ProtectedRoute roles={["branch_owner"]}><BranchOverview /></ProtectedRoute>} />
           <Route path="/branch/students" element={<ProtectedRoute roles={["branch_owner"]}><PlaceholderPage title="Студенты филиала" /></ProtectedRoute>} />
           <Route path="/branch/teachers" element={<ProtectedRoute roles={["branch_owner"]}><BranchTeachers /></ProtectedRoute>} />
-          <Route path="/branch/settings" element={<ProtectedRoute roles={["branch_owner"]}><PlaceholderPage title="Настройки филиала" /></ProtectedRoute>} />
+          <Route path="/branch/settings" element={<ProtectedRoute roles={["branch_owner"]}><SettingsPage role="branch_owner" /></ProtectedRoute>} />
 
           {/* 404 */}
           <Route path="*" element={<PlaceholderPage title="Страница не найдена" />} />

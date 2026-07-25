@@ -29,6 +29,11 @@ export function fetchMe() {
   return usersApi("/users/me");
 }
 
+// 1.7 Обновить свой профиль (имя/фамилия/отчество/аватар)
+export function updateMe(patch) {
+  return usersApi("/users/me", { method: "PATCH", body: patch });
+}
+
 // 1.8 Сменить пароль
 export function changePassword({ current_password, new_password }) {
   return usersApi("/users/me/change-password", { method: "POST", body: { current_password, new_password } });
