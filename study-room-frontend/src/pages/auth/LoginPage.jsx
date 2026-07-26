@@ -168,9 +168,7 @@ export default function LoginPage() {
                   Создать аккаунт
                 </Link>
               </p>
-              <p className="mt-2 font-label-md text-label-md text-outline">
-                Регистрация доступна только для родителей — учеников и репетиторов заводит администратор.
-              </p>
+            
             </div>
           </div>
         </div>
