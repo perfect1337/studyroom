@@ -105,7 +105,6 @@ function SidebarHeader({ role, user }) {
           <img src={user?.avatarUrl} alt={user?.name} className="w-12 h-12 rounded-full object-cover" />
           <div>
             <div className="font-label-md text-label-md font-bold text-on-surface">{user?.name}</div>
-            <div className="font-label-md text-label-md text-on-surface-variant text-xs">ID: {user?.id}</div>
           </div>
         </div>
         <NavLink
@@ -197,7 +196,6 @@ export default function Sidebar({ role, user, mobileOpen = false, onClose = () =
             <img src={user.avatarUrl} alt={user.name} className="w-10 h-10 rounded-full border-2 border-primary object-cover" />
             <div className="flex flex-col">
               <span className="font-label-md text-label-md font-bold">{user.name}</span>
-              <span className="text-[10px] text-outline">ID: {user.id}</span>
             </div>
           </div>
         )}

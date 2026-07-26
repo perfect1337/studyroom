@@ -133,7 +133,6 @@ export default function ParentOverview() {
             <div>
               <h2 className="font-headline-md text-headline-md text-on-surface">{fullName(user)}</h2>
               <p className="font-body-md text-body-md text-on-surface-variant">{user?.email}</p>
-              <p className="font-body-md text-body-md text-on-surface-variant opacity-70 mt-1">ID: {user?.id}</p>
             </div>
           </div>
         </header>
