@@ -382,8 +382,8 @@ export default function TeacherDetail({ role = "owner" }) {
                                   {initials(student)}
                                 </div>
                                 <div>
-                                  <div className="font-bold text-on-surface">{fullName(student) || `#${student.id}`}</div>
-                                  <div className="text-[12px] text-on-surface-variant">{student.class_info || `ID: ${student.id}`}</div>
+                                  <div className="font-bold text-on-surface">{fullName(student) || "Ученик"}</div>
+                                  <div className="text-[12px] text-on-surface-variant">{student.class_info || "—"}</div>
                                 </div>
                               </div>
                             </td>

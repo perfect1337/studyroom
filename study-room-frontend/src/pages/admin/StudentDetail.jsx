@@ -221,7 +221,6 @@ export default function StudentDetail({ role = "parent" }) {
             <div className="flex-1 text-center md:text-left">
               <div className="flex flex-col md:flex-row md:items-end gap-2 mb-1">
                 <h2 className="font-headline-md text-headline-md text-on-surface">{child ? fullName(child) : "—"}</h2>
-                <span className="text-on-surface-variant font-label-md mb-1.5 opacity-60">ID: {child?.id}</span>
               </div>
               <p className="text-on-surface-variant font-body-md mb-4">{child?.class_info ?? "—"}</p>
               <div className="flex flex-wrap justify-center md:justify-start gap-4">

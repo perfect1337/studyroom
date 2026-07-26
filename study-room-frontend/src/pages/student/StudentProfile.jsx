@@ -43,7 +43,6 @@ export default function StudentProfile() {
           </div>
           <div className="text-center md:text-left flex-1">
             <h2 className="font-headline-md text-headline-md text-on-background">{fullName(user)}</h2>
-            <p className="text-on-surface-variant font-body-md">ID ученика: {user?.id}</p>
           </div>
           <Link
             to="/student/settings"

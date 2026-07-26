@@ -320,9 +320,9 @@ export default function PeopleDirectory({ role }) {
                             {initials(p)}
                           </div>
                           <div>
-                            <div className="font-bold text-on-surface">{fullName(p) || `#${p.id}`}</div>
+                            <div className="font-bold text-on-surface">{fullName(p) || "Ученик"}</div>
                             <div className="text-[12px] text-on-surface-variant">
-                              {p.class_info || `ID: ${p.id}`}
+                              {p.class_info || "—"}
                             </div>
                           </div>
                         </div>

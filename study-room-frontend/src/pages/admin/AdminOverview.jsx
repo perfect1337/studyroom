@@ -140,7 +140,9 @@ export default function AdminOverview() {
                 </div>
                 <div className="min-w-0">
                   <p className="font-label-md text-label-md font-bold truncate">{fullName(p)}</p>
-                  <p className="text-[12px] text-outline">{p.__kind === "student" ? "Ученик" : "Учитель"} · ID: {p.id}</p>
+                  <p className="text-[12px] text-outline">
+                    {p.__kind === "student" ? "Ученик" : `Учитель · ID: ${p.id}`}
+                  </p>
                 </div>
               </Link>
             ))}

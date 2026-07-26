@@ -121,7 +121,6 @@ export default function StudentOverview() {
               <h2 className="font-headline-md text-headline-md text-on-background mb-1">
                 Привет, {user?.first_name}! 👋
               </h2>
-              <p className="font-body-lg text-body-lg text-on-surface-variant font-medium mb-1">ID: {user?.id}</p>
               <p className="font-body-lg text-body-lg text-on-surface-variant">
                 {loading ? "Загрузка…" : `Активных курсов: ${enrollments.filter((e) => e.status === "active").length}`}
               </p>

@@ -57,10 +57,17 @@ async function refreshAccessToken() {
       body: JSON.stringify({ refresh_token }),
     })
       .then(async (res) => {
-        if (!res.ok) throw new ApiError("Не удалось обновить сессию", { status: res.status });
+        if (!res.ok) throw new ApiError("Сессия истекла, войдите заново", { status: res.status });
         const data = await res.json();
         setTokens(data);
         return data;
+      })
+      .catch((e) => {
+        if (e instanceof ApiError) throw e;
+        // Сеть недоступна или ответ не в формате JSON — не показываем техническую суть.
+        throw new ApiError("Сервис временно недоступен. Попробуйте, пожалуйста, позже.", {
+          code: "NETWORK_ERROR",
+        });
       })
       .finally(() => {
         refreshPromise = null;
@@ -98,10 +105,10 @@ export async function request(baseUrl, path, options = {}) {
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch (networkErr) {
-    throw new ApiError(
-      `Не удалось связаться с сервером (${baseUrl}). Проверьте, что бэкенд запущен и доступен.`,
-      { code: "NETWORK_ERROR" }
-    );
+    // Не показываем пользователю внутренний адрес сервиса — только понятный текст.
+    throw new ApiError("Сервис временно недоступен. Попробуйте, пожалуйста, позже.", {
+      code: "NETWORK_ERROR",
+    });
   }
 
   // Access-токен истёк — пробуем обновить один раз и повторить запрос.
@@ -118,11 +125,26 @@ export async function request(baseUrl, path, options = {}) {
   if (res.status === 204) return null;
 
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      // Бэкенд/прокси вернул не-JSON (например, страницу ошибки 502/504 отnginx) —
+      // сырой HTML/текст пользователю не показываем.
+      data = null;
+    }
+  }
 
   if (!res.ok) {
-    const message = data?.error?.message || `Ошибка запроса (${res.status})`;
-    throw new ApiError(message, { code: data?.error?.code, status: res.status });
+    // Серверные и сетевые сбои (в т.ч. проблемы с прокси/шлюзом) — только общий текст.
+    if (res.status >= 500 || !data?.error?.message) {
+      throw new ApiError("Сервис временно недоступен. Попробуйте, пожалуйста, позже.", {
+        code: data?.error?.code,
+        status: res.status,
+      });
+    }
+    throw new ApiError(data.error.message, { code: data.error.code, status: res.status });
   }
 
   return data;

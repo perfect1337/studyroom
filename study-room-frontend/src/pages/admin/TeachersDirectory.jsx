@@ -8,6 +8,7 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople, fetchBranches, createTutor, setTutorStatus } from "../../api/users.js";
 import { fetchEnrollments } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+import { sanitizePhoneInput, isValidPhone } from "../../utils/phone.js";
 
 const PAGE_SIZE = 10;
 
@@ -162,6 +163,10 @@ export default function TeachersDirectory({ role }) {
   async function handleAddTeacher(e) {
     e.preventDefault();
     if (!addForm.last_name || !addForm.first_name || !addForm.email || !addForm.branch_id) return;
+    if (!isValidPhone(addForm.phone)) {
+      setAddStatus("Введите телефон в формате из 10-15 цифр (можно с +)");
+      return;
+    }
     setAddStatus("saving");
     try {
       const res = await createTutor({
@@ -430,8 +435,12 @@ export default function TeachersDirectory({ role }) {
                     <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Телефон</label>
                     <input
                       value={addForm.phone}
-                      onChange={(e) => setAddForm((f) => ({ ...f, phone: e.target.value }))}
+                      onChange={(e) => setAddForm((f) => ({ ...f, phone: sanitizePhoneInput(e.target.value) }))}
                       placeholder="+7..."
+                      inputMode="tel"
+                      type="tel"
+                      pattern="^\+?\d{10,15}$"
+                      title="Только цифры, можно с ведущим +"
                       className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
                     />
                   </div>

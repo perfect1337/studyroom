@@ -65,6 +65,8 @@ export default function ScheduleDirectory({ role }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedDay, setSelectedDay] = useState(null); // day number in current month, or null
+  const [detailPage, setDetailPage] = useState(0); // пагинация занятий выбранного дня
+  const LESSONS_PAGE_SIZE = 2;
 
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstWeekday = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7; // 0 = Monday
@@ -142,6 +144,7 @@ export default function ScheduleDirectory({ role }) {
         setCourses(coursesRes?.items ?? []);
         setEnrollments(enrollItems);
         setSelectedDay(null);
+        setDetailPage(0);
 
         // Подтягиваем имена репетиторов — сперва из уже загруженного списка людей,
         // недостающих (например, если фильтр по филиалу не совпадает) — по одному.
@@ -253,6 +256,12 @@ export default function ScheduleDirectory({ role }) {
   }
 
   const selectedLessons = selectedDay ? lessonsByDay[selectedDay] ?? [] : [];
+  const detailPageCount = Math.max(1, Math.ceil(selectedLessons.length / LESSONS_PAGE_SIZE));
+  const safeDetailPage = Math.min(detailPage, detailPageCount - 1);
+  const paginatedLessons = selectedLessons.slice(
+    safeDetailPage * LESSONS_PAGE_SIZE,
+    safeDetailPage * LESSONS_PAGE_SIZE + LESSONS_PAGE_SIZE
+  );
 
   return (
     <DashboardShell
@@ -389,7 +398,10 @@ export default function ScheduleDirectory({ role }) {
                 return (
                   <button
                     key={day}
-                    onClick={() => setSelectedDay(day)}
+                    onClick={() => {
+                      setSelectedDay(day);
+                      setDetailPage(0);
+                    }}
                     className={`text-left h-20 sm:h-24 p-2 rounded-lg font-label-md transition-all relative border
                       ${dayLessons.length ? "text-white" : "text-on-surface-variant bg-surface-container hover:brightness-95"}
                       ${isSelected ? "ring-2 ring-primary scale-[1.02] z-10 shadow-md" : ""}
@@ -437,7 +449,8 @@ export default function ScheduleDirectory({ role }) {
                 </div>
               </div>
             ) : (
-              selectedLessons.map((lesson) => {
+              <>
+              {paginatedLessons.map((lesson) => {
                 const course = coursesById[lesson.course_id];
                 const tutor = tutorsById[lesson.tutor_id];
                 const color = courseColor[lesson.course_id] ?? "#004ac6";
@@ -496,7 +509,9 @@ export default function ScheduleDirectory({ role }) {
                             </div>
                             <div className="min-w-0">
                               <p className="font-label-md font-bold text-on-surface truncate">{fullName(student)}</p>
-                              <p className="text-[12px] text-on-surface-variant">Ученик</p>
+                              <p className="text-[12px] text-on-surface-variant truncate">
+                                Ученик{student.class_info ? ` · ${student.class_info}` : ""}
+                              </p>
                             </div>
                             <span className="material-symbols-outlined text-outline ml-auto shrink-0">chevron_right</span>
                           </button>
@@ -529,7 +544,36 @@ export default function ScheduleDirectory({ role }) {
                     </div>
                   </div>
                 );
-              })
+              })}
+
+              {detailPageCount > 1 && (
+                <div className="flex items-center justify-between bg-surface-container-lowest rounded-xl px-4 py-3 shadow-sm border border-outline-variant">
+                  <button
+                    type="button"
+                    onClick={() => setDetailPage((p) => Math.max(0, p - 1))}
+                    disabled={safeDetailPage === 0}
+                    className="p-2 rounded-lg hover:bg-surface-container transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Предыдущие занятия"
+                  >
+                    <span className="material-symbols-outlined">chevron_left</span>
+                  </button>
+                  <span className="font-label-md text-label-md text-on-surface-variant">
+                    Занятия {safeDetailPage * LESSONS_PAGE_SIZE + 1}
+                    –{Math.min(selectedLessons.length, safeDetailPage * LESSONS_PAGE_SIZE + LESSONS_PAGE_SIZE)} из{" "}
+                    {selectedLessons.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setDetailPage((p) => Math.min(detailPageCount - 1, p + 1))}
+                    disabled={safeDetailPage >= detailPageCount - 1}
+                    className="p-2 rounded-lg hover:bg-surface-container transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Следующие занятия"
+                  >
+                    <span className="material-symbols-outlined">chevron_right</span>
+                  </button>
+                </div>
+              )}
+              </>
             )}
           </div>
         </div>

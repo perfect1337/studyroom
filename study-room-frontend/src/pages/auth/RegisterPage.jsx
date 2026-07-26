@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
+import { sanitizePhoneInput, isValidPhone } from "../../utils/phone.js";
 
 const EMPTY_FORM = {
   last_name: "",
@@ -25,6 +26,10 @@ export default function RegisterPage() {
     return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
   }
 
+  function updatePhone(e) {
+    setForm((f) => ({ ...f, phone: sanitizePhoneInput(e.target.value) }));
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
@@ -35,6 +40,10 @@ export default function RegisterPage() {
     }
     if (form.password.length < 8) {
       setError("Пароль должен быть не короче 8 символов");
+      return;
+    }
+    if (!isValidPhone(form.phone)) {
+      setError("Введите телефон в формате из 10-15 цифр (можно с +)");
       return;
     }
 
@@ -116,7 +125,10 @@ export default function RegisterPage() {
                 type="tel"
                 placeholder="+7 (___) ___-__-__"
                 value={form.phone}
-                onChange={update("phone")}
+                onChange={updatePhone}
+                inputMode="tel"
+                pattern="^\+?\d{10,15}$"
+                title="Только цифры, можно с ведущим +"
               />
 
               <div className="flex flex-col gap-stack-sm">
@@ -209,7 +221,7 @@ export default function RegisterPage() {
   );
 }
 
-function Field({ id, label, icon, type, placeholder, value, onChange, required = true }) {
+function Field({ id, label, icon, type, placeholder, value, onChange, required = true, inputMode, pattern, title }) {
   return (
     <div className="flex flex-col gap-stack-sm">
       <label className="font-label-md text-label-md text-on-surface" htmlFor={id}>
@@ -227,6 +239,9 @@ function Field({ id, label, icon, type, placeholder, value, onChange, required =
           placeholder={placeholder}
           value={value}
           onChange={onChange}
+          inputMode={inputMode}
+          pattern={pattern}
+          title={title}
           className="w-full pl-10 pr-4 py-3 bg-surface-container-lowest border border-outline-variant rounded-lg font-body-md text-body-md text-on-surface placeholder-outline-variant focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all shadow-sm"
         />
       </div>

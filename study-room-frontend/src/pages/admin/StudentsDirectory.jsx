@@ -232,7 +232,7 @@ export default function StudentsDirectory({ role }) {
                           </div>
                           <div>
                             <div className="font-bold text-on-surface">{fullName(st)}</div>
-                            <div className="text-[12px] text-on-surface-variant">ID: {st.id}</div>
+                            <div className="text-[12px] text-on-surface-variant">{st.class_info || "—"}</div>
                           </div>
                         </div>
                       </td>
