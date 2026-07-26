@@ -29,11 +29,13 @@ import AdminStudentDetail from "./pages/admin/AdminStudentDetail.jsx";
 import AdminFinance from "./pages/admin/AdminFinance.jsx";
 import AdminTeachers from "./pages/admin/AdminTeachers.jsx";
 import AdminTeacherDetail from "./pages/admin/AdminTeacherDetail.jsx";
+import AdminSchedule from "./pages/admin/AdminSchedule.jsx";
 import BranchOverview from "./pages/admin/BranchOverview.jsx";
 import BranchStudents from "./pages/admin/BranchStudents.jsx";
 import BranchStudentDetail from "./pages/admin/BranchStudentDetail.jsx";
 import BranchTeachers from "./pages/admin/BranchTeachers.jsx";
 import BranchTeacherDetail from "./pages/admin/BranchTeacherDetail.jsx";
+import BranchSchedule from "./pages/admin/BranchSchedule.jsx";
 
 import PlaceholderPage from "./components/ui/PlaceholderPage.jsx";
 import SettingsPage from "./pages/settings/SettingsPage.jsx";
@@ -78,6 +80,7 @@ export default function App() {
           <Route path="/admin/students/:studentId" element={<ProtectedRoute roles={["owner"]}><AdminStudentDetail /></ProtectedRoute>} />
           <Route path="/admin/teachers" element={<ProtectedRoute roles={["owner"]}><AdminTeachers /></ProtectedRoute>} />
           <Route path="/admin/teachers/:teacherId" element={<ProtectedRoute roles={["owner"]}><AdminTeacherDetail /></ProtectedRoute>} />
+          <Route path="/admin/schedule" element={<ProtectedRoute roles={["owner"]}><AdminSchedule /></ProtectedRoute>} />
           <Route path="/admin/finance" element={<ProtectedRoute roles={["owner"]}><AdminFinance /></ProtectedRoute>} />
           <Route path="/admin/settings" element={<ProtectedRoute roles={["owner"]}><SettingsPage role="owner" /></ProtectedRoute>} />
 
@@ -87,6 +90,7 @@ export default function App() {
           <Route path="/branch/students/:studentId" element={<ProtectedRoute roles={["branch_owner"]}><BranchStudentDetail /></ProtectedRoute>} />
           <Route path="/branch/teachers" element={<ProtectedRoute roles={["branch_owner"]}><BranchTeachers /></ProtectedRoute>} />
           <Route path="/branch/teachers/:teacherId" element={<ProtectedRoute roles={["branch_owner"]}><BranchTeacherDetail /></ProtectedRoute>} />
+          <Route path="/branch/schedule" element={<ProtectedRoute roles={["branch_owner"]}><BranchSchedule /></ProtectedRoute>} />
           <Route path="/branch/settings" element={<ProtectedRoute roles={["branch_owner"]}><SettingsPage role="branch_owner" /></ProtectedRoute>} />
 
           {/* 404 */}

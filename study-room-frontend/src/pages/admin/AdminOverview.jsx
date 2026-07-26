@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import Pagination from "../../components/ui/Pagination.jsx";
@@ -8,7 +8,6 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople } from "../../api/users.js";
 import { fetchApplications } from "../../api/crm.js";
 import { fetchContracts } from "../../api/contracts.js";
-import { fetchCourses, createLesson } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
 const TEACHERS_PAGE_SIZE = 5;
@@ -28,18 +27,17 @@ function initials(person) {
 
 export default function AdminOverview() {
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const [students, setStudents] = useState([]);
   const [tutors, setTutors] = useState([]);
   const [applications, setApplications] = useState([]);
   const [contracts, setContracts] = useState([]);
-  const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const [lessonForm, setLessonForm] = useState({ tutorId: "", courseId: "", date: "", time: "" });
-  const [lessonStatus, setLessonStatus] = useState("");
   const [applicationSearch, setApplicationSearch] = useState("");
+  const [peopleSearch, setPeopleSearch] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -47,18 +45,16 @@ export default function AdminOverview() {
       setLoading(true);
       setError("");
       try {
-        const [peopleRes, applicationsRes, contractsRes, coursesRes] = await Promise.all([
+        const [peopleRes, applicationsRes, contractsRes] = await Promise.all([
           fetchMyPeople(),
           fetchApplications({ status: "new" }).catch(() => ({ items: [] })),
           fetchContracts().catch(() => ({ items: [] })),
-          fetchCourses(),
         ]);
         if (cancelled) return;
         setStudents(peopleRes?.students ?? []);
         setTutors(peopleRes?.tutors ?? []);
         setApplications(applicationsRes?.items ?? []);
         setContracts(contractsRes?.items ?? []);
-        setCourses(coursesRes?.items ?? []);
       } catch (e) {
         if (!cancelled) setError(e.message || "Не удалось загрузить данные");
       } finally {
@@ -96,33 +92,61 @@ export default function AdminOverview() {
     APPLICATIONS_PAGE_SIZE
   );
 
-  async function handleCreateLesson(e) {
-    e.preventDefault();
-    if (!lessonForm.tutorId || !lessonForm.courseId || !lessonForm.date || !lessonForm.time) return;
-    setLessonStatus("saving");
-    try {
-      await createLesson({
-        course_id: Number(lessonForm.courseId),
-        tutor_id: Number(lessonForm.tutorId),
-        topic: "Занятие",
-        lesson_date: lessonForm.date,
-        start_time: lessonForm.time,
-        end_time: lessonForm.time,
-        location_type: "offline",
-        group_type: "individual",
-      });
-      setLessonStatus("done");
-      setLessonForm({ tutorId: "", courseId: "", date: "", time: "" });
-    } catch (e) {
-      setLessonStatus(e.message || "Не удалось создать занятие");
-    }
-  }
+  // Поиск по ученикам и учителям сразу — объединяем оба списка и фильтруем по имени.
+  const peopleResults = useMemo(() => {
+    const q = peopleSearch.trim().toLowerCase();
+    if (!q) return [];
+    const matchedStudents = students
+      .filter((s) => fullName(s).toLowerCase().includes(q))
+      .map((s) => ({ ...s, __kind: "student" }));
+    const matchedTutors = tutors
+      .filter((t) => fullName(t).toLowerCase().includes(q))
+      .map((t) => ({ ...t, __kind: "tutor" }));
+    return [...matchedStudents, ...matchedTutors].sort((a, b) => fullName(a).localeCompare(fullName(b), "ru"));
+  }, [students, tutors, peopleSearch]);
 
   return (
     <DashboardShell role="admin" user={toSidebarUser(user)} searchPlaceholder="Поиск учеников или учителей...">
       {error && (
         <div className="mt-4 p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
       )}
+
+      <section className="mt-4">
+        <div className="relative">
+          <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline text-[20px]">
+            search
+          </span>
+          <input
+            value={peopleSearch}
+            onChange={(e) => setPeopleSearch(e.target.value)}
+            placeholder="Поиск учеников или учителей..."
+            className="w-full bg-surface-container-lowest border border-outline-variant rounded-full pl-11 pr-4 py-3 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all shadow-sm"
+          />
+        </div>
+
+        {peopleSearch.trim() && (
+          <div className="mt-2 bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm divide-y divide-outline-variant overflow-hidden">
+            {peopleResults.length === 0 && (
+              <p className="px-4 py-4 text-sm text-on-surface-variant">Ничего не найдено.</p>
+            )}
+            {peopleResults.map((p) => (
+              <Link
+                key={`${p.__kind}-${p.id}`}
+                to={p.__kind === "student" ? `/admin/students/${p.id}` : `/admin/teachers/${p.id}`}
+                className="flex items-center gap-3 px-4 py-3 hover:bg-surface-container-low transition-colors"
+              >
+                <div className="w-9 h-9 rounded-full bg-primary-fixed flex items-center justify-center font-bold text-primary text-sm shrink-0">
+                  {initials(p)}
+                </div>
+                <div className="min-w-0">
+                  <p className="font-label-md text-label-md font-bold truncate">{fullName(p)}</p>
+                  <p className="text-[12px] text-outline">{p.__kind === "student" ? "Ученик" : "Учитель"} · ID: {p.id}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-stack-md mb-stack-lg mt-4">
         {stats.map((s) => (
@@ -141,8 +165,8 @@ export default function AdminOverview() {
         ))}
       </section>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-stack-lg pb-stack-lg">
-        <section className="xl:col-span-2 flex flex-col gap-stack-md">
+      <div className="pb-stack-lg">
+        <section className="flex flex-col gap-stack-md">
           <div className="flex justify-between items-end">
             <div>
               <h2 className="text-headline-sm font-headline-sm text-on-surface">Управление преподавателями</h2>
@@ -173,7 +197,11 @@ export default function AdminOverview() {
                   </tr>
                 )}
                 {pagedTutors.map((t) => (
-                  <tr key={t.id} className="hover:bg-surface-container-low transition-colors">
+                  <tr
+                    key={t.id}
+                    onClick={() => navigate(`/admin/teachers/${t.id}`)}
+                    className="hover:bg-surface-container-low transition-colors cursor-pointer"
+                  >
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center font-bold text-primary">
@@ -248,71 +276,6 @@ export default function AdminOverview() {
             />
           </div>
         </section>
-
-        <aside className="flex flex-col gap-stack-lg">
-          <div className="bg-primary p-6 rounded-2xl text-on-primary shadow-lg flex flex-col gap-4">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined">event_available</span>
-              <h3 className="font-headline-sm text-headline-sm">Назначить урок</h3>
-            </div>
-            <p className="opacity-90 text-label-md font-label-md">Быстрое добавление занятия в расписание</p>
-            <form onSubmit={handleCreateLesson} className="flex flex-col gap-4 mt-2">
-              <div>
-                <label className="block text-[12px] font-bold text-white mb-1">Преподаватель</label>
-                <select
-                  value={lessonForm.tutorId}
-                  onChange={(e) => setLessonForm((f) => ({ ...f, tutorId: e.target.value }))}
-                  className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md focus:ring-2 focus:ring-secondary-container appearance-none"
-                >
-                  <option value="">Выберите учителя</option>
-                  {tutors.map((t) => (
-                    <option key={t.id} value={t.id}>{fullName(t)}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[12px] font-bold text-white mb-1">Курс</label>
-                <select
-                  value={lessonForm.courseId}
-                  onChange={(e) => setLessonForm((f) => ({ ...f, courseId: e.target.value }))}
-                  className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md focus:ring-2 focus:ring-secondary-container appearance-none"
-                >
-                  <option value="">Выберите курс</option>
-                  {courses.map((c) => (
-                    <option key={c.id} value={c.id}>{c.title}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[12px] font-bold text-white mb-1">Дата</label>
-                  <input
-                    className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md"
-                    type="date"
-                    value={lessonForm.date}
-                    onChange={(e) => setLessonForm((f) => ({ ...f, date: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-bold text-white mb-1">Время</label>
-                  <input
-                    className="w-full bg-white text-black border-none rounded-lg p-3 text-label-md"
-                    type="time"
-                    value={lessonForm.time}
-                    onChange={(e) => setLessonForm((f) => ({ ...f, time: e.target.value }))}
-                  />
-                </div>
-              </div>
-              <button type="submit" className="bg-secondary-container text-on-secondary-container py-4 rounded-lg font-bold hover:brightness-110 transition-all shadow-md active:scale-95 mt-2">
-                Подтвердить
-              </button>
-              {lessonStatus === "done" && <p className="text-sm text-white">Занятие создано!</p>}
-              {lessonStatus && lessonStatus !== "saving" && lessonStatus !== "done" && (
-                <p className="text-sm text-red-100">{lessonStatus}</p>
-              )}
-            </form>
-          </div>
-        </aside>
       </div>
     </DashboardShell>
   );

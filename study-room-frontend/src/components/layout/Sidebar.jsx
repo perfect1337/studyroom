@@ -29,6 +29,7 @@ export const NAV_ITEMS = {
     { to: "/admin", icon: "dashboard", label: "Обзор", end: true },
     { to: "/admin/students", icon: "group", label: "Ученики" },
     { to: "/admin/teachers", icon: "school", label: "Учителя" },
+    { to: "/admin/schedule", icon: "calendar_month", label: "Расписание" },
     { to: "/admin/finance", icon: "payments", label: "Финансы" },
     { to: "/admin/settings", icon: "settings", label: "Настройки" },
   ],
@@ -36,6 +37,7 @@ export const NAV_ITEMS = {
     { to: "/branch", icon: "dashboard", label: "Обзор", end: true },
     { to: "/branch/students", icon: "group", label: "Студенты" },
     { to: "/branch/teachers", icon: "school", label: "Учителя" },
+    { to: "/branch/schedule", icon: "calendar_month", label: "Расписание" },
     { to: "/branch/settings", icon: "settings", label: "Настройки" },
   ],
 };
