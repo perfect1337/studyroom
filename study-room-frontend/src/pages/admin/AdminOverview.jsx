@@ -6,7 +6,7 @@ import Pagination from "../../components/ui/Pagination.jsx";
 import { usePagination } from "../../utils/usePagination.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople } from "../../api/users.js";
-import { fetchApplications } from "../../api/crm.js";
+import { fetchApplications, updateApplication } from "../../api/crm.js";
 import { fetchContracts } from "../../api/contracts.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
@@ -39,32 +39,32 @@ export default function AdminOverview() {
   const [applicationSearch, setApplicationSearch] = useState("");
   const [peopleSearch, setPeopleSearch] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError("");
-      try {
-        const [peopleRes, applicationsRes, contractsRes] = await Promise.all([
-          fetchMyPeople(),
-          fetchApplications({ status: "new" }).catch(() => ({ items: [] })),
-          fetchContracts().catch(() => ({ items: [] })),
-        ]);
-        if (cancelled) return;
-        setStudents(peopleRes?.students ?? []);
-        setTutors(peopleRes?.tutors ?? []);
-        setApplications(applicationsRes?.items ?? []);
-        setContracts(contractsRes?.items ?? []);
-      } catch (e) {
-        if (!cancelled) setError(e.message || "Не удалось загрузить данные");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+  const [selectedApplication, setSelectedApplication] = useState(null);
+  const [applicationActionStatus, setApplicationActionStatus] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const [peopleRes, applicationsRes, contractsRes] = await Promise.all([
+        fetchMyPeople(),
+        fetchApplications({ status: "new" }).catch(() => ({ items: [] })),
+        fetchContracts().catch(() => ({ items: [] })),
+      ]);
+      setStudents(peopleRes?.students ?? []);
+      setTutors(peopleRes?.tutors ?? []);
+      setApplications(applicationsRes?.items ?? []);
+      setContracts(contractsRes?.items ?? []);
+    } catch (e) {
+      setError(e.message || "Не удалось загрузить данные");
+    } finally {
+      setLoading(false);
     }
+  }
+
+  useEffect(() => {
     load();
-    return () => {
-      cancelled = true;
-    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const totalRevenue = useMemo(
@@ -85,6 +85,28 @@ export default function AdminOverview() {
     const filtered = q ? applications.filter((a) => (a.name ?? "").toLowerCase().includes(q)) : applications;
     return [...filtered].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "ru"));
   }, [applications, applicationSearch]);
+
+  function openApplicationModal(app) {
+    setSelectedApplication(app);
+    setApplicationActionStatus("");
+  }
+
+  function closeApplicationModal() {
+    setSelectedApplication(null);
+    setApplicationActionStatus("");
+  }
+
+  async function handleApplicationDecision(status) {
+    if (!selectedApplication) return;
+    setApplicationActionStatus("saving");
+    try {
+      await updateApplication(selectedApplication.id, { status });
+      setApplicationActionStatus("done");
+      await load(); // заявка уйдёт из списка "new" сама, т.к. статус сменился
+    } catch (err) {
+      setApplicationActionStatus(err.message || "Не удалось обновить заявку");
+    }
+  }
 
   const { page: teachersPage, setPage: setTeachersPage, pageItems: pagedTutors } = usePagination(tutors, TEACHERS_PAGE_SIZE);
   const { page: applicationsPage, setPage: setApplicationsPage, pageItems: pagedApplications } = usePagination(
@@ -257,7 +279,11 @@ export default function AdminOverview() {
                 </p>
               )}
               {pagedApplications.map((a) => (
-                <div key={a.id} className="p-3 border border-outline-variant rounded-xl hover:bg-surface-container-low transition-colors">
+                <div
+                  key={a.id}
+                  onClick={() => openApplicationModal(a)}
+                  className="p-3 border border-outline-variant rounded-xl hover:bg-surface-container-low hover:border-primary/40 transition-colors cursor-pointer"
+                >
                   <div className="flex justify-between items-start mb-1">
                     <p className="font-bold text-label-md">{a.name} {a.age ? `(${a.age} лет)` : ""}</p>
                     <span className="text-[10px] text-outline">
@@ -279,6 +305,96 @@ export default function AdminOverview() {
           </div>
         </section>
       </div>
+
+      {selectedApplication && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={closeApplicationModal}>
+          <div
+            className="bg-surface-container-lowest rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center">
+              <h3 className="font-headline-sm text-headline-sm text-on-surface">Заявка</h3>
+              <button onClick={closeApplicationModal} className="p-1 hover:bg-surface-container-high rounded-full">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            {applicationActionStatus === "done" ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-lg bg-green-100 text-green-800 font-label-md text-label-md">
+                  Заявка обработана.
+                </div>
+                <button
+                  onClick={closeApplicationModal}
+                  className="w-full bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all"
+                >
+                  Готово
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-wide mb-0.5">Ребёнок</p>
+                    <p className="text-label-md font-bold text-on-surface">
+                      {selectedApplication.name || "—"}{selectedApplication.age ? `, ${selectedApplication.age} лет` : ""}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-wide mb-0.5">Родитель</p>
+                    <p className="text-label-md text-on-surface">{selectedApplication.parent_name || "Не указан"}</p>
+                  </div>
+                  <div>
+                    <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-wide mb-0.5">Предмет</p>
+                    <p className="text-label-md text-on-surface">
+                      {selectedApplication.subject_interest ?? selectedApplication.course ?? "Не указан"}
+                    </p>
+                  </div>
+                  {selectedApplication.phone && (
+                    <div>
+                      <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-wide mb-0.5">Телефон</p>
+                      <p className="text-label-md text-on-surface">{selectedApplication.phone}</p>
+                    </div>
+                  )}
+                  {selectedApplication.format && (
+                    <div>
+                      <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-wide mb-0.5">Формат</p>
+                      <p className="text-label-md text-on-surface">{selectedApplication.format}</p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-wide mb-0.5">Дата заявки</p>
+                    <p className="text-label-md text-on-surface">
+                      {selectedApplication.created_at ? new Date(selectedApplication.created_at).toLocaleDateString("ru-RU") : "—"}
+                    </p>
+                  </div>
+                </div>
+
+                {applicationActionStatus && applicationActionStatus !== "saving" && (
+                  <p className="text-sm text-error">{applicationActionStatus}</p>
+                )}
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => handleApplicationDecision("rejected")}
+                    disabled={applicationActionStatus === "saving"}
+                    className="flex-1 border border-error text-error py-3 rounded-lg font-bold hover:bg-error-container transition-all disabled:opacity-60"
+                  >
+                    {applicationActionStatus === "saving" ? "…" : "Отклонить"}
+                  </button>
+                  <button
+                    onClick={() => handleApplicationDecision("converted")}
+                    disabled={applicationActionStatus === "saving"}
+                    className="flex-1 bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60"
+                  >
+                    {applicationActionStatus === "saving" ? "…" : "Принять заявку"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </DashboardShell>
   );
 }

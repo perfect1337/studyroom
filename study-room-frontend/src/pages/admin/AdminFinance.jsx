@@ -4,7 +4,7 @@ import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import Pagination from "../../components/ui/Pagination.jsx";
 import { usePagination } from "../../utils/usePagination.js";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchContracts, createContract } from "../../api/contracts.js";
+import { fetchContracts, createContract, updateContract, setContractStatus, setContractPaymentStatus } from "../../api/contracts.js";
 import { fetchMyPeople, fetchBranches } from "../../api/users.js";
 import { fetchCourses } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
@@ -12,6 +12,12 @@ import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 const PAYMENT_STATUS_LABEL = {
   paid: "Оплачено",
   unpaid: "Ожидание",
+};
+
+const CONTRACT_STATUS_LABEL = {
+  active: "Активен",
+  terminated: "Расторгнут",
+  completed: "Завершён",
 };
 
 const CONTRACTS_PAGE_SIZE = 8;
@@ -46,6 +52,12 @@ export default function AdminFinance() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState(EMPTY_CONTRACT_FORM);
   const [addStatus, setAddStatus] = useState("");
+
+  const [search, setSearch] = useState(""); // поиск по ФИО ученика/родителя или номеру договора
+
+  const [editContract, setEditContract] = useState(null); // выбранный договор для редактирования
+  const [editForm, setEditForm] = useState(null);
+  const [editStatus, setEditStatus] = useState("");
 
   async function load() {
     setLoading(true);
@@ -85,8 +97,26 @@ export default function AdminFinance() {
   );
   const unpaidContracts = useMemo(() => contracts.filter((c) => c.payment_status !== "paid"), [contracts]);
 
+  const filteredContracts = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return contracts;
+    return contracts.filter((c) => {
+      const student = studentsById[c.student_id];
+      const parent = parentsById[c.parent_id];
+      const studentName = student ? fullName(student).toLowerCase() : "";
+      const parentName = parent ? fullName(parent).toLowerCase() : "";
+      const contractNo = String(c.id ?? "").toLowerCase();
+      return (
+        studentName.includes(query) ||
+        parentName.includes(query) ||
+        contractNo.includes(query) ||
+        `№${contractNo}`.includes(query)
+      );
+    });
+  }, [contracts, search, studentsById, parentsById]);
+
   const { page: contractsPage, setPage: setContractsPage, pageItems: pagedContracts } = usePagination(
-    contracts,
+    filteredContracts,
     CONTRACTS_PAGE_SIZE
   );
   const { page: unpaidPage, setPage: setUnpaidPage, pageItems: pagedUnpaid } = usePagination(
@@ -98,6 +128,46 @@ export default function AdminFinance() {
     setAddForm(EMPTY_CONTRACT_FORM);
     setAddStatus("");
     setShowAddModal(true);
+  }
+
+  function openEditModal(contract) {
+    setEditContract(contract);
+    setEditForm({
+      amount: contract.amount ?? "",
+      end_date: contract.end_date ?? "",
+      status: contract.status ?? "active",
+      payment_status: contract.payment_status ?? "unpaid",
+    });
+    setEditStatus("");
+  }
+
+  function closeEditModal() {
+    setEditContract(null);
+    setEditForm(null);
+    setEditStatus("");
+  }
+
+  async function handleEditContract(e) {
+    e.preventDefault();
+    if (!editContract || !editForm) return;
+    setEditStatus("saving");
+    try {
+      const tasks = [];
+      if (Number(editForm.amount) !== Number(editContract.amount) || editForm.end_date !== editContract.end_date) {
+        tasks.push(updateContract(editContract.id, { amount: Number(editForm.amount), end_date: editForm.end_date }));
+      }
+      if (editForm.status !== editContract.status) {
+        tasks.push(setContractStatus(editContract.id, editForm.status));
+      }
+      if (editForm.payment_status !== editContract.payment_status) {
+        tasks.push(setContractPaymentStatus(editContract.id, editForm.payment_status));
+      }
+      await Promise.all(tasks);
+      setEditStatus("done");
+      await load(); // подтягиваем свежие данные по договорам
+    } catch (err) {
+      setEditStatus(err.message || "Не удалось сохранить изменения");
+    }
   }
 
   async function handleAddContract(e) {
@@ -168,13 +238,26 @@ export default function AdminFinance() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high overflow-hidden">
-            <div className="p-6 border-b border-surface-container-high flex justify-between items-center">
+            <div className="p-6 border-b border-surface-container-high flex flex-col md:flex-row md:items-center justify-between gap-3">
               <h4 className="font-headline-sm text-headline-sm text-on-surface">Все договоры</h4>
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">
+                  search
+                </span>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Поиск по ФИО или № договора..."
+                  className="bg-surface border border-outline-variant rounded-lg pl-9 pr-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none w-full md:w-72"
+                />
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-container-low/50">
+                    <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">№</th>
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Ученик / Родитель</th>
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Период</th>
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Сумма</th>
@@ -182,16 +265,23 @@ export default function AdminFinance() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-surface-container-high">
-                  {!loading && contracts.length === 0 && (
+                  {!loading && filteredContracts.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="px-6 py-8 text-center text-on-surface-variant">Договоров пока нет</td>
+                      <td colSpan={5} className="px-6 py-8 text-center text-on-surface-variant">
+                        {contracts.length === 0 ? "Договоров пока нет" : "Ничего не найдено"}
+                      </td>
                     </tr>
                   )}
                   {pagedContracts.map((c) => {
                     const student = studentsById[c.student_id];
                     const parent = parentsById[c.parent_id];
                     return (
-                      <tr key={c.id} className="hover:bg-surface-container-low/30 transition-colors">
+                      <tr
+                        key={c.id}
+                        onClick={() => openEditModal(c)}
+                        className="hover:bg-surface-container-low/30 transition-colors cursor-pointer"
+                      >
+                        <td className="px-6 py-4 font-body-md text-body-md text-on-surface-variant">№{c.id}</td>
                         <td className="px-6 py-4">
                           <div className="font-label-md text-label-md font-bold text-on-surface">
                             {student ? fullName(student) : `Ученик #${c.student_id}`}
@@ -212,7 +302,7 @@ export default function AdminFinance() {
             <Pagination
               page={contractsPage}
               pageSize={CONTRACTS_PAGE_SIZE}
-              total={contracts.length}
+              total={filteredContracts.length}
               onPageChange={setContractsPage}
               itemLabel="договоров"
             />
@@ -229,7 +319,11 @@ export default function AdminFinance() {
               {pagedUnpaid.map((c) => {
                 const student = studentsById[c.student_id];
                 return (
-                  <div key={c.id} className="p-4 rounded-xl border border-surface-container-high hover:border-primary-fixed transition-all group">
+                  <div
+                  key={c.id}
+                  onClick={() => openEditModal(c)}
+                  className="p-4 rounded-xl border border-surface-container-high hover:border-primary-fixed transition-all group cursor-pointer"
+                >
                     <div className="flex justify-between items-start mb-3">
                       <div>
                         <span className="font-label-md text-label-md font-bold text-on-surface">Договор №{c.id}</span>
@@ -394,6 +488,119 @@ export default function AdminFinance() {
                   className="w-full bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60"
                 >
                   {addStatus === "saving" ? "Сохранение…" : "Добавить договор"}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {editContract && editForm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={closeEditModal}>
+          <div
+            className="bg-surface-container-lowest rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-5 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center">
+              <h3 className="font-headline-sm text-headline-sm text-on-surface">Договор №{editContract.id}</h3>
+              <button onClick={closeEditModal} className="p-1 hover:bg-surface-container-high rounded-full">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="text-sm text-on-surface-variant">
+              <div>
+                <span className="font-semibold text-on-surface">
+                  {studentsById[editContract.student_id] ? fullName(studentsById[editContract.student_id]) : `Ученик #${editContract.student_id}`}
+                </span>
+              </div>
+              <div>
+                {parentsById[editContract.parent_id] ? fullName(parentsById[editContract.parent_id]) : `Родитель #${editContract.parent_id}`}
+              </div>
+            </div>
+
+            {editStatus === "done" ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-lg bg-green-100 text-green-800 font-label-md text-label-md">
+                  Договор обновлён.
+                </div>
+                <button
+                  onClick={closeEditModal}
+                  className="w-full bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all"
+                >
+                  Готово
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleEditContract} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Дата начала</label>
+                    <input
+                      disabled
+                      type="date"
+                      value={editContract.start_date}
+                      className="w-full bg-surface-variant/40 border border-outline-variant rounded-lg px-3 py-2 text-label-md text-on-surface-variant outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Дата окончания *</label>
+                    <input
+                      required
+                      type="date"
+                      value={editForm.end_date}
+                      onChange={(e) => setEditForm((f) => ({ ...f, end_date: e.target.value }))}
+                      className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Сумма, ₽ *</label>
+                    <input
+                      required
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={editForm.amount}
+                      onChange={(e) => setEditForm((f) => ({ ...f, amount: e.target.value }))}
+                      className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Статус договора</label>
+                    <select
+                      value={editForm.status}
+                      onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value }))}
+                      className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    >
+                      {Object.entries(CONTRACT_STATUS_LABEL).map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Оплата</label>
+                    <select
+                      value={editForm.payment_status}
+                      onChange={(e) => setEditForm((f) => ({ ...f, payment_status: e.target.value }))}
+                      className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    >
+                      {Object.entries(PAYMENT_STATUS_LABEL).map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {editStatus && editStatus !== "saving" && editStatus !== "done" && (
+                  <p className="text-sm text-error">{editStatus}</p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={editStatus === "saving"}
+                  className="w-full bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60"
+                >
+                  {editStatus === "saving" ? "Сохранение…" : "Сохранить изменения"}
                 </button>
               </form>
             )}

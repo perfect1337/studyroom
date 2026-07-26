@@ -69,6 +69,7 @@ export default function PeopleDirectory({ role }) {
 
   const [subjectFilter, setSubjectFilter] = useState("");
   const [branchFilter, setBranchFilter] = useState(""); // только owner
+  const [search, setSearch] = useState(""); // поиск по ФИО
 
   // Родитель: модалка добавления ребёнка.
   const [showAddModal, setShowAddModal] = useState(false);
@@ -149,6 +150,7 @@ export default function PeopleDirectory({ role }) {
   }, [courses]);
 
   const filteredPeople = useMemo(() => {
+    const query = search.trim().toLowerCase();
     return people.filter((p) => {
       if (isOwner && branchFilter && String(p.branch_id) !== String(branchFilter)) return false;
       if (subjectFilter) {
@@ -156,9 +158,10 @@ export default function PeopleDirectory({ role }) {
         const hasSubject = pEnrollments.some((e) => coursesById[e.course_id]?.subject === subjectFilter);
         if (!hasSubject) return false;
       }
+      if (query && !fullName(p).toLowerCase().includes(query)) return false;
       return true;
     });
-  }, [people, isOwner, branchFilter, subjectFilter, enrollmentsByStudent, coursesById]);
+  }, [people, isOwner, branchFilter, subjectFilter, search, enrollmentsByStudent, coursesById]);
 
   const { page, setPage, pageItems: pagedPeople } = usePagination(filteredPeople, PAGE_SIZE);
 
@@ -252,6 +255,18 @@ export default function PeopleDirectory({ role }) {
               {isParent ? "Список детей" : "Список учеников"}
             </h3>
             <div className="flex flex-wrap gap-3">
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">
+                  search
+                </span>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Поиск по ФИО..."
+                  className="bg-surface-container-lowest border border-outline-variant rounded-lg pl-9 pr-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none w-full sm:w-56"
+                />
+              </div>
               <select
                 value={subjectFilter}
                 onChange={(e) => setSubjectFilter(e.target.value)}
