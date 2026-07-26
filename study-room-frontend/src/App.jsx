@@ -8,12 +8,15 @@ import RegisterPage from "./pages/auth/RegisterPage.jsx";
 import StudentOverview from "./pages/student/StudentOverview.jsx";
 import StudentHomework from "./pages/student/StudentHomework.jsx";
 import StudentSchedule from "./pages/student/StudentSchedule.jsx";
+import StudentCourses from "./pages/student/StudentCourses.jsx";
+import StudentProfile from "./pages/student/StudentProfile.jsx";
 
 import TutorOverview from "./pages/tutor/TutorOverview.jsx";
 import TutorStudents from "./pages/tutor/TutorStudents.jsx";
 import TutorStudentDetail from "./pages/tutor/TutorStudentDetail.jsx";
 import TutorNewLesson from "./pages/tutor/TutorNewLesson.jsx";
 import TutorSchedule from "./pages/tutor/TutorSchedule.jsx";
+import TutorHomework from "./pages/tutor/TutorHomework.jsx";
 
 import ParentOverview from "./pages/parent/ParentOverview.jsx";
 import ParentChildDetail from "./pages/parent/ParentChildDetail.jsx";
@@ -45,9 +48,9 @@ export default function App() {
           {/* Ученик (role: student) */}
           <Route path="/student" element={<ProtectedRoute roles={["student"]}><StudentOverview /></ProtectedRoute>} />
           <Route path="/student/schedule" element={<ProtectedRoute roles={["student"]}><StudentSchedule /></ProtectedRoute>} />
-          <Route path="/student/courses" element={<ProtectedRoute roles={["student"]}><PlaceholderPage title="Курсы ученика" /></ProtectedRoute>} />
+          <Route path="/student/courses" element={<ProtectedRoute roles={["student"]}><StudentCourses /></ProtectedRoute>} />
           <Route path="/student/homework" element={<ProtectedRoute roles={["student"]}><StudentHomework /></ProtectedRoute>} />
-          <Route path="/student/profile" element={<ProtectedRoute roles={["student"]}><PlaceholderPage title="Профиль ученика" /></ProtectedRoute>} />
+          <Route path="/student/profile" element={<ProtectedRoute roles={["student"]}><StudentProfile /></ProtectedRoute>} />
           <Route path="/student/settings" element={<ProtectedRoute roles={["student"]}><SettingsPage role="student" /></ProtectedRoute>} />
 
           {/* Репетитор (role: tutor) */}
@@ -56,7 +59,7 @@ export default function App() {
           <Route path="/tutor/students/:studentId" element={<ProtectedRoute roles={["tutor"]}><TutorStudentDetail /></ProtectedRoute>} />
           <Route path="/tutor/schedule" element={<ProtectedRoute roles={["tutor"]}><TutorSchedule /></ProtectedRoute>} />
           <Route path="/tutor/schedule/new" element={<ProtectedRoute roles={["tutor"]}><TutorNewLesson /></ProtectedRoute>} />
-          <Route path="/tutor/homework" element={<ProtectedRoute roles={["tutor"]}><PlaceholderPage title="Домашние задания (репетитор)" /></ProtectedRoute>} />
+          <Route path="/tutor/homework" element={<ProtectedRoute roles={["tutor"]}><TutorHomework /></ProtectedRoute>} />
           <Route path="/tutor/settings" element={<ProtectedRoute roles={["tutor"]}><SettingsPage role="tutor" /></ProtectedRoute>} />
 
           {/* Родитель (role: parent) */}

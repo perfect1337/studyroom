@@ -1,3 +1,5 @@
+import NotificationBell from "./NotificationBell.jsx";
+
 /**
  * Верхняя панель. На мобильных слева появляется гамбургер (открывает Sidebar-drawer),
  * поле поиска сжимается до иконки на очень узких экранах, чтобы не ломать раскладку.
@@ -6,7 +8,6 @@ export default function TopBar({
   searchPlaceholder = "Поиск...",
   userLabel,
   avatarUrl,
-  hasNotification = true,
   onMenuClick = () => {},
 }) {
   return (
@@ -33,12 +34,7 @@ export default function TopBar({
       </div>
       <div className="flex items-center gap-2 md:gap-6 shrink-0">
         <div className="flex items-center gap-1 md:gap-2">
-          <button className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full hover:bg-surface-container text-on-surface-variant relative">
-            <span className="material-symbols-outlined">notifications</span>
-            {hasNotification && (
-              <span className="absolute top-2 right-2 w-2 h-2 bg-error rounded-full"></span>
-            )}
-          </button>
+          <NotificationBell />
           <button className="hidden sm:flex w-9 h-9 md:w-10 md:h-10 items-center justify-center rounded-full hover:bg-surface-container text-on-surface-variant">
             <span className="material-symbols-outlined">help</span>
           </button>
