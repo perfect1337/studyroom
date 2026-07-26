@@ -101,6 +101,7 @@ func (s *Subscriber) Start(ctx context.Context) error {
 	handlers := map[string]nats.MsgHandler{
 		"user.created":             s.handleUserCreated,
 		"user.updated":             s.handleUserUpdated,
+		"user.credentials_reset":   s.handleCredentialsReset,
 		"password_reset_requested": s.handlePasswordReset,
 		"contract.expiring_soon":   s.handleContractExpiring,
 		"lesson.created":           s.handleLessonReminder,
@@ -172,6 +173,45 @@ func (s *Subscriber) handleUserCreated(msg *nats.Msg) {
 			evt.FirstName, evt.LastName, evt.Email, evt.TempPassword,
 		)
 		s.send(parentID, "account_credentials", message, evt.NotifyEmail)
+	}
+}
+
+func (s *Subscriber) handleCredentialsReset(msg *nats.Msg) {
+	var evt userEvent
+	if err := json.Unmarshal(msg.Data, &evt); err != nil {
+		log.Printf("events: bad user.credentials_reset payload: %v", err)
+		return
+	}
+	if evt.TempPassword == "" {
+		return
+	}
+
+	switch evt.Role {
+	case "student":
+		if evt.NotifyEmail == "" {
+			return
+		}
+		// Как и при создании ученика — письмо уходит родителю, у ученика
+		// своей реальной почты нет.
+		parentID := evt.ID
+		if ref, err := s.usersRef.GetByEmail(context.Background(), evt.NotifyEmail); err == nil {
+			parentID = ref.ID
+		}
+		message := fmt.Sprintf(
+			"Данные для входа в личный кабинет ученика %s %s обновлены.\n\nЛогин: %s\nНовый временный пароль: %s",
+			evt.FirstName, evt.LastName, evt.Email, evt.TempPassword,
+		)
+		s.send(parentID, "account_credentials", message, evt.NotifyEmail)
+
+	default:
+		if evt.Email == "" {
+			return
+		}
+		message := fmt.Sprintf(
+			"Здравствуйте, %s %s!\n\nВаши данные для входа в Study Room обновлены.\n\nЛогин: %s\nНовый временный пароль: %s",
+			evt.FirstName, evt.LastName, evt.Email, evt.TempPassword,
+		)
+		s.send(evt.ID, "account_credentials", message, "")
 	}
 }
 

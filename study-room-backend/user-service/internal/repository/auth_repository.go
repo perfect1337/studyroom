@@ -142,6 +142,19 @@ type ChildView struct {
 	BranchID  *int64  `json:"-"`
 }
 
+// GetParentOfStudent возвращает родителя данного ученика (через parent_student).
+// Нужно, чтобы после сброса учётных данных ученика отправить письмо на почту
+// родителя (у ученика своей реальной почты нет — см. CreateStudent).
+func (r *ParentChildRepository) GetParentOfStudent(ctx context.Context, studentID int64) (*models.User, error) {
+	query := `SELECT u.id, u.email, u.phone, u.password_hash, u.role, u.last_name, u.first_name,
+		u.patronymic, u.avatar_url, u.branch_id, u.is_active, u.created_at, u.updated_at
+		FROM users u
+		INNER JOIN parent_student ps ON ps.parent_id = u.id
+		WHERE ps.student_id = $1
+		LIMIT 1`
+	return scanUser(r.pool.QueryRow(ctx, query, studentID))
+}
+
 // ListChildrenViews возвращает детей с class_info из student_profiles.
 func (r *ParentChildRepository) ListChildrenViews(ctx context.Context, parentID int64) ([]ChildView, error) {
 	query := `

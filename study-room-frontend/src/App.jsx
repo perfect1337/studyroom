@@ -19,6 +19,7 @@ import TutorSchedule from "./pages/tutor/TutorSchedule.jsx";
 import TutorHomework from "./pages/tutor/TutorHomework.jsx";
 
 import ParentOverview from "./pages/parent/ParentOverview.jsx";
+import ParentChildren from "./pages/parent/ParentChildren.jsx";
 import ParentChildDetail from "./pages/parent/ParentChildDetail.jsx";
 import ParentSchedule from "./pages/parent/ParentSchedule.jsx";
 
@@ -64,7 +65,7 @@ export default function App() {
 
           {/* Родитель (role: parent) */}
           <Route path="/parent" element={<ProtectedRoute roles={["parent"]}><ParentOverview /></ProtectedRoute>} />
-          <Route path="/parent/children" element={<Navigate to="/parent" replace />} />
+          <Route path="/parent/children" element={<ProtectedRoute roles={["parent"]}><ParentChildren /></ProtectedRoute>} />
           <Route path="/parent/children/:childId" element={<ProtectedRoute roles={["parent"]}><ParentChildDetail /></ProtectedRoute>} />
           <Route path="/parent/schedule" element={<ProtectedRoute roles={["parent"]}><ParentSchedule /></ProtectedRoute>} />
           <Route path="/parent/settings" element={<ProtectedRoute roles={["parent"]}><SettingsPage role="parent" /></ProtectedRoute>} />

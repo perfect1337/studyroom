@@ -15,6 +15,7 @@ const (
 	SubjectUserCreated            = "user.created"
 	SubjectUserUpdated            = "user.updated"
 	SubjectPasswordResetRequested = "password_reset_requested"
+	SubjectUserCredentialsReset   = "user.credentials_reset"
 )
 
 // Publisher — best-effort: ошибка публикации логируется, HTTP-запрос не валится.
@@ -22,6 +23,10 @@ type Publisher interface {
 	UserCreated(u *models.User, tempPassword, notifyEmail string, parentID *int64)
 	UserUpdated(u *models.User)
 	PasswordResetRequested(userID int64, email, resetToken, resetURL string, expiresAt time.Time)
+	// CredentialsReset — логин/пароль пользователя принудительно сброшены
+	// (например, родитель или owner сбросил доступ ребёнку — см. ResetStudentCredentials).
+	// В отличие от UserCreated, письмо должно говорить "обновлены", а не "созданы".
+	CredentialsReset(u *models.User, tempPassword, notifyEmail string, parentID *int64)
 	Close()
 }
 
@@ -88,6 +93,18 @@ func (p *NATSPublisher) UserCreated(u *models.User, tempPassword, notifyEmail st
 	})
 }
 
+func (p *NATSPublisher) CredentialsReset(u *models.User, tempPassword, notifyEmail string, parentID *int64) {
+	if u == nil {
+		return
+	}
+	p.publish(SubjectUserCredentialsReset, UserEvent{
+		ID: u.ID, Email: u.Email, FirstName: u.FirstName, LastName: u.LastName,
+		Role: string(u.Role), BranchID: u.BranchID,
+		TempPassword: tempPassword, NotifyEmail: notifyEmail,
+		ParentID: parentID,
+	})
+}
+
 func (p *NATSPublisher) UserUpdated(u *models.User) {
 	if u == nil {
 		return
@@ -115,7 +132,8 @@ func (p *NATSPublisher) Close() {
 // NoopPublisher — для тестов и локального запуска без NATS.
 type NoopPublisher struct{}
 
-func (NoopPublisher) UserCreated(*models.User, string, string, *int64)                  {}
-func (NoopPublisher) UserUpdated(*models.User)                                          {}
+func (NoopPublisher) UserCreated(*models.User, string, string, *int64)                {}
+func (NoopPublisher) UserUpdated(*models.User)                                        {}
 func (NoopPublisher) PasswordResetRequested(int64, string, string, string, time.Time) {}
-func (NoopPublisher) Close()                                                            {}
+func (NoopPublisher) CredentialsReset(*models.User, string, string, *int64)           {}
+func (NoopPublisher) Close()                                                          {}

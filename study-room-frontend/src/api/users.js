@@ -50,3 +50,9 @@ export function createBranch(payload) {
 export function fetchParentChildren(parentId) {
   return usersApi(`/parents/${parentId}/children`);
 }
+
+// Сбросить логин/пароль ученика (owner — любой; parent — только свой ребёнок).
+// Возвращает { login, temp_password } — новые данные для входа.
+export function resetStudentCredentials(studentId) {
+  return usersApi(`/users/${studentId}/reset-credentials`, { method: "POST" });
+}

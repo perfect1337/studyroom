@@ -96,6 +96,7 @@ func NewRouter(d *Deps) http.Handler {
 			r.Get("/users/{id}", userHandler.GetByID)
 			r.Patch("/users/{id}", userHandler.Update)
 			r.Get("/parents/{parentId}/children", userHandler.ListChildren)
+			r.Post("/users/{id}/reset-credentials", userHandler.ResetStudentCredentials)
 
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRoles(models.RoleOwner))

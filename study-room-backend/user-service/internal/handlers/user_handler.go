@@ -3,10 +3,8 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"studyroom/user-service/internal/auth"
@@ -393,20 +391,37 @@ func (h *UserHandler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	placeholderEmail := fmt.Sprintf("student+%d@studyroom.internal", time.Now().UnixNano())
-	u := &models.User{
-		Email: placeholderEmail, PasswordHash: hash, Role: models.RoleStudent,
-		LastName: req.LastName, FirstName: req.FirstName, Patronymic: req.Patronymic,
-		BranchID: req.BranchID, IsActive: true,
-	}
-
-	created, err := h.users.CreateStudentWithParent(r.Context(), u, req.ParentID, req.ClassInfo, req.School)
-	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
+	// Логин ученика — человекочитаемый (транслитерация ФИО), а не случайный
+	// набор цифр: у ученика нет реальной почты, email тут используется только
+	// как логин для входа (см. AuthHandler.Login / GetByLogin).
+	var created *models.User
+	suffix := ""
+	for attempt := 0; ; attempt++ {
+		u := &models.User{
+			Email: generateStudentLogin(req.LastName, req.FirstName, suffix), PasswordHash: hash, Role: models.RoleStudent,
+			LastName: req.LastName, FirstName: req.FirstName, Patronymic: req.Patronymic,
+			BranchID: req.BranchID, IsActive: true,
+		}
+		var cErr error
+		created, cErr = h.users.CreateStudentWithParent(r.Context(), u, req.ParentID, req.ClassInfo, req.School)
+		if cErr == nil {
+			break
+		}
+		if errors.Is(cErr, repository.ErrNotFound) {
 			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "parent_id must be an existing parent")
 			return
 		}
-		if errors.Is(err, repository.ErrDuplicate) {
+		if errors.Is(cErr, repository.ErrDuplicate) && attempt < 5 {
+			// Логин занят (тёзка) — добавляем короткий суффикс и пробуем снова.
+			token, tErr := auth.GenerateOpaqueToken()
+			if tErr != nil {
+				writeError(w, http.StatusInternalServerError, "INTERNAL", "could not create student")
+				return
+			}
+			suffix = token[:4]
+			continue
+		}
+		if errors.Is(cErr, repository.ErrDuplicate) {
 			writeError(w, http.StatusConflict, "ALREADY_EXISTS", "could not create student")
 			return
 		}
@@ -580,6 +595,74 @@ func (h *UserHandler) ListChildren(w http.ResponseWriter, r *http.Request) {
 		items = append(items, item)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// --- POST /users/{id}/reset-credentials — сброс логина/пароля ученика.
+// Доступно: owner (любой ученик); parent — только для своего ребёнка
+// (проверяется через parent_student, как и в ListChildren/canViewUser).
+// Логин у ученика не меняется (email как был, так и остаётся), генерируется
+// только новый временный пароль. Уведомление уходит на почту родителя —
+// у самого ученика реальной почты нет (см. CreateStudent).
+type resetCredentialsResponse struct {
+	Login        string `json:"login"`
+	TempPassword string `json:"temp_password"`
+}
+
+func (h *UserHandler) ResetStudentCredentials(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id")
+		return
+	}
+	claims, _ := middleware.FromContext(r.Context())
+
+	target, err := h.users.GetByID(r.Context(), id)
+	if err != nil || target.Role != models.RoleStudent {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "student not found")
+		return
+	}
+
+	switch claims.Role {
+	case models.RoleOwner:
+		// ok
+	case models.RoleParent:
+		isParent, err := h.parentChild.IsParentOf(r.Context(), claims.UserID, target.ID)
+		if err != nil || !isParent {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "can only reset your own child's credentials")
+			return
+		}
+	default:
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "role not permitted for this action")
+		return
+	}
+
+	tempPassword, err := auth.GenerateOpaqueToken()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "token generation failed")
+		return
+	}
+	tempPassword = tempPassword[:12]
+	hash, err := auth.HashPassword(tempPassword)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "hashing failed")
+		return
+	}
+	if _, err := h.users.Update(r.Context(), id, map[string]any{"password_hash": hash}); err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
+		return
+	}
+	_ = h.authRepo.RevokeAllRefreshTokens(r.Context(), id)
+
+	notifyEmail := ""
+	var parentID *int64
+	if parent, err := h.parentChild.GetParentOfStudent(r.Context(), id); err == nil {
+		notifyEmail = parent.Email
+		pid := parent.ID
+		parentID = &pid
+	}
+	h.events.CredentialsReset(target, tempPassword, notifyEmail, parentID)
+
+	writeJSON(w, http.StatusOK, resetCredentialsResponse{Login: target.Email, TempPassword: tempPassword})
 }
 
 func rolePtr(r models.Role) *models.Role { return &r }

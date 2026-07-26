@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchUserById } from "../../api/users.js";
+import { fetchUserById, resetStudentCredentials } from "../../api/users.js";
 import { fetchEnrollments, fetchCourses, fetchHomework, fetchLessons } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
@@ -81,6 +81,23 @@ export default function StudentDetail({ role = "parent" }) {
   const [lessons, setLessons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // Сброс данных для входа ребёнка — доступно parent (свой ребёнок) и owner.
+  const canResetCredentials = role === "parent" || role === "owner";
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetStatus, setResetStatus] = useState("");
+  const [resetResult, setResetResult] = useState(null);
+
+  async function handleResetCredentials() {
+    setResetStatus("saving");
+    try {
+      const res = await resetStudentCredentials(childId);
+      setResetResult(res);
+      setResetStatus("done");
+    } catch (e) {
+      setResetStatus(e.message || "Не удалось сбросить данные для входа");
+    }
+  }
 
   const today = new Date();
   const viewYear = today.getFullYear();
@@ -163,12 +180,27 @@ export default function StudentDetail({ role = "parent" }) {
   return (
     <DashboardShell role={config.sidebarRole} user={toSidebarUser(user)} searchPlaceholder={config.searchPlaceholder} userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
       <div className="space-y-stack-lg pb-stack-lg">
-        <nav className="flex items-center gap-2 text-label-md text-on-surface-variant mt-4">
-          <Link to={config.homePath} className="hover:text-primary">{config.homeLabel}</Link>
-          <span className="material-symbols-outlined text-[16px]">chevron_right</span>
-          <Link to={config.listPath} className="hover:text-primary">{config.listLabel}</Link>
-          <span className="material-symbols-outlined text-[16px]">chevron_right</span>
-          <span className="text-on-surface font-bold">{child ? fullName(child) : "—"}</span>
+        <nav className="flex items-center justify-between gap-2 text-label-md text-on-surface-variant mt-4">
+          <div className="flex items-center gap-2">
+            <Link to={config.homePath} className="hover:text-primary">{config.homeLabel}</Link>
+            <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+            <Link to={config.listPath} className="hover:text-primary">{config.listLabel}</Link>
+            <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+            <span className="text-on-surface font-bold">{child ? fullName(child) : "—"}</span>
+          </div>
+          {canResetCredentials && child && (
+            <button
+              onClick={() => {
+                setResetStatus("");
+                setResetResult(null);
+                setShowResetModal(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-outline-variant text-on-surface-variant hover:bg-surface-container-low hover:text-primary transition-colors text-label-md font-label-md"
+            >
+              <span className="material-symbols-outlined text-[18px]">lock_reset</span>
+              Сбросить данные для входа
+            </button>
+          )}
         </nav>
 
         {error && (
@@ -353,6 +385,65 @@ export default function StudentDetail({ role = "parent" }) {
           © 2026 Study Room Education Portal. Все права защищены.
         </footer>
       </div>
+
+      {showResetModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setShowResetModal(false)}>
+          <div
+            className="bg-surface-container-lowest rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center">
+              <h3 className="font-headline-sm text-headline-sm text-on-surface">Сбросить данные для входа</h3>
+              <button onClick={() => setShowResetModal(false)} className="p-1 hover:bg-surface-container-high rounded-full">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            {resetStatus === "done" && resetResult ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-lg bg-green-100 text-green-800 font-label-md text-label-md">
+                  Пароль обновлён. Новые данные для входа также отправлены на почту родителя.
+                </div>
+                <div className="text-label-md text-on-surface-variant space-y-1">
+                  <div>Логин: <span className="font-bold text-on-surface">{resetResult.login}</span></div>
+                  <div>Временный пароль: <span className="font-bold text-on-surface">{resetResult.temp_password}</span></div>
+                </div>
+                <button
+                  onClick={() => setShowResetModal(false)}
+                  className="w-full bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all"
+                >
+                  Готово
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-label-md text-on-surface-variant">
+                  Текущий пароль {fullName(child)} перестанет действовать, будет выпущен новый временный пароль.
+                  Логин при этом не меняется. Продолжить?
+                </p>
+                {resetStatus && resetStatus !== "saving" && (
+                  <p className="text-sm text-error">{resetStatus}</p>
+                )}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowResetModal(false)}
+                    className="flex-1 border border-outline-variant text-on-surface py-3 rounded-lg font-bold hover:bg-surface-container-low transition-all"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    onClick={handleResetCredentials}
+                    disabled={resetStatus === "saving"}
+                    className="flex-1 bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60"
+                  >
+                    {resetStatus === "saving" ? "Сброс…" : "Сбросить пароль"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </DashboardShell>
   );
 }
