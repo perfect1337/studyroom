@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import Pagination from "../../components/ui/Pagination.jsx";
@@ -48,7 +49,9 @@ const EMPTY_FORM = {
  */
 export default function TeachersDirectory({ role }) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isOwner = role === "owner";
+  const detailPath = (id) => (isOwner ? `/admin/teachers/${id}` : `/branch/teachers/${id}`);
 
   const [tutors, setTutors] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -297,7 +300,11 @@ export default function TeachersDirectory({ role }) {
                 const studentCount = activeStudentsByTutor[t.id]?.size ?? 0;
                 const status = t.tutor_status ?? "active";
                 return (
-                  <tr key={t.id} className="hover:bg-surface-container-low transition-colors">
+                  <tr
+                    key={t.id}
+                    onClick={() => navigate(detailPath(t.id))}
+                    className="hover:bg-surface-container-low transition-colors cursor-pointer"
+                  >
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-4">
                         <div className="h-11 w-11 rounded-lg bg-primary-fixed flex items-center justify-center font-bold text-primary">
@@ -320,7 +327,7 @@ export default function TeachersDirectory({ role }) {
                       </td>
                     )}
                     <td className="px-6 py-4 font-bold text-on-surface">{studentCount}</td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-2">
                         <StatusBadge status={TUTOR_STATUS_LABEL[status] ?? status} />
                         <select

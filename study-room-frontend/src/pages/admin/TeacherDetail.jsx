@@ -1,0 +1,573 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import DashboardShell from "../../components/layout/DashboardShell.jsx";
+import StatusBadge from "../../components/ui/StatusBadge.jsx";
+import { useAuth } from "../../context/AuthContext.jsx";
+import { fetchMyPeople, fetchBranches, setTutorStatus, setUserActive } from "../../api/users.js";
+import { fetchEnrollments, fetchCourses, fetchLessons } from "../../api/academic.js";
+import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+
+const WEEKDAYS = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"];
+const MONTH_NAMES = [
+  "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+  "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+];
+
+const TUTOR_STATUS_LABEL = {
+  active: "Активен",
+  vacation: "В отпуске",
+  sick_leave: "На больничном",
+  inactive: "Неактивен",
+};
+
+// Владелец сети может выставить любой статус, управляющий филиалом —
+// только active|vacation|sick_leave (см. api-contracts.md, 1.15). "Уволить"
+// (полная блокировка входа, is_active=false) — отдельное действие, доступное
+// только owner (см. app.go: /users/{id}/status в группе RequireRoles(owner)).
+const STATUS_OPTIONS_BY_ROLE = {
+  owner: ["active", "vacation", "sick_leave", "inactive"],
+  branch_owner: ["active", "vacation", "sick_leave"],
+};
+
+function pad(n) {
+  return String(n).padStart(2, "0");
+}
+function toISODate(year, monthIndex, day) {
+  return `${year}-${pad(monthIndex + 1)}-${pad(day)}`;
+}
+function initials(person) {
+  if (!person) return "?";
+  return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
+}
+
+// Единая карточка "профиль преподавателя" для owner и branch_owner:
+// - owner: /admin/teachers/:teacherId — виден любой преподаватель сети,
+//   доступны все статусы и увольнение (is_active=false).
+// - branch_owner: /branch/teachers/:teacherId — только преподаватель своего
+//   филиала (сервер сам ограничивает выборку в GET /users), увольнение недоступно.
+const ROLE_CONFIG = {
+  owner: {
+    sidebarRole: "admin",
+    homePath: "/admin",
+    homeLabel: "Главная",
+    listPath: "/admin/teachers",
+    listLabel: "Преподаватели",
+    searchPlaceholder: "Поиск студентов или учителей...",
+    canFire: true,
+  },
+  branch_owner: {
+    sidebarRole: "branch_owner",
+    homePath: "/branch",
+    homeLabel: "Главная",
+    listPath: "/branch/teachers",
+    listLabel: "Преподаватели",
+    searchPlaceholder: "Поиск преподавателя...",
+    canFire: false,
+  },
+};
+
+export default function TeacherDetail({ role = "owner" }) {
+  const config = ROLE_CONFIG[role] ?? ROLE_CONFIG.owner;
+  const { teacherId } = useParams();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const isOwner = role === "owner";
+
+  const [teacher, setTeacher] = useState(null);
+  const [students, setStudents] = useState([]); // все студенты в области видимости (для имён)
+  const [enrollments, setEnrollments] = useState([]); // только его записи (tutor_id=teacherId)
+  const [courses, setCourses] = useState([]);
+  const [lessons, setLessons] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [showFireModal, setShowFireModal] = useState(false);
+  const [fireStatus, setFireStatus] = useState("");
+
+  const today = new Date();
+  const viewYear = today.getFullYear();
+  const viewMonth = today.getMonth();
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const firstWeekday = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7;
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const date_from = toISODate(viewYear, viewMonth, 1);
+      const date_to = toISODate(viewYear, viewMonth, daysInMonth);
+      const [peopleRes, enrollRes, coursesRes, lessonsRes, branchesRes] = await Promise.all([
+        fetchMyPeople(),
+        fetchEnrollments({ tutor_id: teacherId }),
+        fetchCourses(),
+        fetchLessons({ tutor_id: teacherId, date_from, date_to }),
+        isOwner ? fetchBranches().catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
+      ]);
+
+      const foundTeacher = (peopleRes?.tutors ?? []).find((t) => String(t.id) === String(teacherId));
+      setTeacher(foundTeacher ?? null);
+      setStudents(peopleRes?.students ?? []);
+      setEnrollments(enrollRes?.items ?? []);
+      setCourses(coursesRes?.items ?? []);
+      setLessons(lessonsRes?.items ?? []);
+      setBranches(branchesRes?.items ?? []);
+
+      if (!foundTeacher) {
+        setError("Преподаватель не найден или у вас нет доступа к его профилю.");
+      }
+    } catch (e) {
+      setError(e.message || "Не удалось загрузить данные преподавателя");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!teacherId) return;
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teacherId]);
+
+  const studentsById = useMemo(() => {
+    const map = {};
+    students.forEach((s) => (map[s.id] = s));
+    return map;
+  }, [students]);
+
+  const coursesById = useMemo(() => {
+    const map = {};
+    courses.forEach((c) => (map[c.id] = c));
+    return map;
+  }, [courses]);
+
+  const branchNameById = useMemo(() => {
+    const map = {};
+    branches.forEach((b) => (map[b.id] = b.name || b.city));
+    return map;
+  }, [branches]);
+
+  // Уникальные ученики, реально записанные к этому преподавателю (по enrollments).
+  const myStudents = useMemo(() => {
+    const seen = new Map();
+    enrollments.forEach((e) => {
+      if (!seen.has(e.student_id)) {
+        seen.set(e.student_id, { student: studentsById[e.student_id] ?? { id: e.student_id }, enrollments: [] });
+      }
+      seen.get(e.student_id).enrollments.push(e);
+    });
+    return Array.from(seen.values());
+  }, [enrollments, studentsById]);
+
+  const avgProgress = enrollments.length
+    ? Math.round(enrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / enrollments.length)
+    : 0;
+
+  const activeCoursesCount = useMemo(() => {
+    const set = new Set(enrollments.filter((e) => e.status === "active").map((e) => e.course_id));
+    return set.size;
+  }, [enrollments]);
+
+  const lessonsByDay = useMemo(() => {
+    const map = {};
+    for (const l of lessons) {
+      const day = Number(l.lesson_date?.slice(8, 10));
+      if (!day) continue;
+      (map[day] ??= []).push(l);
+    }
+    return map;
+  }, [lessons]);
+
+  const todayDay = today.getDate();
+  const upcomingLessons = lessons
+    .filter((l) => l.lesson_date >= toISODate(viewYear, viewMonth, todayDay))
+    .sort((a, b) => (a.lesson_date + a.start_time).localeCompare(b.lesson_date + b.start_time));
+
+  const statusOptions = STATUS_OPTIONS_BY_ROLE[role] ?? STATUS_OPTIONS_BY_ROLE.branch_owner;
+  const tutorStatus = teacher?.tutor_status ?? "active";
+  const isFired = teacher && teacher.is_active === false;
+
+  async function handleStatusChange(newStatus) {
+    setStatusUpdating(true);
+    const prev = teacher;
+    setTeacher((t) => (t ? { ...t, tutor_status: newStatus } : t));
+    try {
+      await setTutorStatus(teacherId, newStatus);
+    } catch (e) {
+      setTeacher(prev);
+      setError(e.message || "Не удалось изменить статус преподавателя");
+    } finally {
+      setStatusUpdating(false);
+    }
+  }
+
+  async function handleFireConfirm() {
+    setFireStatus("saving");
+    try {
+      await setUserActive(teacherId, false);
+      setTeacher((t) => (t ? { ...t, is_active: false } : t));
+      setFireStatus("done");
+    } catch (e) {
+      setFireStatus(e.message || "Не удалось уволить преподавателя");
+    }
+  }
+
+  async function handleReinstate() {
+    setFireStatus("saving-reinstate");
+    try {
+      await setUserActive(teacherId, true);
+      setTeacher((t) => (t ? { ...t, is_active: true } : t));
+      setFireStatus("");
+    } catch (e) {
+      setError(e.message || "Не удалось восстановить преподавателя");
+      setFireStatus("");
+    }
+  }
+
+  if (loading) {
+    return (
+      <DashboardShell role={config.sidebarRole} user={toSidebarUser(user)} searchPlaceholder={config.searchPlaceholder} userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
+        <p className="mt-8 text-on-surface-variant font-body-md">Загрузка…</p>
+      </DashboardShell>
+    );
+  }
+
+  return (
+    <DashboardShell role={config.sidebarRole} user={toSidebarUser(user)} searchPlaceholder={config.searchPlaceholder} userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
+      <div className="space-y-stack-lg pb-stack-lg">
+        <nav className="flex items-center justify-between gap-2 text-label-md text-on-surface-variant mt-4">
+          <div className="flex items-center gap-2">
+            <Link to={config.homePath} className="hover:text-primary">{config.homeLabel}</Link>
+            <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+            <Link to={config.listPath} className="hover:text-primary">{config.listLabel}</Link>
+            <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+            <span className="text-on-surface font-bold">{teacher ? fullName(teacher) : "—"}</span>
+          </div>
+
+          {config.canFire && teacher && (
+            isFired ? (
+              <button
+                onClick={handleReinstate}
+                disabled={fireStatus === "saving-reinstate"}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-outline-variant text-on-surface-variant hover:bg-surface-container-low hover:text-primary transition-colors text-label-md font-label-md disabled:opacity-60"
+              >
+                <span className="material-symbols-outlined text-[18px]">person_check</span>
+                {fireStatus === "saving-reinstate" ? "Восстановление…" : "Восстановить в штат"}
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setFireStatus("");
+                  setShowFireModal(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-error text-error hover:bg-error-container hover:text-on-error-container transition-colors text-label-md font-label-md"
+              >
+                <span className="material-symbols-outlined text-[18px]">person_remove</span>
+                Уволить
+              </button>
+            )
+          )}
+        </nav>
+
+        {error && (
+          <div className="p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
+        )}
+
+        {teacher && (
+          <>
+            <div className="bg-surface-container-lowest p-stack-lg rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30">
+              <div className="flex flex-col md:flex-row items-center gap-gutter">
+                <div className="relative">
+                  <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-primary/10 bg-primary-fixed flex items-center justify-center text-primary font-headline-md font-bold text-3xl">
+                    {teacher.avatar_url ? (
+                      <img src={teacher.avatar_url} alt={fullName(teacher)} className="w-full h-full object-cover" />
+                    ) : (
+                      initials(teacher)
+                    )}
+                  </div>
+                </div>
+                <div className="flex-1 text-center md:text-left">
+                  <div className="flex flex-col md:flex-row md:items-end gap-2 mb-1 justify-center md:justify-start">
+                    <h2 className="font-headline-md text-headline-md text-on-surface">{fullName(teacher)}</h2>
+                    <span className="text-on-surface-variant font-label-md mb-1.5 opacity-60">ID: {teacher.id}</span>
+                    {isFired && <StatusBadge status="Уволен" color="red" />}
+                  </div>
+                  <p className="text-on-surface-variant font-body-md mb-1">
+                    {teacher.specialization || "Специализация не указана"}
+                    {teacher.branch_id ? ` · ${branchNameById[teacher.branch_id] || `Филиал #${teacher.branch_id}`}` : ""}
+                  </p>
+                  <p className="text-on-surface-variant font-body-md mb-4 text-[13px]">
+                    {teacher.email && <span className="mr-4">{teacher.email}</span>}
+                    {teacher.phone && <span>{teacher.phone}</span>}
+                  </p>
+
+                  <div className="flex flex-wrap justify-center md:justify-start items-center gap-4">
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg">
+                      <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>groups</span>
+                      <span className="font-label-md text-on-surface">
+                        Учеников: <strong className="text-primary">{myStudents.length}</strong>
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg">
+                      <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>school</span>
+                      <span className="font-label-md text-on-surface">
+                        Активные курсы: <strong className="text-primary">{activeCoursesCount}</strong>
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg">
+                      <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
+                      <span className="font-label-md text-on-surface">
+                        Средний прогресс учеников: <strong className="text-primary">{avgProgress}%</strong>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 ml-0 md:ml-2">
+                      <StatusBadge status={TUTOR_STATUS_LABEL[tutorStatus] ?? tutorStatus} />
+                      <select
+                        value={tutorStatus}
+                        disabled={statusUpdating}
+                        onChange={(e) => handleStatusChange(e.target.value)}
+                        className="text-[12px] border border-outline-variant rounded-md px-2 py-1 bg-surface-container-lowest disabled:opacity-50"
+                      >
+                        {statusOptions.map((s) => (
+                          <option key={s} value={s}>
+                            {TUTOR_STATUS_LABEL[s]}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-12 gap-gutter">
+              <section className="col-span-12 lg:col-span-8 space-y-stack-md">
+                <div className="flex justify-between items-center">
+                  <h3 className="font-headline-sm text-headline-sm text-on-surface">Ученики преподавателя</h3>
+                </div>
+
+                <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 overflow-hidden overflow-x-auto">
+                  <table className="w-full text-left border-collapse min-w-[600px]">
+                    <thead>
+                      <tr className="bg-surface-container-low text-on-surface-variant font-label-md">
+                        <th className="px-6 py-4 font-semibold">Ученик</th>
+                        <th className="px-6 py-4 font-semibold">Курсы</th>
+                        <th className="px-6 py-4 font-semibold">Прогресс</th>
+                        <th className="px-6 py-4 font-semibold">Статус</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-outline-variant/20">
+                      {myStudents.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="px-6 py-8 text-center text-on-surface-variant">
+                            К этому преподавателю пока не записан ни один ученик
+                          </td>
+                        </tr>
+                      )}
+                      {myStudents.map(({ student, enrollments: sEnrollments }) => {
+                        const avg = sEnrollments.length
+                          ? Math.round(sEnrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / sEnrollments.length)
+                          : 0;
+                        return (
+                          <tr
+                            key={student.id}
+                            onClick={() => navigate(isOwner ? `/admin/students/${student.id}` : `/branch/students/${student.id}`)}
+                            className="hover:bg-surface-container-low transition-colors cursor-pointer group"
+                          >
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-primary-container/20 flex items-center justify-center text-primary font-bold">
+                                  {initials(student)}
+                                </div>
+                                <div>
+                                  <div className="font-bold text-on-surface">{fullName(student) || `#${student.id}`}</div>
+                                  <div className="text-[12px] text-on-surface-variant">{student.class_info || `ID: ${student.id}`}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-wrap gap-1">
+                                {sEnrollments.map((e) => (
+                                  <span key={e.id} className="px-2 py-1 bg-surface-variant rounded text-[11px] font-bold text-primary">
+                                    {coursesById[e.course_id]?.title ?? coursesById[e.course_id]?.subject ?? `#${e.course_id}`}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 font-bold text-on-surface">{avg}%</td>
+                            <td className="px-6 py-4">
+                              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold uppercase bg-green-100 text-green-700">
+                                {sEnrollments.some((e) => e.status === "active") ? "Активен" : "—"}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="pt-stack-lg">
+                  <h3 className="font-headline-sm text-headline-sm text-on-surface mb-stack-md">Все занятия за месяц</h3>
+                  <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 overflow-hidden">
+                    <table className="w-full text-left">
+                      <thead className="bg-surface-container text-on-surface-variant text-label-md font-bold uppercase tracking-wider">
+                        <tr>
+                          <th className="px-6 py-4">Дата / время</th>
+                          <th className="px-6 py-4">Тема / курс</th>
+                          <th className="px-6 py-4">Формат</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-outline-variant/30">
+                        {upcomingLessons.length === 0 && (
+                          <tr>
+                            <td colSpan={3} className="px-6 py-8 text-center text-on-surface-variant">Занятий в этом месяце не запланировано</td>
+                          </tr>
+                        )}
+                        {upcomingLessons.map((l) => {
+                          const course = coursesById[l.course_id];
+                          return (
+                            <tr key={l.id} className="hover:bg-surface-container-low transition-colors">
+                              <td className="px-6 py-5 font-label-md text-on-surface">
+                                {new Date(l.lesson_date).toLocaleDateString("ru-RU")} · {l.start_time}–{l.end_time}
+                              </td>
+                              <td className="px-6 py-5">
+                                <p className="font-label-md text-on-surface">{l.topic || course?.title || course?.subject || `Курс #${l.course_id}`}</p>
+                              </td>
+                              <td className="px-6 py-5 text-[13px] text-on-surface-variant">
+                                {l.location_type === "remote" ? "Дистанционно" : "Очно"} · {l.lesson_format === "group" ? "Группа" : "Индивидуально"}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+
+              <aside className="col-span-12 lg:col-span-4 space-y-stack-lg">
+                <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 p-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <h4 className="font-bold text-on-surface">{MONTH_NAMES[viewMonth]} {viewYear}</h4>
+                  </div>
+                  <div className="grid grid-cols-7 gap-1 text-center text-on-surface-variant font-bold text-[11px] mb-1">
+                    {WEEKDAYS.map((d) => (
+                      <div key={d}>{d}</div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-1 text-center">
+                    {Array.from({ length: firstWeekday }).map((_, i) => (
+                      <div key={`pad-${i}`} />
+                    ))}
+                    {Array.from({ length: daysInMonth }).map((_, i) => {
+                      const day = i + 1;
+                      const hasLessons = (lessonsByDay[day] ?? []).length > 0;
+                      const isToday = day === todayDay;
+                      return (
+                        <div
+                          key={day}
+                          className={`text-label-md py-1 rounded-lg relative flex justify-center items-center ${
+                            isToday ? "font-bold bg-primary text-white" : "text-on-surface hover:bg-primary/10"
+                          }`}
+                        >
+                          {day}
+                          {hasLessons && !isToday && <span className="absolute bottom-1 w-1 h-1 rounded-full bg-primary" />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-outline-variant space-y-3">
+                    {upcomingLessons.length === 0 && (
+                      <p className="text-sm text-on-surface-variant">Занятий в этом месяце не запланировано.</p>
+                    )}
+                    {upcomingLessons.slice(0, 5).map((l) => {
+                      const course = coursesById[l.course_id];
+                      return (
+                        <div key={l.id} className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg flex items-center justify-center font-bold bg-primary/10 text-primary">
+                            {Number(l.lesson_date.slice(8, 10))}
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-label-md font-bold leading-tight">
+                              {l.start_time} - {course?.subject ?? course?.title ?? l.topic}
+                            </p>
+                            <p className="text-[12px] text-on-surface-variant">
+                              {l.location_type === "remote" ? "Дистанционно" : "Очно"}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </>
+        )}
+
+        <footer className="pt-6 text-center border-t border-outline-variant/30 text-on-surface-variant text-[13px] opacity-60">
+          © 2026 Study Room Education Portal. Все права защищены.
+        </footer>
+      </div>
+
+      {showFireModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setShowFireModal(false)}>
+          <div
+            className="bg-surface-container-lowest rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center">
+              <h3 className="font-headline-sm text-headline-sm text-on-surface">Уволить преподавателя</h3>
+              <button onClick={() => setShowFireModal(false)} className="p-1 hover:bg-surface-container-high rounded-full">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            {fireStatus === "done" ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-lg bg-green-100 text-green-800 font-label-md text-label-md">
+                  {fullName(teacher)} уволен(а). Доступ к личному кабинету заблокирован, все активные сессии отозваны.
+                </div>
+                <button
+                  onClick={() => setShowFireModal(false)}
+                  className="w-full bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all"
+                >
+                  Готово
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-label-md text-on-surface-variant">
+                  Аккаунт {fullName(teacher)} будет деактивирован: вход в систему станет невозможен, все текущие
+                  сессии отзываются. Записи на курсы и история занятий сохранятся — это действие можно отменить
+                  кнопкой «Восстановить в штат».
+                </p>
+                {fireStatus && fireStatus !== "saving" && (
+                  <p className="text-sm text-error">{fireStatus}</p>
+                )}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowFireModal(false)}
+                    className="flex-1 border border-outline-variant text-on-surface py-3 rounded-lg font-bold hover:bg-surface-container-low transition-all"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    onClick={handleFireConfirm}
+                    disabled={fireStatus === "saving"}
+                    className="flex-1 bg-error text-on-error-container py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60"
+                  >
+                    {fireStatus === "saving" ? "Увольнение…" : "Уволить"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </DashboardShell>
+  );
+}
