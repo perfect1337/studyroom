@@ -64,9 +64,10 @@ type passwordResetEvent struct {
 }
 
 type contractExpiringEvent struct {
-	UserID   int64  `json:"user_id"`
-	Contract string `json:"contract_number"`
-	EndDate  string `json:"end_date"`
+	UserID         int64  `json:"user_id"`
+    Contract       string `json:"contract_number"`
+    EndDate        string `json:"end_date"`
+    StudentID      int64  `json:"student_id"`
 }
 
 // lessonCreatedEvent — реальный payload Academic Service (см. event-schema.md,
@@ -251,13 +252,48 @@ func (s *Subscriber) upsertUserRef(evt userEvent) bool {
 }
 
 func (s *Subscriber) handleContractExpiring(msg *nats.Msg) {
-	var evt contractExpiringEvent
-	if err := json.Unmarshal(msg.Data, &evt); err != nil {
-		log.Printf("events: bad contract.expiring_soon payload: %v", err)
-		return
-	}
-	message := "Договор №" + evt.Contract + " истекает " + evt.EndDate
-	s.send(evt.UserID, "contract_expiring", message, "")
+    var evt contractExpiringEvent
+    if err := json.Unmarshal(msg.Data, &evt); err != nil {
+        log.Printf("events: bad contract.expiring_soon payload: %v", err)
+        return
+    }
+
+    // Получаем имя ученика из users_ref
+    var studentName string
+    if evt.StudentID != 0 {
+        student, err := s.usersRef.GetByID(context.Background(), evt.StudentID)
+        if err != nil {
+            log.Printf("events: contract.expiring_soon: student_id=%d not found in users_ref: %v", evt.StudentID, err)
+            studentName = "вашему ребёнку" // fallback
+        } else {
+            studentName = strings.TrimSpace(student.FirstName + " " + student.LastName)
+            if studentName == "" {
+                studentName = "вашему ребёнку"
+            }
+        }
+    } else {
+        studentName = "вашему ребёнку"
+    }
+
+    // Форматируем дату
+    endDate, err := time.Parse("2006-01-02", evt.EndDate)
+    var dateStr string
+    if err == nil {
+        months := []string{
+            "января", "февраля", "марта", "апреля", "мая", "июня",
+            "июля", "августа", "сентября", "октября", "ноября", "декабря",
+        }
+        dateStr = fmt.Sprintf("%d %s %d", endDate.Day(), months[endDate.Month()-1], endDate.Year())
+    } else {
+        dateStr = evt.EndDate // fallback
+    }
+
+    message := fmt.Sprintf(
+        "Договор по вашему ребёнку %s истекает %s. Не забудьте оплатить продление, если оно требуется.",
+        studentName, dateStr,
+    )
+
+    s.send(evt.UserID, "contract_expiring", message, "")
 }
 
 // handleLessonReminder — событие публикуется на каждого участника занятия
