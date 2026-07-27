@@ -23,6 +23,7 @@ export const NAV_ITEMS = {
     { to: "/parent", icon: "dashboard", label: "Обзор", end: true },
     { to: "/parent/children", icon: "family_restroom", label: "Дети" },
     { to: "/parent/schedule", icon: "calendar_month", label: "Расписание" },
+    { to: "/parent/contracts", icon: "description", label: "Договоры" },
     { to: "/parent/settings", icon: "settings", label: "Настройки" },
   ],
   admin: [

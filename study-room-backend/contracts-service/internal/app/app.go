@@ -83,6 +83,14 @@ func NewRouter(d *Deps) http.Handler {
 			r.Use(middleware.RequireRoles(models.RoleBranchOwner, models.RoleParent))
 			r.Get("/{id}/expiry", h.Expiry)
 		})
+
+		// /mine — parent-only: список договоров всех своих детей
+		// (полные данные, в отличие от /{id}/expiry). Регистрируется как
+		// отдельный статический путь, поэтому не конфликтует с /{id}.
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireRoles(models.RoleParent))
+			r.Get("/mine", h.ListMine)
+		})
 	})
 
 	return r

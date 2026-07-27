@@ -23,6 +23,7 @@ import ParentOverview from "./pages/parent/ParentOverview.jsx";
 import ParentChildren from "./pages/parent/ParentChildren.jsx";
 import ParentChildDetail from "./pages/parent/ParentChildDetail.jsx";
 import ParentSchedule from "./pages/parent/ParentSchedule.jsx";
+import ParentContracts from "./pages/parent/ParentContracts.jsx";
 
 import AdminOverview from "./pages/admin/AdminOverview.jsx";
 import AdminStudents from "./pages/admin/AdminStudents.jsx";
@@ -74,6 +75,7 @@ export default function App() {
           <Route path="/parent/children" element={<ProtectedRoute roles={["parent"]}><ParentChildren /></ProtectedRoute>} />
           <Route path="/parent/children/:childId" element={<ProtectedRoute roles={["parent"]}><ParentChildDetail /></ProtectedRoute>} />
           <Route path="/parent/schedule" element={<ProtectedRoute roles={["parent"]}><ParentSchedule /></ProtectedRoute>} />
+          <Route path="/parent/contracts" element={<ProtectedRoute roles={["parent"]}><ParentContracts /></ProtectedRoute>} />
           <Route path="/parent/settings" element={<ProtectedRoute roles={["parent"]}><SettingsPage role="parent" /></ProtectedRoute>} />
 
           {/* Владелец сети филиалов (role: owner) — раздел /admin */}

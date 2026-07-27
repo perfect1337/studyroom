@@ -25,6 +25,11 @@ export function fetchContractExpiry(id) {
   return contractsApi(`/${id}/expiry`);
 }
 
+// Список своих договоров (parent only — договоры всех своих детей).
+export function fetchMyContracts({ status } = {}) {
+  return contractsApi("/mine", { params: { status } });
+}
+
 // 3.4 Изменить договор
 export function updateContract(id, patch) {
   return contractsApi(`/${id}`, { method: "PATCH", body: patch });
