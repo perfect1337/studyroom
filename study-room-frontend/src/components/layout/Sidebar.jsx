@@ -121,9 +121,6 @@ function SidebarHeader({ role, user }) {
     return (
       <div className="px-2 mb-2">
         <h1 className="font-headline-sm text-headline-sm font-bold text-primary">Study Room Родитель</h1>
-        <p className="font-label-md text-label-md text-on-surface-variant">
-          Управление {user?.childrenCount} учениками
-        </p>
       </div>
     );
   }
