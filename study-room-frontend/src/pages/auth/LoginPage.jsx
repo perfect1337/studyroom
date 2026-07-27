@@ -30,7 +30,13 @@ export default function LoginPage() {
       const home = ROLE_HOME_ROUTE[user.role] ?? "/login";
       navigate(from && from !== "/login" ? from : home, { replace: true });
     } catch (err) {
-      setError(err.message || "Не удалось войти. Проверьте логин и пароль.");
+      // Обработка специфичных ошибок с бэкенда
+      const errorMessage = err.message || err.response?.data?.message || "";
+      if (errorMessage.toLowerCase().includes("invalid login or password")) {
+        setError("Неверный логин или пароль");
+      } else {
+        setError(errorMessage || "Не удалось войти. Проверьте логин и пароль.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -49,9 +55,10 @@ export default function LoginPage() {
       await forgotPassword({ email });
       setSuccessMessage("Пароль отправлен на вашу почту. Проверьте ящик.");
     } catch (err) {
-      setError(err.message || "Не удалось отправить запрос. Попробуйте позже.");
+      const errorMessage = err.message || err.response?.data?.message || "";
+      setError(errorMessage || "Не удалось отправить запрос. Попробуйте позже.");
     }
-}
+  }
 
   return (
     <div className="bg-background text-on-background min-h-screen flex flex-col font-body-md antialiased">
@@ -96,7 +103,7 @@ export default function LoginPage() {
 
             {error && (
               <div className="mb-stack-md p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md flex items-center gap-2">
-                <span className="material-symbols-outlined text-[20px]">error</span>
+                <span className="material-symbols-outlined text-[20px]"></span>
                 {error}
               </div>
             )}
@@ -136,11 +143,11 @@ export default function LoginPage() {
                     Пароль
                   </label>
                   <button
-                  type="button"
-                  onClick={handleForgotPassword}
-                  className="font-label-md text-label-md text-primary hover:text-primary-container transition-colors bg-transparent border-none cursor-pointer p-0"
+                    type="button"
+                    onClick={handleForgotPassword}
+                    className="font-label-md text-label-md text-primary hover:text-primary-container transition-colors bg-transparent border-none cursor-pointer p-0"
                   >
-                  Забыли пароль?
+                    Забыли пароль?
                   </button>
                 </div>
                 <div className="relative">
@@ -197,7 +204,6 @@ export default function LoginPage() {
                   Создать аккаунт
                 </Link>
               </p>
-            
             </div>
           </div>
         </div>

@@ -21,6 +21,7 @@ export default function NotificationBell() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [copiedId, setCopiedId] = useState(null);
   const containerRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -62,6 +63,17 @@ export default function NotificationBell() {
     }
   }
 
+  async function handleCopy(text, id, e) {
+    e.stopPropagation(); // Предотвращаем срабатывание handleItemClick
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000); // Сбрасываем состояние через 2 секунды
+    } catch (err) {
+      console.error("Не удалось скопировать текст:", err);
+    }
+  }
+
   return (
     <div className="relative" ref={containerRef}>
       <button
@@ -92,21 +104,37 @@ export default function NotificationBell() {
             {!loading &&
               !error &&
               items.map((n) => (
-                <button
+                <div
                   key={n.id}
-                  onClick={() => handleItemClick(n)}
-                  className={`w-full text-left px-4 py-3 border-b border-outline-variant last:border-0 hover:bg-surface-container transition-colors ${
+                  className={`w-full border-b border-outline-variant last:border-0 hover:bg-surface-container transition-colors ${
                     n.is_read ? "" : "bg-primary-fixed/10"
                   }`}
                 >
-                  <div className="flex items-start gap-2">
-                    {!n.is_read && <span className="mt-1.5 w-2 h-2 rounded-full bg-primary shrink-0" />}
-                    <div className="min-w-0">
-                      <p className="text-sm text-on-surface break-words">{n.message}</p>
-                      <p className="text-[11px] text-on-surface-variant mt-1">{formatTime(n.created_at)}</p>
+                  <button
+                    onClick={() => handleItemClick(n)}
+                    className="w-full text-left px-4 py-3"
+                  >
+                    <div className="flex items-start gap-2">
+                      {!n.is_read && <span className="mt-1.5 w-2 h-2 rounded-full bg-primary shrink-0" />}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-on-surface break-words select-text">{n.message}</p>
+                        <p className="text-[11px] text-on-surface-variant mt-1">{formatTime(n.created_at)}</p>
+                      </div>
                     </div>
+                  </button>
+                  <div className="px-4 pb-2 flex justify-end">
+                    <button
+                      onClick={(e) => handleCopy(n.message, n.id, e)}
+                      className="text-[11px] text-on-surface-variant hover:text-primary transition-colors flex items-center gap-1"
+                      title="Копировать текст уведомления"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">
+                        {copiedId === n.id ? "check" : "content_copy"}
+                      </span>
+                      {copiedId === n.id ? "Скопировано" : "Копировать"}
+                    </button>
                   </div>
-                </button>
+                </div>
               ))}
           </div>
         </div>
