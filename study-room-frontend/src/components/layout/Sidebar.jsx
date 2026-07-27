@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
+import { fetchCourses } from "../../api/academic.js";
 
 // Пункты меню для каждой роли. `end: true` — пункт активен только на точном совпадении пути
 // (иначе, например, "/admin" подсвечивался бы активным на "/admin/finance").
@@ -91,6 +93,56 @@ function FooterLinks({ showSwitchAccount = true }) {
   );
 }
 
+// Курсы, которые реально ведёт репетитор (через course_tutors, см. 2.1
+// api-contracts.md) — для мини-карточки профиля в сайдбаре, под аватаркой.
+function useTutorCourses(tutorId) {
+  const [courses, setCourses] = useState([]);
+
+  useEffect(() => {
+    if (!tutorId) return;
+    let cancelled = false;
+    fetchCourses({ tutor_id: tutorId })
+      .then((res) => {
+        if (!cancelled) setCourses(res?.items ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setCourses([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tutorId]);
+
+  return courses;
+}
+
+function TutorProfileCard({ user }) {
+  const courses = useTutorCourses(user?.id);
+
+  return (
+    <div className="flex items-center gap-3 bg-surface-container rounded-lg p-3">
+      <img src={user?.avatarUrl} alt={user?.name} className="w-12 h-12 rounded-full object-cover" />
+      <div className="min-w-0">
+        <div className="font-label-md text-label-md font-bold text-on-surface truncate">{user?.name}</div>
+
+        <div className="flex items-center gap-1 text-on-surface-variant mt-0.5">
+          <span className="material-symbols-outlined text-[14px]">store</span>
+          <span className="font-label-md text-[11px] truncate">{user?.branchName || "Филиал не назначен"}</span>
+        </div>
+
+        <div className="flex items-start gap-1 text-on-surface-variant mt-0.5">
+          <span className="material-symbols-outlined text-[14px] mt-[1px]">menu_book</span>
+          <span className="font-label-md text-[11px] leading-snug line-clamp-2">
+            {courses.length > 0
+              ? courses.map((c) => c.subject ?? c.title).join(", ")
+              : "Нет назначенных курсов"}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SidebarHeader({ role, user }) {
   if (role === "student") {
     return (
@@ -104,12 +156,7 @@ function SidebarHeader({ role, user }) {
     return (
       <div className="flex flex-col gap-4">
         <div className="font-headline-sm text-headline-sm text-primary font-bold px-2">Study Room</div>
-        <div className="flex items-center gap-3 bg-surface-container rounded-lg p-3">
-          <img src={user?.avatarUrl} alt={user?.name} className="w-12 h-12 rounded-full object-cover" />
-          <div>
-            <div className="font-label-md text-label-md font-bold text-on-surface">{user?.name}</div>
-          </div>
-        </div>
+        <TutorProfileCard user={user} />
         <NavLink
           to="/tutor/schedule/new"
           className="w-full bg-primary text-on-primary font-label-md text-label-md py-2 rounded-lg shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2"

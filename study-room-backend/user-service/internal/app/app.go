@@ -97,13 +97,18 @@ func NewRouter(d *Deps) http.Handler {
 			r.Patch("/users/{id}", userHandler.Update)
 			r.Get("/parents/{parentId}/children", userHandler.ListChildren)
 			r.Post("/users/{id}/reset-credentials", userHandler.ResetStudentCredentials)
+			// Список филиалов — доступен любой аутентифицированной роли (только чтение,
+			// ничего чувствительного). Раньше был owner-only, но это мешало родителю
+			// выбрать филиал при добавлении ребёнка (см. POST /users/students,
+			// req.BranchID) — из-за этого у детей никогда не проставлялся branch_id,
+			// и они не попадали в филиальные списки тьюторов/branch_owner.
+			r.Get("/branches", userHandler.ListBranches)
 
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRoles(models.RoleOwner))
 				r.Post("/users/tutors", userHandler.CreateTutor)
 				r.Post("/users/branch-owners", userHandler.CreateBranchOwner)
 				r.Patch("/users/{id}/status", userHandler.SetStatus)
-				r.Get("/branches", userHandler.ListBranches)
 				r.Post("/branches", userHandler.CreateBranch)
 				r.Delete("/branches/{id}", userHandler.DeleteBranch)
 			})

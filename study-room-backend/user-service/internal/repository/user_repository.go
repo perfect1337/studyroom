@@ -33,11 +33,13 @@ const userColumns = `id, email, phone, password_hash, role, last_name, first_nam
 const profileColumns = `users.id, users.email, users.phone, users.password_hash, users.role, users.last_name, users.first_name,
 	users.patronymic, users.avatar_url, users.branch_id, users.is_active, users.created_at, users.updated_at,
 	tutor_profiles.specialization, tutor_profiles.status,
-	student_profiles.class_info, student_profiles.school, student_profiles.avg_grade, student_profiles.attendance_pct`
+	student_profiles.class_info, student_profiles.school, student_profiles.avg_grade, student_profiles.attendance_pct,
+	branches.name`
 
 const fromProfileJoins = `FROM users
 	LEFT JOIN tutor_profiles ON tutor_profiles.user_id = users.id
-	LEFT JOIN student_profiles ON student_profiles.user_id = users.id `
+	LEFT JOIN student_profiles ON student_profiles.user_id = users.id
+	LEFT JOIN branches ON branches.id = users.branch_id `
 
 func scanUser(row pgx.Row) (*models.User, error) {
 	var u models.User
@@ -58,7 +60,7 @@ func scanUserWithProfiles(row pgx.Row) (*models.User, error) {
 	err := row.Scan(&u.ID, &u.Email, &u.Phone, &u.PasswordHash, &u.Role, &u.LastName,
 		&u.FirstName, &u.Patronymic, &u.AvatarURL, &u.BranchID, &u.IsActive,
 		&u.CreatedAt, &u.UpdatedAt, &u.Specialization, &u.TutorStatus,
-		&u.ClassInfo, &u.School, &u.AvgGrade, &u.AttendancePct)
+		&u.ClassInfo, &u.School, &u.AvgGrade, &u.AttendancePct, &u.BranchName)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound

@@ -8,6 +8,7 @@ export function toSidebarUser(user, extra = {}) {
     id: user.id,
     name: [user.last_name, user.first_name].filter(Boolean).join(" ") || user.email,
     avatarUrl: user.avatar_url,
+    branchName: user.branch_name,
     ...extra,
   };
 }

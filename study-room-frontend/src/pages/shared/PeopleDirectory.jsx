@@ -21,6 +21,7 @@ const EMPTY_CHILD_FORM = {
   last_name: "",
   first_name: "",
   patronymic: "",
+  branch_id: "",
 };
 
 function initials(person) {
@@ -87,7 +88,7 @@ export default function PeopleDirectory({ role }) {
         fetchCourses(coursesParams),
         fetchEnrollments(enrollParams).catch(() => ({ items: [] })),
         showContracts ? fetchContracts().catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
-        isOwner ? fetchBranches().catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
+        isOwner || isParent ? fetchBranches().catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
       ]);
 
       const enrollItems = enrollRes?.items ?? [];
@@ -186,13 +187,14 @@ export default function PeopleDirectory({ role }) {
 
   async function handleAddChild(e) {
     e.preventDefault();
-    if (!addForm.last_name || !addForm.first_name) return;
+    if (!addForm.last_name || !addForm.first_name || !addForm.branch_id) return;
     setAddStatus("saving");
     try {
       await createStudent({
         last_name: addForm.last_name,
         first_name: addForm.first_name,
         patronymic: addForm.patronymic || undefined,
+        branch_id: Number(addForm.branch_id),
         parent_id: user.id,
       });
       setAddStatus("done");
@@ -453,6 +455,25 @@ export default function PeopleDirectory({ role }) {
                       className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
                     />
                   </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Филиал *</label>
+                    <select
+                      required
+                      value={addForm.branch_id}
+                      onChange={(e) => setAddForm((f) => ({ ...f, branch_id: e.target.value }))}
+                      className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    >
+                      <option value="">Выберите филиал</option>
+                      {branches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-[11px] text-on-surface-variant">
+                      Ребёнок появится в списках только тех репетиторов и руководителей, которые относятся к этому филиалу.
+                    </p>
+                  </div>
                 </div>
 
                 {addStatus && addStatus !== "saving" && addStatus !== "done" && (
@@ -461,7 +482,7 @@ export default function PeopleDirectory({ role }) {
 
                 <button
                   type="submit"
-                  disabled={addStatus === "saving" || !addForm.last_name || !addForm.first_name}
+                  disabled={addStatus === "saving" || !addForm.last_name || !addForm.first_name || !addForm.branch_id}
                   className="w-full bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60"
                 >
                   {addStatus === "saving" ? "Сохранение…" : "Добавить ребёнка"}

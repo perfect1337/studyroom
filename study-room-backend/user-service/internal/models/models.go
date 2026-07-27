@@ -15,27 +15,32 @@ const (
 type TutorStatus string
 
 const (
-	TutorStatusActive     TutorStatus = "active"
-	TutorStatusVacation   TutorStatus = "vacation"
-	TutorStatusSickLeave  TutorStatus = "sick_leave"
-	TutorStatusInactive   TutorStatus = "inactive"
+	TutorStatusActive    TutorStatus = "active"
+	TutorStatusVacation  TutorStatus = "vacation"
+	TutorStatusSickLeave TutorStatus = "sick_leave"
+	TutorStatusInactive  TutorStatus = "inactive"
 )
 
 // User — соответствует таблице users. password_hash никогда не сериализуется в JSON.
 type User struct {
-	ID           int64     `json:"id"`
-	Email        string    `json:"email"`
-	Phone        *string   `json:"phone,omitempty"`
-	PasswordHash string    `json:"-"`
-	Role         Role      `json:"role"`
-	LastName     string    `json:"last_name"`
-	FirstName    string    `json:"first_name"`
-	Patronymic   *string   `json:"patronymic,omitempty"`
-	AvatarURL    *string   `json:"avatar_url,omitempty"`
-	BranchID     *int64    `json:"branch_id"`
-	IsActive     bool      `json:"is_active"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           int64   `json:"id"`
+	Email        string  `json:"email"`
+	Phone        *string `json:"phone,omitempty"`
+	PasswordHash string  `json:"-"`
+	Role         Role    `json:"role"`
+	LastName     string  `json:"last_name"`
+	FirstName    string  `json:"first_name"`
+	Patronymic   *string `json:"patronymic,omitempty"`
+	AvatarURL    *string `json:"avatar_url,omitempty"`
+	BranchID     *int64  `json:"branch_id"`
+	// BranchName — заполняется через LEFT JOIN branches в profileColumns/
+	// fromProfileJoins (см. user_repository.go). nil, если branch_id не задан.
+	// Нужен фронту, чтобы показывать филиал в профиле (сайдбар и т.п.) без
+	// отдельного похода в GET /branches, который доступен только owner.
+	BranchName *string   `json:"branch_name,omitempty"`
+	IsActive   bool      `json:"is_active"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 
 	// Заполняются только для role=tutor через LEFT JOIN tutor_profiles в List/ListAll
 	// (см. user_repository.go). Для остальных ролей всегда nil.
@@ -69,9 +74,9 @@ type StudentProfile struct {
 }
 
 type TutorProfile struct {
-	UserID           int64       `json:"user_id"`
-	Specialization   *string     `json:"specialization,omitempty"`
-	ExperienceYears  *int        `json:"experience_years,omitempty"`
-	Rating           *float64    `json:"rating,omitempty"`
-	Status           TutorStatus `json:"status"`
+	UserID          int64       `json:"user_id"`
+	Specialization  *string     `json:"specialization,omitempty"`
+	ExperienceYears *int        `json:"experience_years,omitempty"`
+	Rating          *float64    `json:"rating,omitempty"`
+	Status          TutorStatus `json:"status"`
 }
