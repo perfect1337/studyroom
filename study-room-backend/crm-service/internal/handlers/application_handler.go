@@ -96,6 +96,14 @@ type createInternalRequest struct {
 	StudentID       int64   `json:"student_id"`
 	SubjectInterest *string `json:"subject_interest"`
 	Format          *string `json:"format"`
+	// ParentName/Phone — контактные данные родителя, который оформляет заявку.
+	// Раньше для source=internal эти поля всегда были nil (считалось, что
+	// данные уже есть в User Service и дублировать их незачем). На практике
+	// менеджеру, который обрабатывает заявку в CRM, нужно видеть контакт
+	// родителя сразу в самой заявке, поэтому фронт теперь передаёт их явно
+	// (берутся из профиля залогиненного родителя, см. ParentOverview.jsx).
+	ParentName *string `json:"parent_name"`
+	Phone      *string `json:"phone"`
 }
 
 // CreateInternal — POST /applications (api-contracts.md 4.2), roles: parent
@@ -128,7 +136,17 @@ func (h *ApplicationHandler) CreateInternal(w http.ResponseWriter, r *http.Reque
 		studentName = studentPlaceholder(req.StudentID)
 	}
 
-	app, err := h.repo.CreateInternal(r.Context(), studentName, req.StudentID, req.SubjectInterest, req.Format, branchID)
+	// Если фронт не прислал parent_name, подстрахуемся именем родителя из
+	// user_refs по его собственному user_id (claims.UserID) — тот же кэш,
+	// что и для ученика, только по роли parent.
+	parentName := req.ParentName
+	if (parentName == nil || *parentName == "") && claims != nil {
+		if ref, err := h.userRefs.GetByID(r.Context(), claims.UserID); err == nil && ref.FullName != "" {
+			parentName = &ref.FullName
+		}
+	}
+
+	app, err := h.repo.CreateInternal(r.Context(), studentName, req.StudentID, req.SubjectInterest, req.Format, branchID, parentName, req.Phone)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to create application")
 		return

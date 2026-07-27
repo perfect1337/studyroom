@@ -110,6 +110,12 @@ components:
           type: string
         format:
           type: string
+        parent_name:
+          type: string
+          description: ФИО родителя, оформляющего заявку (контакт для CRM).
+        phone:
+          type: string
+          description: Телефон родителя, оформляющего заявку (контакт для CRM).
       required:
         - student_id
     UpdateStatusRequest:
