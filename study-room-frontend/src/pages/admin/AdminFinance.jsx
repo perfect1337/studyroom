@@ -59,6 +59,15 @@ function formatDate(dateStr) {
   return `${day}.${month}.${year}`;
 }
 
+// Приводит дату к формату "YYYY-MM-DD", ожидаемому <input type="date">.
+// Бэкенд отдаёт даты договора как ISO-строку со временем ("2026-06-15T00:00:00Z"),
+// поэтому без такой нормализации поле даты в форме оставалось бы пустым —
+// input не понимает значения со временем/часовым поясом.
+function toInputDate(dateStr) {
+  if (!dateStr) return "";
+  return String(dateStr).slice(0, 10);
+}
+
 export default function AdminFinance() {
   const { user } = useAuth();
 
@@ -179,7 +188,10 @@ export default function AdminFinance() {
     setEditContract(contract);
     setEditForm({
       amount: contract.amount ?? "",
-      end_date: contract.end_date ?? "",
+      // Подставляем текущую дату окончания договора (нормализуя её к YYYY-MM-DD,
+      // т.к. бэкенд отдаёт её в ISO-формате со временем) — при этом поле
+      // остаётся редактируемым, дату можно поменять перед сохранением.
+      end_date: toInputDate(contract.end_date),
       status: contract.status ?? "active",
       payment_status: contract.payment_status ?? "unpaid",
     });
@@ -195,14 +207,15 @@ export default function AdminFinance() {
   async function handleEditContract(e) {
     e.preventDefault();
     if (!editContract || !editForm) return;
-    if (editContract.start_date && editForm.end_date < editContract.start_date) {
+    const contractStartDate = toInputDate(editContract.start_date);
+    if (contractStartDate && editForm.end_date < contractStartDate) {
       setEditStatus("Дата окончания договора не может быть раньше даты начала.");
       return;
     }
     setEditStatus("saving");
     try {
       const tasks = [];
-      if (Number(editForm.amount) !== Number(editContract.amount) || editForm.end_date !== editContract.end_date) {
+      if (Number(editForm.amount) !== Number(editContract.amount) || editForm.end_date !== toInputDate(editContract.end_date)) {
         tasks.push(updateContract(editContract.id, { amount: Number(editForm.amount), end_date: editForm.end_date }));
       }
       if (editForm.status !== editContract.status) {
@@ -732,12 +745,12 @@ export default function AdminFinance() {
                     <input
                       required
                       type="date"
-                      min={editContract.start_date || undefined}
+                      min={toInputDate(editContract.start_date) || undefined}
                       value={editForm.end_date}
                       onChange={(e) => setEditForm((f) => ({ ...f, end_date: e.target.value }))}
                       className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
                     />
-                    {editContract.start_date && editForm.end_date && editForm.end_date < editContract.start_date && (
+                    {editContract.start_date && editForm.end_date && editForm.end_date < toInputDate(editContract.start_date) && (
                       <p className="text-xs text-error mt-1">Дата окончания не может быть раньше даты начала.</p>
                     )}
                   </div>
