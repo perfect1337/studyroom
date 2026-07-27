@@ -359,7 +359,9 @@ export default function AdminOverview() {
                   {selectedApplication.format && (
                     <div>
                       <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-wide mb-0.5">Формат</p>
-                      <p className="text-label-md text-on-surface">{selectedApplication.format}</p>
+                      <p className="text-label-md text-on-surface">
+                        {selectedApplication.format === "individual" ? "Индивидуально" : selectedApplication.format === "group" ? "Группа" : selectedApplication.format}
+                      </p>
                     </div>
                   )}
                   <div>

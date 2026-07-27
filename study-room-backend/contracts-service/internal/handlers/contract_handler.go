@@ -110,6 +110,39 @@ func (h *ContractHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": nonNilContracts(contracts)})
 }
 
+// ListMine — GET /contracts/mine, роль: parent.
+// Возвращает договоры всех детей текущего родителя (полные данные — сумма,
+// статус оплаты, срок), в отличие от /{id}/expiry, где отдаётся только
+// дата окончания. Список детей берётся тем же способом, что и в Expiry —
+// через userClient.Children(parentID).
+func (h *ContractHandler) ListMine(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+
+	children, err := h.userClient.Children(r.Context(), bearerToken(r), claims.UserID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "UPSTREAM_ERROR", "failed to resolve children")
+		return
+	}
+
+	contracts, err := h.repo.ListByStudentIDs(r.Context(), children)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list contracts")
+		return
+	}
+
+	if status := r.URL.Query().Get("status"); status != "" {
+		filtered := make([]*models.Contract, 0, len(contracts))
+		for _, c := range contracts {
+			if string(c.Status) == status {
+				filtered = append(filtered, c)
+			}
+		}
+		contracts = filtered
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"items": nonNilContracts(contracts)})
+}
+
 func nonNilContracts(c []*models.Contract) []*models.Contract {
 	if c == nil {
 		return []*models.Contract{}

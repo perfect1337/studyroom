@@ -34,6 +34,16 @@ export default function ParentOverview() {
   const [applyChildId, setApplyChildId] = useState("");
   const [applySubject, setApplySubject] = useState(SUBJECT_OPTIONS[0]);
   const [applyStatus, setApplyStatus] = useState("");
+  // Контакты родителя для заявки — по умолчанию берём из профиля (ФИО, телефон),
+  // но даём поправить перед отправкой (например, если удобнее указать другой номер).
+  const [applyParentName, setApplyParentName] = useState("");
+  const [applyPhone, setApplyPhone] = useState("");
+
+  useEffect(() => {
+    if (!user) return;
+    setApplyParentName((prev) => prev || fullName(user));
+    setApplyPhone((prev) => prev || user.phone || "");
+  }, [user]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -115,6 +125,8 @@ export default function ParentOverview() {
         student_id: Number(applyChildId),
         subject_interest: applySubject,
         format,
+        parent_name: applyParentName.trim() || fullName(user),
+        phone: applyPhone.trim() || undefined,
       });
       setApplyStatus("done");
     } catch (e) {
@@ -332,6 +344,26 @@ export default function ParentOverview() {
                       <option key={s}>{s}</option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <label className="block font-label-md text-label-md text-on-surface mb-2">Контакты родителя</label>
+                  <p className="text-xs text-on-surface-variant mb-2">
+                    Отправятся вместе с заявкой, чтобы менеджер мог с вами связаться.
+                  </p>
+                  <input
+                    type="text"
+                    value={applyParentName}
+                    onChange={(e) => setApplyParentName(e.target.value)}
+                    placeholder="ФИО родителя"
+                    className="w-full rounded-lg border-outline-variant bg-surface-container-lowest text-on-surface focus:ring-primary mb-2"
+                  />
+                  <input
+                    type="tel"
+                    value={applyPhone}
+                    onChange={(e) => setApplyPhone(e.target.value)}
+                    placeholder="Телефон для связи"
+                    className="w-full rounded-lg border-outline-variant bg-surface-container-lowest text-on-surface focus:ring-primary"
+                  />
                 </div>
                 <div>
                   <label className="block font-label-md text-label-md text-on-surface mb-2">Формат обучения</label>

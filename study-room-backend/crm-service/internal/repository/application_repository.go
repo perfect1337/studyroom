@@ -46,10 +46,12 @@ func (r *ApplicationRepository) CreateFromWebhook(ctx context.Context, name stri
 
 // CreateInternal — заявка из ЛК родителя ("Записаться на новый курс"),
 // см. api-contracts.md 4.2. source=internal, status=new.
-func (r *ApplicationRepository) CreateInternal(ctx context.Context, name string, studentID int64, subjectInterest, format *string, branchID *int64) (*models.Application, error) {
-	query := `INSERT INTO applications (source, status, name, subject_interest, student_id, format, branch_id)
-		VALUES ('internal', 'new', $1, $2, $3, $4, $5) RETURNING ` + applicationColumns
-	row := r.pool.QueryRow(ctx, query, name, subjectInterest, studentID, format, branchID)
+// parentName/phone — контактные данные родителя, оформившего заявку (может
+// быть nil, если фронт/кэш user_refs их не передали — см. application_handler.go).
+func (r *ApplicationRepository) CreateInternal(ctx context.Context, name string, studentID int64, subjectInterest, format *string, branchID *int64, parentName, phone *string) (*models.Application, error) {
+	query := `INSERT INTO applications (source, status, name, subject_interest, student_id, format, branch_id, parent_name, phone)
+		VALUES ('internal', 'new', $1, $2, $3, $4, $5, $6, $7) RETURNING ` + applicationColumns
+	row := r.pool.QueryRow(ctx, query, name, subjectInterest, studentID, format, branchID, parentName, phone)
 	return scanApplication(row)
 }
 

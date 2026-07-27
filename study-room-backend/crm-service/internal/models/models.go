@@ -48,8 +48,10 @@ const (
 //   - source=tilda: наполняются Name/Age/Phone/SubjectInterest/ParentName
 //     из вебхука, StudentID/Format всегда nil.
 //   - source=internal: наполняются StudentID/SubjectInterest/Format от
-//     родителя из ЛК, Age/Phone/ParentName всегда nil (уже есть в
-//     User Service, дублировать незачем — см. 2.4 microservices-plan.md).
+//     родителя из ЛК; Age всегда nil (нет смысла — возраст ученика уже есть
+//     в User Service). Phone/ParentName теперь тоже заполняются — фронт
+//     передаёт контакты родителя, оформившего заявку, чтобы менеджер видел
+//     их сразу в CRM, не уходя в User Service за каждой заявкой.
 type Application struct {
 	ID              int64             `json:"id"`
 	Source          ApplicationSource `json:"source"`

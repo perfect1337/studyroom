@@ -1,8 +1,13 @@
 import { crmApi } from "./http.js";
 
 // 4.2 Внутренняя заявка «записаться на новый курс» (parent)
-export function createInternalApplication({ student_id, subject_interest, format }) {
-  return crmApi("/applications", { method: "POST", body: { student_id, subject_interest, format } });
+// parent_name/phone — контактные данные родителя, оформляющего заявку,
+// чтобы менеджер видел их сразу в заявке в CRM, не уходя за ними в User Service.
+export function createInternalApplication({ student_id, subject_interest, format, parent_name, phone }) {
+  return crmApi("/applications", {
+    method: "POST",
+    body: { student_id, subject_interest, format, parent_name, phone },
+  });
 }
 
 // 4.3 Список заявок (owner only)

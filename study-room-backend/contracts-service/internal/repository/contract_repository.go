@@ -121,6 +121,31 @@ func (r *ContractRepository) List(ctx context.Context, f ListFilter) ([]*models.
 	return out, rows.Err()
 }
 
+// ListByStudentIDs — договоры для набора student_id (используется для
+// родителя: список договоров всех его детей, см. ContractHandler.ListMine).
+// Пустой/nil studentIDs — пустой результат, а не «все договоры».
+func (r *ContractRepository) ListByStudentIDs(ctx context.Context, studentIDs []int64) ([]*models.Contract, error) {
+	if len(studentIDs) == 0 {
+		return []*models.Contract{}, nil
+	}
+	query := `SELECT ` + contractColumns + ` FROM contracts WHERE student_id = ANY($1) ORDER BY id DESC`
+	rows, err := r.pool.Query(ctx, query, studentIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*models.Contract
+	for rows.Next() {
+		c, err := scanContract(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // UpdateFields — PATCH /contracts/{id} (api-contracts.md 3.4): end_date и/или amount.
 func (r *ContractRepository) UpdateFields(ctx context.Context, id int64, endDate *time.Time, amount *float64) (*models.Contract, error) {
 	query := `UPDATE contracts SET
