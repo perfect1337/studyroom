@@ -396,13 +396,6 @@ export default function ParentSchedule() {
                           </div>
                         </div>
 
-                        {lesson.topic && (
-                          <div>
-                            <h4 className="font-label-md font-bold text-on-surface mb-2">Тема занятия:</h4>
-                            <p className="font-body-md text-on-surface-variant italic">{lesson.topic}</p>
-                          </div>
-                        )}
-
                         {lesson.comment && (
                           <div className="pt-2">
                             <h4 className="font-label-md font-bold text-on-surface mb-2">Комментарий репетитора:</h4>

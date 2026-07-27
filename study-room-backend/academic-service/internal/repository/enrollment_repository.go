@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 
+	"studyroom/academic-service/internal/models"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"studyroom/academic-service/internal/models"
 )
 
 type EnrollmentRepository struct {
@@ -43,12 +44,43 @@ func (r *EnrollmentRepository) Create(ctx context.Context, studentID, courseID i
 // CreateFromContract — автоматическое создание по событию contract.created
 // (см. internal/events/subscriber.go и api-contracts.md 2.4, примечание).
 // startDate/endDate/tutorID опциональны — приходят из тела договора, если есть.
+//
+// Если tutorID указан, дополнительно гарантируем строку в course_tutors:
+// иначе ListForTutor (см. ниже — "мои ученики" через JOIN course_tutors)
+// не найдёт этого ученика, хотя enrollments.tutor_id уже проставлен —
+// именно так тьютор "терял" свежепривязанных по договору учеников из
+// расписания и создания занятий (в разделе ДЗ баг не проявлялся, т.к.
+// там список учеников берётся иначе — из User Service, без учёта
+// enrollments/course_tutors).
 func (r *EnrollmentRepository) CreateFromContract(
 	ctx context.Context, studentID, courseID int64, tutorID *int64, startDate, endDate *string,
 ) (*models.Enrollment, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
 	query := `INSERT INTO enrollments (student_id, course_id, tutor_id, status, progress_pct, start_date, end_date)
 		VALUES ($1,$2,$3,'active',0,$4,$5) RETURNING ` + enrollmentColumns
-	return scanEnrollment(r.pool.QueryRow(ctx, query, studentID, courseID, tutorID, startDate, endDate))
+	enrollment, err := scanEnrollment(tx.QueryRow(ctx, query, studentID, courseID, tutorID, startDate, endDate))
+	if err != nil {
+		return nil, err
+	}
+
+	if tutorID != nil {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO course_tutors (course_id, tutor_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+			courseID, *tutorID,
+		); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return enrollment, nil
 }
 
 func (r *EnrollmentRepository) GetByID(ctx context.Context, id int64) (*models.Enrollment, error) {
@@ -61,7 +93,7 @@ func (r *EnrollmentRepository) GetByID(ctx context.Context, id int64) (*models.E
 // фильтр для branch_owner (джойн по courses.branch_id), проставляется
 // сервером принудительно, а не пользователем.
 type EnrollmentFilter struct {
-	StudentID  *int64
+	StudentID *int64
 	// StudentIDs — фильтр "IN (...)", используется для parent с несколькими
 	// детьми (см. handlers.EnrollmentHandler.List). Взаимоисключим со StudentID:
 	// если задан StudentIDs, StudentID игнорируется.
