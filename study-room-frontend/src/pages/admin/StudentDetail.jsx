@@ -23,14 +23,6 @@ function initials(person) {
   return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
 }
 
-// Единая страница "карточка ученика" для всех ролей, у кого есть доступ к его данным:
-// - parent (role="parent"): свой ребёнок, /parent/children/:childId
-// - tutor (role="tutor"): ученик своего филиала, /tutor/students/:studentId
-// - owner (role="owner"): любой ученик сети, /admin/students/:studentId
-// - branch_owner (role="branch_owner"): ученик своего филиала, /branch/students/:studentId
-// Авторизация (может ли конкретная роль смотреть конкретного ученика) уже проверяется
-// на бэкенде в GET /users/{id} (см. canViewUser в user_handler.go) — фронт просто
-// показывает то, что вернул сервер, и красиво выводит 403/404 через error-блок.
 const ROLE_CONFIG = {
   parent: {
     sidebarRole: "parent",
@@ -68,8 +60,6 @@ const ROLE_CONFIG = {
 
 export default function StudentDetail({ role = "parent" }) {
   const config = ROLE_CONFIG[role] ?? ROLE_CONFIG.parent;
-  // Разные роуты используют разное имя параметра (:childId у родителя,
-  // :studentId у остальных) — подхватываем любое из них.
   const params = useParams();
   const childId = params.studentId ?? params.childId;
   const { user } = useAuth();
@@ -81,8 +71,13 @@ export default function StudentDetail({ role = "parent" }) {
   const [lessons, setLessons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedDay, setSelectedDay] = useState(null);
 
-  // Сброс данных для входа ребёнка — доступно parent (свой ребёнок) и owner.
+  // Состояние для календаря
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth());
+
   const canResetCredentials = role === "parent" || role === "owner";
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetStatus, setResetStatus] = useState("");
@@ -99,11 +94,31 @@ export default function StudentDetail({ role = "parent" }) {
     }
   }
 
-  const today = new Date();
-  const viewYear = today.getFullYear();
-  const viewMonth = today.getMonth();
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstWeekday = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7;
+  const todayDay = today.getDate();
+  const isCurrentMonth = viewYear === today.getFullYear() && viewMonth === today.getMonth();
+
+  // Переключение месяцев
+  function prevMonth() {
+    if (viewMonth === 0) {
+      setViewMonth(11);
+      setViewYear(viewYear - 1);
+    } else {
+      setViewMonth(viewMonth - 1);
+    }
+    setSelectedDay(null);
+  }
+
+  function nextMonth() {
+    if (viewMonth === 11) {
+      setViewMonth(0);
+      setViewYear(viewYear + 1);
+    } else {
+      setViewMonth(viewMonth + 1);
+    }
+    setSelectedDay(null);
+  }
 
   useEffect(() => {
     if (!childId) return;
@@ -124,10 +139,6 @@ export default function StudentDetail({ role = "parent" }) {
         ]);
         if (cancelled) return;
         setChild(childRes);
-        // Для role=tutor сервер игнорирует ?student_id= в GET /enrollments и всегда
-        // отдаёт всех "своих" учеников (см. api-contracts.md 2.5, ListForTutor) —
-        // фильтруем на фронте, иначе на карточке одного ученика показались бы
-        // прогресс/курсы всех учеников этого преподавателя разом.
         const childIdNum = Number(childId);
         setEnrollments((enrollRes?.items ?? []).filter((e) => e.student_id === childIdNum));
         setCourses(coursesRes?.items ?? []);
@@ -145,7 +156,7 @@ export default function StudentDetail({ role = "parent" }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [childId]);
+  }, [childId, viewYear, viewMonth]);
 
   const coursesById = useMemo(() => {
     const map = {};
@@ -168,9 +179,12 @@ export default function StudentDetail({ role = "parent" }) {
     : 0;
   const homeworkDone = homework.filter((h) => h.status === "viewed").length;
 
-  const todayDay = today.getDate();
+  // Занятия для выбранного дня
+  const selectedDayLessons = selectedDay ? (lessonsByDay[selectedDay] ?? []) : [];
+
+  // Ближайшие занятия (для отображения по умолчанию)
   const upcomingDaily = lessons
-    .filter((l) => l.lesson_date >= toISODate(viewYear, viewMonth, todayDay))
+    .filter((l) => l.lesson_date >= toISODate(viewYear, viewMonth, 1))
     .sort((a, b) => (a.lesson_date + a.start_time).localeCompare(b.lesson_date + b.start_time))
     .slice(0, 5);
 
@@ -330,7 +344,7 @@ export default function StudentDetail({ role = "parent" }) {
                           <td className="px-6 py-5">
                             <span className={`flex items-center gap-1.5 font-bold text-[13px] ${isViewed ? "text-green-600" : "text-orange-600"}`}>
                               <span className={`w-1.5 h-1.5 rounded-full ${isViewed ? "bg-green-600" : "bg-orange-600"}`} />
-                              {isViewed ? "Открыто" : "Не открыто"}
+                              {isViewed ? "Сделано" : "Не сделано"}
                             </span>
                           </td>
                           <td className="px-6 py-5 text-right font-bold text-on-surface-variant text-label-md">
@@ -347,9 +361,36 @@ export default function StudentDetail({ role = "parent" }) {
 
           <aside className="col-span-12 lg:col-span-4 space-y-stack-lg">
             <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 p-4">
-              <div className="flex justify-between items-center mb-2">
+              <div className="flex justify-between items-center mb-4">
+                <button
+                  onClick={prevMonth}
+                  className="p-1 hover:bg-surface-container rounded-full text-on-surface-variant"
+                >
+                  <span className="material-symbols-outlined">chevron_left</span>
+                </button>
                 <h4 className="font-bold text-on-surface">{MONTH_NAMES[viewMonth]} {viewYear}</h4>
+                <button
+                  onClick={nextMonth}
+                  className="p-1 hover:bg-surface-container rounded-full text-on-surface-variant"
+                >
+                  <span className="material-symbols-outlined">chevron_right</span>
+                </button>
               </div>
+
+              {selectedDay && (
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm text-primary font-bold">
+                    Выбрано: {selectedDay} {MONTH_NAMES[viewMonth].toLowerCase().slice(0, 3)}
+                  </span>
+                  <button
+                    onClick={() => setSelectedDay(null)}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    Сбросить
+                  </button>
+                </div>
+              )}
+
               <div className="grid grid-cols-7 gap-1 text-center text-on-surface-variant font-bold text-[11px] mb-1">
                 {WEEKDAYS.map((d) => (
                   <div key={d}>{d}</div>
@@ -362,37 +403,58 @@ export default function StudentDetail({ role = "parent" }) {
                 {Array.from({ length: daysInMonth }).map((_, i) => {
                   const day = i + 1;
                   const hasLessons = (lessonsByDay[day] ?? []).length > 0;
-                  const isToday = day === todayDay;
+                  const isToday = isCurrentMonth && day === todayDay;
+                  const isSelected = day === selectedDay;
+                  
                   return (
-                    <div
+                    <button
                       key={day}
-                      className={`text-label-md py-1 rounded-lg relative flex justify-center items-center ${
-                        isToday ? "font-bold bg-primary text-white" : "text-on-surface hover:bg-primary/10"
+                      onClick={() => setSelectedDay(isSelected ? null : day)}
+                      disabled={!hasLessons}
+                      className={`text-label-md py-1 rounded-lg relative flex justify-center items-center transition-colors ${
+                        isSelected
+                          ? "font-bold bg-primary text-white"
+                          : isToday
+                          ? "font-bold bg-primary/20 text-primary ring-2 ring-primary"
+                          : hasLessons
+                          ? "text-on-surface hover:bg-primary/10 cursor-pointer"
+                          : "text-on-surface-variant/40 cursor-default"
                       }`}
                     >
                       {day}
-                      {hasLessons && !isToday && <span className="absolute bottom-1 w-1 h-1 rounded-full bg-primary" />}
-                    </div>
+                      {hasLessons && !isToday && !isSelected && (
+                        <span className="absolute bottom-1 w-1 h-1 rounded-full bg-primary" />
+                      )}
+                    </button>
                   );
                 })}
               </div>
+
               <div className="mt-4 pt-4 border-t border-outline-variant space-y-3">
-                {upcomingDaily.length === 0 && (
-                  <p className="text-sm text-on-surface-variant">Занятий в этом месяце не запланировано.</p>
+                {/* Показываем занятия для выбранного дня или ближайшие */}
+                {(selectedDay ? selectedDayLessons : upcomingDaily).length === 0 && (
+                  <p className="text-sm text-on-surface-variant">
+                    {selectedDay ? "Занятий в этот день нет." : "Занятий в этом месяце не запланировано."}
+                  </p>
                 )}
-                {upcomingDaily.map((l) => {
+                {(selectedDay ? selectedDayLessons : upcomingDaily).map((l) => {
                   const course = coursesById[l.course_id];
+                  const lessonDay = Number(l.lesson_date.slice(8, 10));
                   return (
                     <div key={l.id} className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg flex items-center justify-center font-bold bg-primary/10 text-primary">
-                        {Number(l.lesson_date.slice(8, 10))}
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center font-bold bg-primary/10 text-primary shrink-0">
+                        {lessonDay}
                       </div>
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <p className="text-label-md font-bold leading-tight">
-                          {l.start_time} - {course?.subject ?? course?.title ?? l.topic}
+                          {l.start_time?.slice(0, 5)} - {l.end_time?.slice(0, 5)}
+                        </p>
+                        <p className="text-[13px] text-on-surface truncate">
+                          {course?.subject ?? course?.title ?? l.topic}
                         </p>
                         <p className="text-[12px] text-on-surface-variant">
                           {l.location_type === "remote" ? "Дистанционно" : "Очно"}
+                          {l.topic && <span> · {l.topic}</span>}
                         </p>
                       </div>
                     </div>
