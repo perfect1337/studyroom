@@ -2,10 +2,20 @@ import { useEffect, useState } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import ConfirmDeleteModal from "../../components/ui/ConfirmDeleteModal.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchBranches, createBranch, deleteBranch } from "../../api/users.js";
+import { fetchBranches, createBranch, deleteBranch, createBranchOwner } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+import { sanitizePhoneInput, isValidPhone } from "../../utils/phone.js";
 
 const EMPTY_FORM = { name: "", city: "", address: "", phone: "" };
+
+const EMPTY_OWNER_FORM = {
+  last_name: "",
+  first_name: "",
+  patronymic: "",
+  email: "",
+  phone: "",
+  branch_id: "",
+};
 
 /**
  * Раздел "Филиалы" — только у owner (см. /admin/*). Позволяет посмотреть все
@@ -28,6 +38,11 @@ export default function AdminBranches() {
   const [branchToDelete, setBranchToDelete] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+
+  const [showOwnerModal, setShowOwnerModal] = useState(false);
+  const [ownerForm, setOwnerForm] = useState(EMPTY_OWNER_FORM);
+  const [ownerStatus, setOwnerStatus] = useState("");
+  const [ownerSuccess, setOwnerSuccess] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -70,6 +85,39 @@ export default function AdminBranches() {
     }
   }
 
+  function openOwnerModal() {
+    setOwnerForm(EMPTY_OWNER_FORM);
+    setOwnerStatus("");
+    setOwnerSuccess(null);
+    setShowOwnerModal(true);
+  }
+
+  async function handleAddOwner(e) {
+    e.preventDefault();
+    if (!ownerForm.last_name || !ownerForm.first_name || !ownerForm.email || !ownerForm.branch_id) return;
+    if (!isValidPhone(ownerForm.phone)) {
+      setOwnerStatus("Введите телефон в формате из 10-15 цифр (можно с +)");
+      return;
+    }
+    setOwnerStatus("saving");
+    try {
+      const res = await createBranchOwner({
+        last_name: ownerForm.last_name,
+        first_name: ownerForm.first_name,
+        patronymic: ownerForm.patronymic || undefined,
+        email: ownerForm.email,
+        phone: ownerForm.phone || undefined,
+        branch_id: Number(ownerForm.branch_id),
+      });
+      setOwnerStatus("");
+      // Пароль на сервере не возвращается (уходит только на почту), поэтому
+      // подтверждаем создание нейтральным сообщением, без вывода пароля в UI.
+      setOwnerSuccess({ email: res?.user?.email || ownerForm.email });
+    } catch (err) {
+      setOwnerStatus(err.message || "Не удалось создать владельца филиала");
+    }
+  }
+
   async function handleConfirmDelete() {
     if (!branchToDelete) return;
     setDeleteBusy(true);
@@ -100,13 +148,22 @@ export default function AdminBranches() {
             <p className="font-body-md text-body-md text-on-surface-variant">Все филиалы сети</p>
           </div>
 
-          <button
-            onClick={openAddModal}
-            className="bg-primary text-on-primary px-6 py-2.5 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:brightness-110 transition-all active:scale-95 shadow-sm"
-          >
-            <span className="material-symbols-outlined">add_business</span>
-            Добавить филиал
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={openOwnerModal}
+              className="bg-surface-container-lowest border border-outline-variant text-primary px-6 py-2.5 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:bg-surface-container-low transition-all active:scale-95 shadow-sm"
+            >
+              <span className="material-symbols-outlined">person_add</span>
+              Добавить владельца филиала
+            </button>
+            <button
+              onClick={openAddModal}
+              className="bg-primary text-on-primary px-6 py-2.5 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:brightness-110 transition-all active:scale-95 shadow-sm"
+            >
+              <span className="material-symbols-outlined">add_business</span>
+              Добавить филиал
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -233,6 +290,126 @@ export default function AdminBranches() {
                 {addStatus === "saving" ? "Сохранение..." : "Создать филиал"}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка добавления владельца филиала */}
+      {showOwnerModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setShowOwnerModal(false)}>
+          <div
+            className="bg-surface-container-lowest rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-5 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center">
+              <h3 className="font-headline-sm text-headline-sm text-on-surface">Добавить владельца филиала</h3>
+              <button onClick={() => setShowOwnerModal(false)} className="p-1 hover:bg-surface-container-high rounded-full">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            {ownerSuccess ? (
+              <div className="space-y-4">
+                <div className="p-3 rounded-lg bg-primary-container text-on-primary-container font-label-md text-label-md">
+                  Владелец филиала создан. Логин ({ownerSuccess.email}) и временный пароль отправлены на указанную почту.
+                </div>
+                <button
+                  onClick={() => setShowOwnerModal(false)}
+                  className="w-full bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all"
+                >
+                  Готово
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleAddOwner} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Фамилия *</label>
+                    <input
+                      required
+                      value={ownerForm.last_name}
+                      onChange={(e) => setOwnerForm((f) => ({ ...f, last_name: e.target.value }))}
+                      className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Имя *</label>
+                    <input
+                      required
+                      value={ownerForm.first_name}
+                      onChange={(e) => setOwnerForm((f) => ({ ...f, first_name: e.target.value }))}
+                      className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Отчество</label>
+                    <input
+                      value={ownerForm.patronymic}
+                      onChange={(e) => setOwnerForm((f) => ({ ...f, patronymic: e.target.value }))}
+                      className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Email *</label>
+                    <input
+                      required
+                      type="email"
+                      value={ownerForm.email}
+                      onChange={(e) => setOwnerForm((f) => ({ ...f, email: e.target.value }))}
+                      placeholder="На эту почту придут логин и пароль"
+                      className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Телефон</label>
+                    <input
+                      value={ownerForm.phone}
+                      onChange={(e) => setOwnerForm((f) => ({ ...f, phone: sanitizePhoneInput(e.target.value) }))}
+                      placeholder="+7..."
+                      inputMode="tel"
+                      type="tel"
+                      pattern="^\+?\d{10,15}$"
+                      title="Только цифры, можно с ведущим +"
+                      className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Филиал *</label>
+                  <select
+                    required
+                    value={ownerForm.branch_id}
+                    onChange={(e) => setOwnerForm((f) => ({ ...f, branch_id: e.target.value }))}
+                    className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                  >
+                    <option value="">Выберите филиал</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name || b.city}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <p className="text-[12px] text-on-surface-variant">
+                  После создания аккаунта на указанную почту автоматически придёт письмо с логином (email) и временным паролем для входа.
+                </p>
+
+                {ownerStatus && ownerStatus !== "saving" && <p className="text-sm text-error">{ownerStatus}</p>}
+
+                <button
+                  type="submit"
+                  disabled={ownerStatus === "saving"}
+                  className="w-full bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60"
+                >
+                  {ownerStatus === "saving" ? "Создание..." : "Создать владельца филиала"}
+                </button>
+              </form>
+            )}
           </div>
         </div>
       )}

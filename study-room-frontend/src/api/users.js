@@ -36,6 +36,12 @@ export function createStudent(payload) {
   return usersApi("/users/students", { method: "POST", body: payload });
 }
 
+// Создать владельца филиала (owner). На почту уходит логин (email) и
+// временный пароль для входа — см. user-service handlers/user_handler.go:CreateBranchOwner.
+export function createBranchOwner(payload) {
+  return usersApi("/users/branch-owners", { method: "POST", body: payload });
+}
+
 // 1.16 Список филиалов (owner)
 export function fetchBranches() {
   return usersApi("/branches");

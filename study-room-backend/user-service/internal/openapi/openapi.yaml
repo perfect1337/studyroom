@@ -259,6 +259,37 @@ paths:
                 properties:
                   user:
                     $ref: '#/components/schemas/User'
+  /api/v1/users/branch-owners:
+    post:
+      summary: Create a branch owner account
+      description: >
+        Owner-only. Creates an account with role=branch_owner for the given
+        branch_id. Login (email) and a temporary password are sent to the
+        provided email via the notification service (user.created event).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBranchOwnerRequest'
+      responses:
+        '201':
+          description: Created branch owner
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+        '400':
+          description: Validation error (missing fields or unknown branch_id)
+        '403':
+          description: Forbidden — only owner can call this endpoint
+        '409':
+          description: Email or phone already registered
   /api/v1/users/students:
     post:
       summary: Create a student record
@@ -484,6 +515,26 @@ components:
       required:
         - current_password
         - new_password
+    CreateBranchOwnerRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        phone:
+          type: string
+        last_name:
+          type: string
+        first_name:
+          type: string
+        patronymic:
+          type: string
+        branch_id:
+          type: integer
+      required:
+        - email
+        - last_name
+        - first_name
+        - branch_id
     CreateTutorRequest:
       type: object
       properties:

@@ -255,6 +255,41 @@ func TestContract_1_11_CreateTutor_OwnerOnly(t *testing.T) {
 	e.mustOK(forbidden, 403)
 }
 
+func TestContract_CreateBranchOwner_OwnerOnly(t *testing.T) {
+	e := getEnv(t)
+	b := e.seedBranch("Казань", "Казань")
+	owner := e.seedUser(seedOpts{Email: "owner11b@t.l", Role: models.RoleOwner})
+	otherBranchOwner := e.seedUser(seedOpts{Email: "bo11b@t.l", Role: models.RoleBranchOwner, BranchID: &b.ID})
+
+	body := map[string]any{
+		"email": "director@example.com", "phone": "+79002220003",
+		"last_name": "Сидорова", "first_name": "Анна", "patronymic": "Игоревна",
+		"branch_id": b.ID,
+	}
+
+	ok := e.do("POST", "/api/v1/users/branch-owners", body, e.accessToken(owner))
+	e.mustOK(ok, 201)
+	created := userMap(ok.Body["user"])
+	if created["role"] != "branch_owner" {
+		t.Fatalf("user=%v", ok.Body["user"])
+	}
+	if _, has := ok.Body["temp_password"]; has {
+		t.Fatal("temp_password must not be returned in CreateBranchOwner response")
+	}
+
+	// branch_owner (даже из другого филиала) не может создавать владельцев филиалов.
+	forbidden := e.do("POST", "/api/v1/users/branch-owners", map[string]any{
+		"email": "other@example.com", "last_name": "A", "first_name": "B", "branch_id": b.ID,
+	}, e.accessToken(otherBranchOwner))
+	e.mustOK(forbidden, 403)
+
+	// branch_id, которого не существует, — валидационная ошибка.
+	badBranch := e.do("POST", "/api/v1/users/branch-owners", map[string]any{
+		"email": "noone@example.com", "last_name": "A", "first_name": "B", "branch_id": 999999,
+	}, e.accessToken(owner))
+	e.mustOK(badBranch, 400)
+}
+
 func TestContract_1_12_CreateStudent(t *testing.T) {
 	e := getEnv(t)
 	b := e.seedBranch("Саратов", "Саратов")

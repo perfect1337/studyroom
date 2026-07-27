@@ -101,6 +101,7 @@ func NewRouter(d *Deps) http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRoles(models.RoleOwner))
 				r.Post("/users/tutors", userHandler.CreateTutor)
+				r.Post("/users/branch-owners", userHandler.CreateBranchOwner)
 				r.Patch("/users/{id}/status", userHandler.SetStatus)
 				r.Get("/branches", userHandler.ListBranches)
 				r.Post("/branches", userHandler.CreateBranch)

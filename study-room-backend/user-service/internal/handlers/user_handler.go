@@ -353,6 +353,69 @@ func (h *UserHandler) CreateTutor(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"user": created})
 }
 
+// --- POST /users/branch-owners ---
+// Создание владельца филиала. Доступно только owner (см. RequireRoles в
+// app.go). Логин — реальная почта (как у tutor): на неё уходит письмо с
+// временным паролем через events.UserCreated (notification-service,
+// case "branch_owner" в handleUserCreated).
+type createBranchOwnerRequest struct {
+	Email      string  `json:"email"`
+	Phone      *string `json:"phone"`
+	LastName   string  `json:"last_name"`
+	FirstName  string  `json:"first_name"`
+	Patronymic *string `json:"patronymic"`
+	BranchID   int64   `json:"branch_id"`
+}
+
+func (h *UserHandler) CreateBranchOwner(w http.ResponseWriter, r *http.Request) {
+	var req createBranchOwnerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid body")
+		return
+	}
+	if req.Email == "" || req.LastName == "" || req.FirstName == "" || req.BranchID == 0 {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "email, last_name, first_name, branch_id required")
+		return
+	}
+
+	if existing, err := h.branches.List(r.Context(), &req.BranchID); err != nil || len(existing) == 0 {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "branch_id must be an existing branch")
+		return
+	}
+
+	tempPassword, err := auth.GenerateOpaqueToken()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "token generation failed")
+		return
+	}
+	tempPassword = tempPassword[:12]
+
+	hash, err := auth.HashPassword(tempPassword)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "hashing failed")
+		return
+	}
+
+	branchID := req.BranchID
+	u := &models.User{
+		Email: req.Email, Phone: req.Phone, PasswordHash: hash, Role: models.RoleBranchOwner,
+		LastName: req.LastName, FirstName: req.FirstName, Patronymic: req.Patronymic,
+		BranchID: &branchID, IsActive: true,
+	}
+	created, err := h.users.Create(r.Context(), u)
+	if err != nil {
+		if errors.Is(err, repository.ErrDuplicate) {
+			writeError(w, http.StatusConflict, "ALREADY_EXISTS", "email or phone already registered")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "could not create branch owner")
+		return
+	}
+
+	h.events.UserCreated(created, tempPassword, "", nil)
+	writeJSON(w, http.StatusCreated, map[string]any{"user": created})
+}
+
 // --- 1.12. POST /users/students ---
 type createStudentRequest struct {
 	LastName   string  `json:"last_name"`

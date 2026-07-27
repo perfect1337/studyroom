@@ -159,6 +159,16 @@ func (s *Subscriber) handleUserCreated(msg *nats.Msg) {
 		)
 		s.send(evt.ID, "account_credentials", message, "")
 
+	case "branch_owner":
+		if evt.TempPassword == "" {
+			return
+		}
+		message := fmt.Sprintf(
+			"Здравствуйте, %s %s!\n\nДля вас создан аккаунт владельца филиала в Study Room.\n\nЛогин: %s\nВременный пароль: %s\n\nСмените пароль после первого входа.",
+			evt.FirstName, evt.LastName, evt.Email, evt.TempPassword,
+		)
+		s.send(evt.ID, "account_credentials", message, "")
+
 	case "student":
 		if evt.TempPassword == "" || evt.NotifyEmail == "" {
 			return
