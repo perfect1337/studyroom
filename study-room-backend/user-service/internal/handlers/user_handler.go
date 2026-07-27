@@ -286,9 +286,11 @@ func canViewUser(r *http.Request, h *UserHandler, claims *auth.Claims, target *m
 		isParent, err := h.parentChild.IsParentOf(r.Context(), claims.UserID, target.ID)
 		return err == nil && isParent
 	}
-	// Пока нет enrollments: tutor видит учеников своего филиала (как в GET /users).
 	if claims.Role == models.RoleTutor && target.Role == models.RoleStudent {
 		return target.BranchID != nil && claims.BranchID != nil && *target.BranchID == *claims.BranchID
+	}
+	if claims.Role == models.RoleStudent && target.Role == models.RoleTutor{
+		return target.BranchID != nil && claims.BranchID !=nil && *target.BranchID == *claims.BranchID
 	}
 	return false
 }

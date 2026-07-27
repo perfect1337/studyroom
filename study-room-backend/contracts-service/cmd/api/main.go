@@ -21,7 +21,7 @@ import (
 // contract.expiring_soon. Значение и сам механизм периодической проверки не
 // описаны в api-contracts.md/event-schema.md — см. README.md.
 const expiringSoonWithinDays = 5
-const expiringSoonCheckInterval = 24 * time.Hours
+const expiringSoonCheckInterval = 24 * time.Hour
 
 func main() {
 	ctx := context.Background()
