@@ -182,7 +182,17 @@ export default function ParentOverview() {
                             <span className="material-symbols-outlined">chevron_right</span>
                           </Link>
                         </div>
-                        {child.class_info && <p className="text-sm text-on-surface-variant mb-2">{child.class_info}</p>}
+                        {(child.class_info || child.school) && (
+                          <p className="text-sm text-on-surface-variant mb-1">
+                            {[child.class_info, child.school].filter(Boolean).join(" · ")}
+                          </p>
+                        )}
+                        {(child.avg_grade != null || child.attendance_pct != null) && (
+                          <div className="flex flex-wrap gap-3 mb-2 text-[12px] text-on-surface-variant">
+                            {child.avg_grade != null && <span>Средний балл: <strong className="text-on-surface">{child.avg_grade.toFixed(1)}</strong></span>}
+                            {child.attendance_pct != null && <span>Посещаемость: <strong className="text-on-surface">{Math.round(child.attendance_pct)}%</strong></span>}
+                          </div>
+                        )}
                         <div className="space-y-2 mt-3">
                           {childEnrollments.length === 0 && (
                             <p className="text-sm text-on-surface-variant">Пока не записан ни на один курс</p>

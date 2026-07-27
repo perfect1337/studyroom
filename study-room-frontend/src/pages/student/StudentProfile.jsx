@@ -21,8 +21,12 @@ export default function StudentProfile() {
     ["Email", user?.email],
     ["Телефон", user?.phone || "Не указан"],
     ["Роль", "Ученик"],
+    ["Класс", user?.class_info || "Не указан"],
+    ["Школа", user?.school || "Не указана"],
     ["Статус аккаунта", user?.is_active === false ? "Деактивирован" : "Активен"],
   ];
+
+  const showAcademicStats = user?.avg_grade != null || user?.attendance_pct != null;
 
   return (
     <DashboardShell
@@ -43,6 +47,26 @@ export default function StudentProfile() {
           </div>
           <div className="text-center md:text-left flex-1">
             <h2 className="font-headline-md text-headline-md text-on-background">{fullName(user)}</h2>
+            {showAcademicStats && (
+              <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-2">
+                {user?.avg_grade != null && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg">
+                    <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>grade</span>
+                    <span className="font-label-md text-on-surface">
+                      Средний балл: <strong className="text-primary">{user.avg_grade.toFixed(1)}</strong>
+                    </span>
+                  </div>
+                )}
+                {user?.attendance_pct != null && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg">
+                    <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>event_available</span>
+                    <span className="font-label-md text-on-surface">
+                      Посещаемость: <strong className="text-primary">{Math.round(user.attendance_pct)}%</strong>
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <Link
             to="/student/settings"

@@ -2,14 +2,31 @@ import { academicApi } from "./http.js";
 import { API } from "./config.js";
 import { ACCESS_TOKEN_KEY } from "./config.js";
 
-// 2.1 Список курсов
-export function fetchCourses({ branch_id, subject } = {}) {
-  return academicApi("/courses", { params: { branch_id, subject } });
+// 2.1 Список курсов. tutor_id — доп.фильтр "курсы, которые ведёт этот
+// преподаватель" (через course_tutors, см. 2.1b). tutor может передать
+// только свой собственный id, owner/branch_owner — любой.
+export function fetchCourses({ branch_id, subject, tutor_id } = {}) {
+  return academicApi("/courses", { params: { branch_id, subject, tutor_id } });
 }
 
 // 2.2 Создать курс (owner)
 export function createCourse(payload) {
   return academicApi("/courses", { method: "POST", body: payload });
+}
+
+// 2.1a Список преподавателей курса
+export function fetchCourseTutors(courseId) {
+  return academicApi(`/courses/${courseId}/tutors`);
+}
+
+// 2.1b Назначить преподавателя на курс (owner любой филиал, branch_owner — только свой)
+export function assignCourseTutor(courseId, tutorId) {
+  return academicApi(`/courses/${courseId}/tutors`, { method: "POST", body: { tutor_id: tutorId } });
+}
+
+// 2.1b Снять преподавателя с курса
+export function removeCourseTutor(courseId, tutorId) {
+  return academicApi(`/courses/${courseId}/tutors/${tutorId}`, { method: "DELETE" });
 }
 
 // 2.5 Список записей на курсы

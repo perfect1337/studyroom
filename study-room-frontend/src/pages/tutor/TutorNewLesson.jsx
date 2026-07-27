@@ -36,7 +36,7 @@ export default function TutorNewLesson() {
       try {
         const [enrollRes, coursesRes, peopleRes] = await Promise.all([
           fetchEnrollments({ tutor_id: user.id }),
-          fetchCourses(),
+          fetchCourses({ tutor_id: user.id }),
           fetchMyPeople(),
         ]);
         if (cancelled) return;

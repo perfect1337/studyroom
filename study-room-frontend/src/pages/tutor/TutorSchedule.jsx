@@ -61,7 +61,7 @@ export default function TutorSchedule() {
 
         const [lessonsRes, coursesRes, enrollRes, peopleRes] = await Promise.all([
           fetchLessons({ tutor_id: user.id, date_from, date_to }),
-          fetchCourses(),
+          fetchCourses({ tutor_id: user.id }),
           fetchEnrollments({ tutor_id: user.id }),
           fetchMyPeople(),
         ]);

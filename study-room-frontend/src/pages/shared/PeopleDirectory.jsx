@@ -81,9 +81,10 @@ export default function PeopleDirectory({ role }) {
     setError("");
     try {
       const enrollParams = isTutor ? { tutor_id: user.id } : {};
+      const coursesParams = isTutor ? { tutor_id: user.id } : {};
       const [peopleRes, coursesRes, enrollRes, contractsRes, branchesRes] = await Promise.all([
         fetchMyPeople(),
-        fetchCourses(),
+        fetchCourses(coursesParams),
         fetchEnrollments(enrollParams).catch(() => ({ items: [] })),
         showContracts ? fetchContracts().catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
         isOwner ? fetchBranches().catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
@@ -293,25 +294,26 @@ export default function PeopleDirectory({ role }) {
           </div>
 
           <div className="bg-surface-container-lowest rounded-2xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] overflow-hidden border border-outline-variant/30 overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[680px]">
+            <table className="w-full text-left border-collapse min-w-[820px]">
               <thead>
                 <tr className="bg-surface-container-low text-on-surface-variant font-label-md">
                   <th className="px-6 py-4 font-semibold">{isParent ? "Ребёнок" : "Ученик"}</th>
                   <th className="px-6 py-4 font-semibold">Курсы</th>
                   {showContracts && <th className="px-6 py-4 font-semibold">Срок договора</th>}
                   <th className="px-6 py-4 font-semibold">Прогресс</th>
+                  <th className="px-6 py-4 font-semibold">Успеваемость</th>
                   <th className="px-6 py-4 font-semibold">Статус</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/20">
                 {loading && (
                   <tr>
-                    <td colSpan={showContracts ? 5 : 4} className="px-6 py-10 text-center text-on-surface-variant">Загрузка…</td>
+                    <td colSpan={showContracts ? 6 : 5} className="px-6 py-10 text-center text-on-surface-variant">Загрузка…</td>
                   </tr>
                 )}
                 {!loading && filteredPeople.length === 0 && (
                   <tr>
-                    <td colSpan={showContracts ? 5 : 4} className="px-6 py-8 text-center text-on-surface-variant">
+                    <td colSpan={showContracts ? 6 : 5} className="px-6 py-8 text-center text-on-surface-variant">
                       {isParent ? "У вас пока нет добавленных детей." : "Учеников не найдено"}
                     </td>
                   </tr>
@@ -337,7 +339,7 @@ export default function PeopleDirectory({ role }) {
                           <div>
                             <div className="font-bold text-on-surface">{fullName(p) || "Ученик"}</div>
                             <div className="text-[12px] text-on-surface-variant">
-                              {p.class_info || "—"}
+                              {[p.class_info, p.school].filter(Boolean).join(" · ") || "—"}
                             </div>
                           </div>
                         </div>
@@ -361,6 +363,16 @@ export default function PeopleDirectory({ role }) {
                       )}
                       <td className="px-6 py-4">
                         <span className="font-bold text-on-surface">{avg}%</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-0.5 text-[12px]">
+                          <span className="text-on-surface">
+                            {p.avg_grade != null ? `Балл: ${p.avg_grade.toFixed(1)}` : "—"}
+                          </span>
+                          <span className="text-on-surface-variant">
+                            {p.attendance_pct != null ? `Посещаемость: ${Math.round(p.attendance_pct)}%` : ""}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         {showContracts ? (

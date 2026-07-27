@@ -124,7 +124,12 @@ export default function StudentDetail({ role = "parent" }) {
         ]);
         if (cancelled) return;
         setChild(childRes);
-        setEnrollments(enrollRes?.items ?? []);
+        // Для role=tutor сервер игнорирует ?student_id= в GET /enrollments и всегда
+        // отдаёт всех "своих" учеников (см. api-contracts.md 2.5, ListForTutor) —
+        // фильтруем на фронте, иначе на карточке одного ученика показались бы
+        // прогресс/курсы всех учеников этого преподавателя разом.
+        const childIdNum = Number(childId);
+        setEnrollments((enrollRes?.items ?? []).filter((e) => e.student_id === childIdNum));
         setCourses(coursesRes?.items ?? []);
         setHomework(homeworkRes?.items ?? []);
         setLessons(lessonsRes?.items ?? []);
@@ -222,7 +227,9 @@ export default function StudentDetail({ role = "parent" }) {
               <div className="flex flex-col md:flex-row md:items-end gap-2 mb-1">
                 <h2 className="font-headline-md text-headline-md text-on-surface">{child ? fullName(child) : "—"}</h2>
               </div>
-              <p className="text-on-surface-variant font-body-md mb-4">{child?.class_info ?? "—"}</p>
+              <p className="text-on-surface-variant font-body-md mb-4">
+                {[child?.class_info, child?.school].filter(Boolean).join(" · ") || "—"}
+              </p>
               <div className="flex flex-wrap justify-center md:justify-start gap-4">
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg">
                   <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
@@ -236,6 +243,22 @@ export default function StudentDetail({ role = "parent" }) {
                     Заданий выполнено: <strong className="text-primary">{homeworkDone}/{homework.length}</strong>
                   </span>
                 </div>
+                {child?.avg_grade != null && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg">
+                    <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>grade</span>
+                    <span className="font-label-md text-on-surface">
+                      Средний балл: <strong className="text-primary">{child.avg_grade.toFixed(1)}</strong>
+                    </span>
+                  </div>
+                )}
+                {child?.attendance_pct != null && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg">
+                    <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>event_available</span>
+                    <span className="font-label-md text-on-surface">
+                      Посещаемость: <strong className="text-primary">{Math.round(child.attendance_pct)}%</strong>
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>

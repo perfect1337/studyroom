@@ -4,7 +4,7 @@ import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople, fetchBranches, setTutorStatus, setUserActive } from "../../api/users.js";
-import { fetchEnrollments, fetchCourses, fetchLessons } from "../../api/academic.js";
+import { fetchEnrollments, fetchCourses, fetchLessons, assignCourseTutor, removeCourseTutor } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
 const WEEKDAYS = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"];
@@ -85,6 +85,8 @@ export default function TeacherDetail({ role = "owner" }) {
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [showFireModal, setShowFireModal] = useState(false);
   const [fireStatus, setFireStatus] = useState("");
+  const [courseTutorBusyId, setCourseTutorBusyId] = useState(null);
+  const [courseTutorError, setCourseTutorError] = useState("");
 
   const today = new Date();
   const viewYear = today.getFullYear();
@@ -98,29 +100,74 @@ export default function TeacherDetail({ role = "owner" }) {
     try {
       const date_from = toISODate(viewYear, viewMonth, 1);
       const date_to = toISODate(viewYear, viewMonth, daysInMonth);
-      const [peopleRes, enrollRes, coursesRes, lessonsRes, branchesRes] = await Promise.all([
+      const [peopleRes, coursesRes, lessonsRes, branchesRes] = await Promise.all([
         fetchMyPeople(),
-        fetchEnrollments({ tutor_id: teacherId }),
         fetchCourses(),
         fetchLessons({ tutor_id: teacherId, date_from, date_to }),
         isOwner ? fetchBranches().catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
       ]);
 
       const foundTeacher = (peopleRes?.tutors ?? []).find((t) => String(t.id) === String(teacherId));
+      const allCourses = coursesRes?.items ?? [];
       setTeacher(foundTeacher ?? null);
       setStudents(peopleRes?.students ?? []);
-      setEnrollments(enrollRes?.items ?? []);
-      setCourses(coursesRes?.items ?? []);
+      setCourses(allCourses);
       setLessons(lessonsRes?.items ?? []);
       setBranches(branchesRes?.items ?? []);
 
       if (!foundTeacher) {
         setError("Преподаватель не найден или у вас нет доступа к его профилю.");
+        setEnrollments([]);
+        return;
       }
+
+      // "Ученики преподавателя" = записи на курсы, которые он реально ведёт
+      // (course_tutors, см. api-contracts.md 2.1b) — те же ученики, которых
+      // видит сам преподаватель на /tutor/students (2.5, ListForTutor) — плюс
+      // записи, где его вручную назначили личным тьютором (enrollments.tutor_id,
+      // см. 2.4a). Один только фильтр по enrollments.tutor_id (как было раньше)
+      // пропускал учеников, к которым преподавателя формально не прикрепляли,
+      // но курс которых он ведёт.
+      const teacherIdNum = Number(teacherId);
+      const taughtCourseIds = allCourses
+        .filter((c) => (c.tutor_ids ?? []).includes(teacherIdNum))
+        .map((c) => c.id);
+
+      const [byCourseResults, personalRes] = await Promise.all([
+        Promise.all(
+          taughtCourseIds.map((courseId) => fetchEnrollments({ course_id: courseId }).catch(() => ({ items: [] })))
+        ),
+        fetchEnrollments({ tutor_id: teacherIdNum }).catch(() => ({ items: [] })),
+      ]);
+
+      const merged = new Map();
+      byCourseResults.forEach((res) => (res?.items ?? []).forEach((e) => merged.set(e.id, e)));
+      (personalRes?.items ?? []).forEach((e) => merged.set(e.id, e));
+      setEnrollments(Array.from(merged.values()));
     } catch (e) {
       setError(e.message || "Не удалось загрузить данные преподавателя");
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Назначить/снять преподавателя с курса своего филиала (2.1b). После смены
+  // набора курсов пересчитываем и список "моих учеников" — он напрямую
+  // зависит от course_tutors.
+  async function handleToggleCourseTutor(courseId, isAssigned) {
+    setCourseTutorBusyId(courseId);
+    setCourseTutorError("");
+    try {
+      if (isAssigned) {
+        await removeCourseTutor(courseId, teacherId);
+      } else {
+        await assignCourseTutor(courseId, teacherId);
+      }
+      await load();
+    } catch (e) {
+      setCourseTutorError(e.message || "Не удалось обновить курсы преподавателя");
+    } finally {
+      setCourseTutorBusyId(null);
     }
   }
 
@@ -147,6 +194,21 @@ export default function TeacherDetail({ role = "owner" }) {
     branches.forEach((b) => (map[b.id] = b.name || b.city));
     return map;
   }, [branches]);
+
+  // Курсы филиала преподавателя — база для карточки "Курсы преподавателя"
+  // (назначение/снятие через course_tutors, см. 2.1b). Владелец сети видит
+  // список курсов всей сети, поэтому сужаем до филиала самого преподавателя.
+  const branchCourses = useMemo(() => {
+    if (!teacher) return [];
+    return courses
+      .filter((c) => String(c.branch_id) === String(teacher.branch_id))
+      .sort((a, b) => (a.title || a.subject).localeCompare(b.title || b.subject, "ru"));
+  }, [courses, teacher]);
+
+  const taughtCourseIds = useMemo(() => {
+    const teacherIdNum = Number(teacherId);
+    return new Set(courses.filter((c) => (c.tutor_ids ?? []).includes(teacherIdNum)).map((c) => c.id));
+  }, [courses, teacherId]);
 
   // Уникальные ученики, реально записанные к этому преподавателю (по enrollments).
   const myStudents = useMemo(() => {
@@ -349,19 +411,20 @@ export default function TeacherDetail({ role = "owner" }) {
                 </div>
 
                 <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 overflow-hidden overflow-x-auto">
-                  <table className="w-full text-left border-collapse min-w-[600px]">
+                  <table className="w-full text-left border-collapse min-w-[720px]">
                     <thead>
                       <tr className="bg-surface-container-low text-on-surface-variant font-label-md">
                         <th className="px-6 py-4 font-semibold">Ученик</th>
                         <th className="px-6 py-4 font-semibold">Курсы</th>
                         <th className="px-6 py-4 font-semibold">Прогресс</th>
+                        <th className="px-6 py-4 font-semibold">Успеваемость</th>
                         <th className="px-6 py-4 font-semibold">Статус</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-outline-variant/20">
                       {myStudents.length === 0 && (
                         <tr>
-                          <td colSpan={4} className="px-6 py-8 text-center text-on-surface-variant">
+                          <td colSpan={5} className="px-6 py-8 text-center text-on-surface-variant">
                             К этому преподавателю пока не записан ни один ученик
                           </td>
                         </tr>
@@ -383,7 +446,9 @@ export default function TeacherDetail({ role = "owner" }) {
                                 </div>
                                 <div>
                                   <div className="font-bold text-on-surface">{fullName(student) || "Ученик"}</div>
-                                  <div className="text-[12px] text-on-surface-variant">{student.class_info || "—"}</div>
+                                  <div className="text-[12px] text-on-surface-variant">
+                                    {[student.class_info, student.school].filter(Boolean).join(" · ") || "—"}
+                                  </div>
                                 </div>
                               </div>
                             </td>
@@ -397,6 +462,16 @@ export default function TeacherDetail({ role = "owner" }) {
                               </div>
                             </td>
                             <td className="px-6 py-4 font-bold text-on-surface">{avg}%</td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col gap-0.5 text-[12px]">
+                                <span className="text-on-surface">
+                                  {student.avg_grade != null ? `Балл: ${student.avg_grade.toFixed(1)}` : "—"}
+                                </span>
+                                <span className="text-on-surface-variant">
+                                  {student.attendance_pct != null ? `Посещаемость: ${Math.round(student.attendance_pct)}%` : ""}
+                                </span>
+                              </div>
+                            </td>
                             <td className="px-6 py-4">
                               <span className="px-2.5 py-1 rounded-full text-[11px] font-bold uppercase bg-green-100 text-green-700">
                                 {sEnrollments.some((e) => e.status === "active") ? "Активен" : "—"}
@@ -498,6 +573,60 @@ export default function TeacherDetail({ role = "owner" }) {
                               {l.location_type === "remote" ? "Дистанционно" : "Очно"}
                             </p>
                           </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>menu_book</span>
+                    <h4 className="font-bold text-on-surface">Курсы преподавателя</h4>
+                  </div>
+                  <p className="text-[12px] text-on-surface-variant mb-3">
+                    Отметьте курсы своего филиала, которые ведёт {fullName(teacher)}. Именно эта связь определяет,
+                    каких учеников он видит в разделе «Мои ученики».
+                  </p>
+
+                  {courseTutorError && (
+                    <div className="mb-3 p-2.5 rounded-lg bg-error-container text-on-error-container text-[12px] font-label-md">
+                      {courseTutorError}
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-2 max-h-80 overflow-y-auto pr-1">
+                    {branchCourses.length === 0 && (
+                      <p className="text-sm text-on-surface-variant">В филиале пока нет курсов.</p>
+                    )}
+                    {branchCourses.map((c) => {
+                      const isAssigned = taughtCourseIds.has(c.id);
+                      const busy = courseTutorBusyId === c.id;
+                      return (
+                        <div
+                          key={c.id}
+                          className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 transition-colors ${
+                            isAssigned ? "border-primary/30 bg-primary-container/10" : "border-outline-variant/40"
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <p className="text-label-md font-bold text-on-surface truncate">{c.title || c.subject}</p>
+                            <p className="text-[11px] text-on-surface-variant truncate">
+                              {c.subject} · {c.format === "group" ? "Группа" : "Индивидуально"} · {(c.tutor_ids ?? []).length} преп.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCourseTutor(c.id, isAssigned)}
+                            disabled={busy}
+                            className={`shrink-0 px-3 py-1.5 rounded-lg text-[12px] font-bold uppercase tracking-wide transition-all disabled:opacity-60 ${
+                              isAssigned
+                                ? "bg-primary text-on-primary hover:brightness-110"
+                                : "border border-outline-variant text-on-surface-variant hover:border-primary hover:text-primary"
+                            }`}
+                          >
+                            {busy ? "…" : isAssigned ? "Ведёт" : "Назначить"}
+                          </button>
                         </div>
                       );
                     })}
