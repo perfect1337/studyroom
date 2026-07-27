@@ -226,6 +226,35 @@ func (r *EnrollmentRepository) UnassignTutorEverywhere(ctx context.Context, tuto
 	return err
 }
 
+// PauseOrphanedForCourses — переводит в status='paused' все active
+// enrollments на перечисленных курсах, у которых прямо сейчас нет личного
+// tutor_id (т.е. остались "ничьими" после увольнения последнего/единственного
+// преподавателя курса — см. CourseRepository.CoursesWithNoTutors и
+// events/subscriber.go: detachTutor).
+//
+// Зачем: enrollments не удаляются при увольнении препода — это исторические
+// записи, ученик остаётся записан на курс. А ListForTutor (см. ADR там же)
+// показывает препода всех, кто записан на курсы, которые он ведёт, вообще
+// не оглядываясь на личный tutor_id. Из-за этого если такой "осиротевший"
+// курс потом отдают совсем другому, новому преподавателю, тот молча
+// наследует всех, кто на курсе остался записан, включая учеников уволенного —
+// выглядит так, будто к новому преподавателю "сам по себе" привязался чужой
+// ученик. Пауза не удаляет и не прячет запись — она остаётся видна и
+// администратору, и новому tutor'у, но явно помечена как неактивная, вместо
+// того чтобы молча выглядеть как полноценное текущее закрепление. Дальше
+// её нужно осознанно снять с паузы (UpdateProgress status='active') или
+// переназначить (AssignTutor) — тихого автоматического наследования нет.
+func (r *EnrollmentRepository) PauseOrphanedForCourses(ctx context.Context, courseIDs []int64) error {
+	if len(courseIDs) == 0 {
+		return nil
+	}
+	_, err := r.pool.Exec(ctx,
+		`UPDATE enrollments SET status = 'paused'
+		 WHERE course_id = ANY($1) AND status = 'active' AND tutor_id IS NULL`,
+		courseIDs)
+	return err
+}
+
 func (r *EnrollmentRepository) UpdateProgress(ctx context.Context, id int64, fields map[string]any) (*models.Enrollment, error) {
 	if len(fields) == 0 {
 		return r.GetByID(ctx, id)

@@ -108,12 +108,43 @@ func (s *Subscriber) upsertUserRef(ctx context.Context, ev UserEvent) {
 // этой БД. Общая часть для двух разных сценариев (см. вызовы ниже):
 // увольнение существующего репетитора и зачистка "унаследованных"
 // назначений у только что созданного.
+//
+// Дополнительно: курсы, которые после отвязки остались вообще БЕЗ
+// преподавателя, переводят свои active enrollments в paused (см.
+// EnrollmentRepository.PauseOrphanedForCourses). Это закрывает баг, из-за
+// которого следующий преподаватель, назначенный на такой курс, молча
+// "наследовал" учеников уволенного — ListForTutor отдаёт tutor'у всех, кто
+// записан на его курсы, не глядя на личный tutor_id (см. ADR в
+// EnrollmentRepository.ListForTutor), а сами enrollments при увольнении не
+// удаляются. Курсов с несколькими со-преподавателями это не касается: пока
+// на курсе остаётся хоть один действующий tutor, его active enrollments не
+// трогаем — это легитимный случай, а не "осиротевший" курс.
 func (s *Subscriber) detachTutor(ctx context.Context, tutorID int64, reason string) {
+	// Список курсов нужно снять ДО удаления из course_tutors — иначе после
+	// RemoveTutorEverywhere узнать, какие курсы вообще вёл именно этот
+	// tutor, будет уже не по чему.
+	taughtCourseIDs, err := s.courseRepo.CoursesTaughtBy(ctx, tutorID)
+	if err != nil {
+		log.Printf("[events] %s: list taught courses for tutor %d error: %v", reason, tutorID, err)
+	}
+
 	if err := s.courseRepo.RemoveTutorEverywhere(ctx, tutorID); err != nil {
 		log.Printf("[events] %s: detach tutor %d from courses error: %v", reason, tutorID, err)
 	}
 	if err := s.enrollRepo.UnassignTutorEverywhere(ctx, tutorID); err != nil {
 		log.Printf("[events] %s: detach tutor %d from enrollments error: %v", reason, tutorID, err)
+	}
+
+	if len(taughtCourseIDs) == 0 {
+		return
+	}
+	orphaned, err := s.courseRepo.CoursesWithNoTutors(ctx, taughtCourseIDs)
+	if err != nil {
+		log.Printf("[events] %s: find orphaned courses for tutor %d error: %v", reason, tutorID, err)
+		return
+	}
+	if err := s.enrollRepo.PauseOrphanedForCourses(ctx, orphaned); err != nil {
+		log.Printf("[events] %s: pause orphaned enrollments for tutor %d error: %v", reason, tutorID, err)
 	}
 }
 

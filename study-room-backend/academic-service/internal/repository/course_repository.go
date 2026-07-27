@@ -223,6 +223,61 @@ func (r *CourseRepository) RemoveTutorEverywhere(ctx context.Context, tutorID in
 	return err
 }
 
+// CoursesTaughtBy — id курсов, которые ведёт данный преподаватель (course_tutors).
+// Нужно вызывать ДО RemoveTutorEverywhere: после удаления строк из
+// course_tutors узнать, что курс вообще вёл именно этот tutor, будет уже
+// нечем — см. events/subscriber.go: detachTutor.
+func (r *CourseRepository) CoursesTaughtBy(ctx context.Context, tutorID int64) ([]int64, error) {
+	rows, err := r.pool.Query(ctx, `SELECT course_id FROM course_tutors WHERE tutor_id = $1`, tutorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// CoursesWithNoTutors — из переданного списка курсов возвращает те, у
+// которых прямо сейчас не осталось ни одного преподавателя в course_tutors.
+//
+// Нужно, чтобы отличить курс, лишившийся ОДНОГО из нескольких
+// со-преподавателей (там остаются другие действующие tutor'ы — их active
+// enrollments трогать нельзя), от курса, оставшегося вообще без препода.
+// Используется detachTutor'ом (events/subscriber.go) при увольнении —
+// см. EnrollmentRepository.PauseOrphanedForCourses.
+func (r *CourseRepository) CoursesWithNoTutors(ctx context.Context, courseIDs []int64) ([]int64, error) {
+	if len(courseIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := r.pool.Query(ctx,
+		`SELECT c.id FROM courses c
+		 WHERE c.id = ANY($1)
+		   AND NOT EXISTS (SELECT 1 FROM course_tutors ct WHERE ct.course_id = c.id)`,
+		courseIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 // ListTutorIDs — id преподавателей, ведущих курс.
 func (r *CourseRepository) ListTutorIDs(ctx context.Context, courseID int64) ([]int64, error) {
 	rows, err := r.pool.Query(ctx, `SELECT tutor_id FROM course_tutors WHERE course_id = $1 ORDER BY tutor_id`, courseID)
