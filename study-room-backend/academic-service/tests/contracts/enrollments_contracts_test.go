@@ -61,6 +61,10 @@ func TestEnrollments_AssignTutor_BranchScoping(t *testing.T) {
 	e.mustOK(res, 201)
 	enrollmentID := toPathID(res.Body["id"])
 
+	// tutor 15 должен реально вести этот курс (course_tutors) — иначе
+	// assign-tutor теперь отвечает 400 "tutor_id does not teach this course".
+	e.assignCourseTutor(courseID, 15)
+
 	// чужой филиал -> 403
 	res = e.do("PATCH", "/api/v1/academic/enrollments/"+enrollmentID+"/assign-tutor",
 		map[string]any{"tutor_id": 15}, branchOwner2)
@@ -96,7 +100,12 @@ func TestEnrollments_List_RoleScoping(t *testing.T) {
 	eStudent100 := mustCreate(100, courseA) // branch 1
 	_ = mustCreate(200, courseB)            // branch 2, student 200
 
-	// назначим тьютора 15 на запись студента 100
+	// tutor 15 реально ведёт courseA (course_tutors) — это то, что теперь
+	// определяет видимость "моих учеников", а не только личное назначение
+	// на конкретную запись.
+	e.assignCourseTutor(courseA, 15)
+
+	// назначим тьютора 15 личным репетитором на запись студента 100
 	assignRes := e.do("PATCH", "/api/v1/academic/enrollments/"+toPathID(eStudent100)+"/assign-tutor",
 		map[string]any{"tutor_id": 15}, owner)
 	e.mustOK(assignRes, 200)
@@ -166,6 +175,15 @@ func TestEnrollments_Update_TutorOwnStudentsOnly(t *testing.T) {
 	}
 
 	assignRes := e.do("PATCH", "/api/v1/academic/enrollments/"+enrollmentID+"/assign-tutor",
+		map[string]any{"tutor_id": 15}, owner)
+	if assignRes.Status != 400 {
+		t.Fatalf("assign-tutor before tutor teaches the course: status=%d want=400", assignRes.Status)
+	}
+
+	// tutor 15 теперь реально ведёт курс (course_tutors) -> assign-tutor
+	// на конкретного ученика становится возможным.
+	e.assignCourseTutor(courseID, 15)
+	assignRes = e.do("PATCH", "/api/v1/academic/enrollments/"+enrollmentID+"/assign-tutor",
 		map[string]any{"tutor_id": 15}, owner)
 	e.mustOK(assignRes, 200)
 

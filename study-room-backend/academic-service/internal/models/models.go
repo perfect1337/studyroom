@@ -36,6 +36,10 @@ const (
 )
 
 // Course — соответствует таблице courses.
+// TutorIDs — id преподавателей, которые ведут этот курс (таблица
+// course_tutors, many-to-many). Наполняется JOIN'ом в репозитории,
+// собственной колонки в courses нет. Пусто в ответах Create/Update
+// (только что созданный курс ещё ни к кому не привязан).
 type Course struct {
 	ID          int64        `json:"id"`
 	Title       string       `json:"title"`
@@ -43,7 +47,17 @@ type Course struct {
 	Format      CourseFormat `json:"format"`
 	Description *string      `json:"description,omitempty"`
 	BranchID    int64        `json:"branch_id"`
+	TutorIDs    []int64      `json:"tutor_ids"`
 	CreatedAt   time.Time    `json:"created_at"`
+}
+
+// CourseTutor — соответствует таблице course_tutors: назначение
+// преподавателя на курс (один курс — несколько преподавателей,
+// один преподаватель — несколько курсов).
+type CourseTutor struct {
+	CourseID  int64     `json:"course_id"`
+	TutorID   int64     `json:"tutor_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type EnrollmentStatus string

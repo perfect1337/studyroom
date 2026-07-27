@@ -54,6 +54,57 @@ paths:
       responses:
         '200':
           description: Course deleted
+  /courses/{id}/tutors:
+    get:
+      summary: List tutors teaching a course
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: List of tutor ids teaching the course
+    post:
+      summary: Assign a tutor to a course (course_tutors)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tutor_id:
+                  type: integer
+              required:
+                - tutor_id
+      responses:
+        '200':
+          description: Tutor assigned to course
+  /courses/{id}/tutors/{tutorId}:
+    delete:
+      summary: Remove a tutor from a course (course_tutors)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tutorId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Tutor removed from course
   /enrollments:
     get:
       summary: List enrollments

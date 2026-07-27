@@ -12,18 +12,25 @@ import (
 )
 
 type CourseHandler struct {
-	repo *repository.CourseRepository
+	repo     *repository.CourseRepository
+	userRefs *repository.UserRefRepository
 }
 
-func NewCourseHandler(repo *repository.CourseRepository) *CourseHandler {
-	return &CourseHandler{repo: repo}
+func NewCourseHandler(repo *repository.CourseRepository, userRefs *repository.UserRefRepository) *CourseHandler {
+	return &CourseHandler{repo: repo, userRefs: userRefs}
 }
 
-// List — GET /courses?branch_id=&subject= (api-contracts.md 2.1).
+// List — GET /courses?branch_id=&subject=&tutor_id= (api-contracts.md 2.1).
 // Фильтр по branch_id обязателен для всех ролей кроме owner — сервер
 // подставляет его принудительно из claims, а не доверяет query-параметру,
 // иначе branch_owner/tutor/student/parent смогли бы подсмотреть чужой филиал
 // просто поменяв ?branch_id= в адресной строке.
+//
+// tutor_id — опциональный доп.фильтр "только курсы, которые ведёт этот
+// преподаватель" (через course_tutors). Tutor может передать только
+// свой собственный id (используется для "Мои курсы" на фронте) — чужой
+// tutor_id ему запрещён, чтобы не подглядывать нагрузку других
+// преподавателей своего филиала.
 func (h *CourseHandler) List(w http.ResponseWriter, r *http.Request) {
 	claims, _ := middleware.FromContext(r.Context())
 
@@ -41,6 +48,14 @@ func (h *CourseHandler) List(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		filter.BranchID = claims.BranchID
+	}
+
+	if v, ok := parseIntQuery(r, "tutor_id"); ok && v != nil {
+		if claims.Role == models.RoleTutor && *v != claims.UserID {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor can only filter by their own tutor_id")
+			return
+		}
+		filter.TutorID = v
 	}
 
 	courses, err := h.repo.List(r.Context(), filter)
@@ -156,6 +171,134 @@ func (h *CourseHandler) Delete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to delete course")
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// ListTutors — GET /courses/{id}/tutors. Любая аутентифицированная роль
+// (как и GET /courses) — список id преподавателей курса сам по себе не
+// секрет внутри системы.
+func (h *CourseHandler) ListTutors(w http.ResponseWriter, r *http.Request) {
+	id, err := parseIntPath(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid course id")
+		return
+	}
+	tutorIDs, err := h.repo.ListTutorIDs(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list course tutors")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tutor_ids": tutorIDs})
+}
+
+type assignCourseTutorRequest struct {
+	TutorID int64 `json:"tutor_id"`
+}
+
+// AssignTutor — POST /courses/{id}/tutors, owner (любой филиал) или
+// branch_owner (только курсы своего филиала, и только преподавателей
+// своего же филиала — иначе получится "ведёт курс в чужом филиале",
+// что ломает саму идею "ученики = мой филиал + мой курс").
+func (h *CourseHandler) AssignTutor(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+	id, err := parseIntPath(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid course id")
+		return
+	}
+
+	var req assignCourseTutorRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
+		return
+	}
+	if req.TutorID == 0 {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "tutor_id is required")
+		return
+	}
+
+	course, err := h.repo.GetByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "course not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course")
+		return
+	}
+
+	if claims.Role == models.RoleBranchOwner {
+		if claims.BranchID == nil || *claims.BranchID != course.BranchID {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "course belongs to a different branch")
+			return
+		}
+		tutorBranch, err := h.userRefs.BranchOf(r.Context(), req.TutorID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check tutor branch")
+			return
+		}
+		if tutorBranch == nil || *tutorBranch != course.BranchID {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor must belong to the course's branch")
+			return
+		}
+	}
+
+	if err := h.repo.AssignTutor(r.Context(), id, req.TutorID); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "course not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to assign tutor")
+		return
+	}
+
+	updated, err := h.repo.GetByID(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course")
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+// RemoveTutor — DELETE /courses/{id}/tutors/{tutorId}. Те же права, что и
+// на AssignTutor.
+func (h *CourseHandler) RemoveTutor(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+	id, err := parseIntPath(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid course id")
+		return
+	}
+	tutorID, err := parseIntPath(chi.URLParam(r, "tutorId"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid tutor id")
+		return
+	}
+
+	if claims.Role == models.RoleBranchOwner {
+		course, err := h.repo.GetByID(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "NOT_FOUND", "course not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course")
+			return
+		}
+		if claims.BranchID == nil || *claims.BranchID != course.BranchID {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "course belongs to a different branch")
+			return
+		}
+	}
+
+	if err := h.repo.RemoveTutor(r.Context(), id, tutorID); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "course/tutor assignment not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to remove tutor")
 		return
 	}
 	w.WriteHeader(http.StatusOK)

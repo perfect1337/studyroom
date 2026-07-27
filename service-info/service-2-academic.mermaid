@@ -17,6 +17,7 @@
 erDiagram
     USER_REFS ||--o{ ENROLLMENTS : "ученик/репетитор (кэш)"
     COURSES ||--o{ ENROLLMENTS : "записи на курс"
+    COURSES ||--o{ COURSE_TUTORS : "кто ведёт курс"
     COURSES ||--o{ LESSONS : "занятия курса"
     LESSONS ||--o{ LESSON_PARTICIPANTS : "участники занятия"
     LESSONS ||--o{ ATTENDANCE : "посещаемость"
@@ -37,6 +38,12 @@ erDiagram
         enum format "individual|group"
         string description
         int branch_id "ссылка на BRANCHES из User Service"
+    }
+
+    COURSE_TUTORS {
+        int course_id PK, FK
+        int tutor_id PK "ссылка на USER_REFS, many-to-many с COURSES"
+        datetime created_at
     }
 
     ENROLLMENTS {

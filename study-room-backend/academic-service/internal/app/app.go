@@ -53,7 +53,7 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, userServiceURL string, p
 // NewRouter собирает HTTP-роутер academic-service (общий для main и тестов).
 // Публичный префикс — /api/v1/academic (см. api-contracts.md, раздел 2).
 func NewRouter(d *Deps) http.Handler {
-	courseHandler := handlers.NewCourseHandler(d.Courses)
+	courseHandler := handlers.NewCourseHandler(d.Courses, d.UserRefs)
 	enrollHandler := handlers.NewEnrollmentHandler(d.Enrollments, d.UserClient)
 	lessonHandler := handlers.NewLessonHandler(d.Lessons, d.Enrollments, d.Attendance, d.UserRefs, d.UserClient, d.Events)
 	homeworkHandler := handlers.NewHomeworkHandler(d.Homework, d.UserRefs, d.UserClient)
@@ -74,6 +74,11 @@ func NewRouter(d *Deps) http.Handler {
 			// хендлером принудительно сужается до своей области видимости
 			// (см. handlers/*.go), поэтому RequireRoles тут не нужен.
 			r.Get("/courses", courseHandler.List)
+			// 2.1a — список преподавателей курса, нужен фронту и для "мои
+			// курсы", и для карточки курса у owner/branch_owner. Публичный
+			// в рамках сервиса (RequireAuth уже применена выше) — сам факт
+			// "кто ведёт курс" не более чувствителен, чем список курсов.
+			r.Get("/courses/{id}/tutors", courseHandler.ListTutors)
 			r.Get("/enrollments", enrollHandler.List)
 			r.Get("/lessons", lessonHandler.List)
 			// 2.11 — доступна ещё parent/student при условии участия,
@@ -92,6 +97,12 @@ func NewRouter(d *Deps) http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRoles(models.RoleOwner, models.RoleBranchOwner))
 				r.Patch("/enrollments/{id}/assign-tutor", enrollHandler.AssignTutor)
+				// 2.1b — назначить/снять преподавателя с курса (course_tutors).
+				// branch_owner ограничен своим филиалом — проверяется внутри
+				// хендлера (и курс, и сам преподаватель должны быть из его
+				// филиала).
+				r.Post("/courses/{id}/tutors", courseHandler.AssignTutor)
+				r.Delete("/courses/{id}/tutors/{tutorId}", courseHandler.RemoveTutor)
 			})
 
 			r.Group(func(r chi.Router) {

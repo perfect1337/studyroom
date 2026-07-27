@@ -366,3 +366,15 @@ func toPathID(v any) string {
 		return fmt.Sprintf("%v", v)
 	}
 }
+
+// assignCourseTutor — назначает преподавателя ведущим курс через
+// POST /courses/{id}/tutors от имени owner (в обход branch-проверок,
+// нужных только у branch_owner) — общий фикстур-хелпер для тестов,
+// которым нужен курс с уже привязанным tutor_id (course_tutors).
+func (e *env) assignCourseTutor(courseID, tutorID int64) {
+	e.t.Helper()
+	owner := e.accessToken(999998, models.RoleOwner, nil)
+	res := e.do("POST", "/api/v1/academic/courses/"+strconv.FormatInt(courseID, 10)+"/tutors",
+		map[string]any{"tutor_id": tutorID}, owner)
+	e.mustOK(res, 200)
+}

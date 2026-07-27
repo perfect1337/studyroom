@@ -120,6 +120,63 @@ func (r *EnrollmentRepository) List(ctx context.Context, f EnrollmentFilter) ([]
 	return out, rows.Err()
 }
 
+// ListForTutor — "мои ученики" преподавателя: enrollments на курсы, которые
+// он реально ведёт (course_tutors), а не на все enrollments, где кто-то
+// когда-то вручную проставил ему enrollments.tutor_id. branchID передаётся
+// сервером принудительно (филиал самого tutor'а) — дополнительная защита
+// на случай, если преподавателя ошибочно назначили на курс чужого филиала.
+func (r *EnrollmentRepository) ListForTutor(ctx context.Context, tutorID int64, branchID *int64, courseID *int64) ([]*models.Enrollment, error) {
+	query := `SELECT e.id, e.student_id, e.course_id, e.tutor_id, e.progress_pct, e.status,
+		e.start_date, e.end_date, e.created_at
+		FROM enrollments e
+		JOIN courses c ON c.id = e.course_id
+		JOIN course_tutors ct ON ct.course_id = c.id AND ct.tutor_id = $1
+		WHERE 1=1`
+	args := []any{tutorID}
+	i := 2
+	if branchID != nil {
+		query += " AND c.branch_id = $" + itoa(i)
+		args = append(args, *branchID)
+		i++
+	}
+	if courseID != nil {
+		query += " AND e.course_id = $" + itoa(i)
+		args = append(args, *courseID)
+		i++
+	}
+	query += " ORDER BY e.id"
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*models.Enrollment
+	for rows.Next() {
+		e, err := scanEnrollment(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// CourseTaughtBy — ведёт ли tutor курс, к которому относится enrollment.
+// Используется в правах на PATCH /enrollments/{id}: раньше tutor мог
+// менять только ту запись, где enrollments.tutor_id указывал прямо на
+// него; теперь этого достаточно, но ЕЩЁ разрешено, если он вообще ведёт
+// этот курс (назначен через course_tutors), даже если конкретно на этого
+// ученика его вручную не проставляли.
+func (r *EnrollmentRepository) CourseTaughtBy(ctx context.Context, courseID, tutorID int64) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM course_tutors WHERE course_id = $1 AND tutor_id = $2)`,
+		courseID, tutorID).Scan(&exists)
+	return exists, err
+}
+
 func (r *EnrollmentRepository) AssignTutor(ctx context.Context, id, tutorID int64) (*models.Enrollment, error) {
 	query := `UPDATE enrollments SET tutor_id = $1 WHERE id = $2 RETURNING ` + enrollmentColumns
 	return scanEnrollment(r.pool.QueryRow(ctx, query, tutorID, id))

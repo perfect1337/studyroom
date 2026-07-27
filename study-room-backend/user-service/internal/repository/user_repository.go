@@ -23,13 +23,21 @@ func NewUserRepository(pool *pgxpool.Pool) *UserRepository {
 const userColumns = `id, email, phone, password_hash, role, last_name, first_name,
 	patronymic, avatar_url, branch_id, is_active, created_at, updated_at`
 
-// listColumns — то же самое + профиль репетитора (nil для всех остальных ролей,
-// т.к. LEFT JOIN). Нужен, чтобы List/ListAll возвращали specialization/tutor_status:
-// раньше их вообще не было в ответе GET /users, из-за чего в UI статус преподавателя
-// после обновления страницы "откатывался" на дефолтный, хотя в БД менялся корректно.
-const listColumns = `users.id, users.email, users.phone, users.password_hash, users.role, users.last_name, users.first_name,
+// profileColumns — то же самое + профиль репетитора и профиль ученика (nil для
+// ролей, к которым не относятся — LEFT JOIN). Нужен, чтобы List/ListAll/GetByID
+// возвращали specialization/tutor_status для tutor и class_info/school/avg_grade/
+// attendance_pct для student: раньше их вообще не было в ответе GET /users(/{id}),
+// из-за чего в UI статус преподавателя после обновления страницы "откатывался" на
+// дефолтный, а карточка ученика никогда не показывала класс/школу, хотя в БД
+// данные были записаны корректно.
+const profileColumns = `users.id, users.email, users.phone, users.password_hash, users.role, users.last_name, users.first_name,
 	users.patronymic, users.avatar_url, users.branch_id, users.is_active, users.created_at, users.updated_at,
-	tutor_profiles.specialization, tutor_profiles.status`
+	tutor_profiles.specialization, tutor_profiles.status,
+	student_profiles.class_info, student_profiles.school, student_profiles.avg_grade, student_profiles.attendance_pct`
+
+const fromProfileJoins = `FROM users
+	LEFT JOIN tutor_profiles ON tutor_profiles.user_id = users.id
+	LEFT JOIN student_profiles ON student_profiles.user_id = users.id `
 
 func scanUser(row pgx.Row) (*models.User, error) {
 	var u models.User
@@ -45,11 +53,12 @@ func scanUser(row pgx.Row) (*models.User, error) {
 	return &u, nil
 }
 
-func scanUserWithTutorProfile(row pgx.Row) (*models.User, error) {
+func scanUserWithProfiles(row pgx.Row) (*models.User, error) {
 	var u models.User
 	err := row.Scan(&u.ID, &u.Email, &u.Phone, &u.PasswordHash, &u.Role, &u.LastName,
 		&u.FirstName, &u.Patronymic, &u.AvatarURL, &u.BranchID, &u.IsActive,
-		&u.CreatedAt, &u.UpdatedAt, &u.Specialization, &u.TutorStatus)
+		&u.CreatedAt, &u.UpdatedAt, &u.Specialization, &u.TutorStatus,
+		&u.ClassInfo, &u.School, &u.AvgGrade, &u.AttendancePct)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -79,8 +88,8 @@ func (r *UserRepository) Create(ctx context.Context, u *models.User) (*models.Us
 }
 
 func (r *UserRepository) GetByID(ctx context.Context, id int64) (*models.User, error) {
-	query := `SELECT ` + userColumns + ` FROM users WHERE id = $1`
-	return scanUser(r.pool.QueryRow(ctx, query, id))
+	query := "SELECT " + profileColumns + " " + fromProfileJoins + "WHERE users.id = $1"
+	return scanUserWithProfiles(r.pool.QueryRow(ctx, query, id))
 }
 
 func (r *UserRepository) GetByLogin(ctx context.Context, login string) (*models.User, error) {
@@ -221,16 +230,14 @@ func (r *UserRepository) List(ctx context.Context, f ListFilter) ([]*models.User
 		i++
 	}
 
-	const fromJoin = "FROM users LEFT JOIN tutor_profiles ON tutor_profiles.user_id = users.id "
-
 	var total int
-	countQuery := "SELECT count(*) " + fromJoin + where
+	countQuery := "SELECT count(*) " + fromProfileJoins + where
 	if err := r.pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
 	args = append(args, f.PerPage, (f.Page-1)*f.PerPage)
-	query := "SELECT " + listColumns + " " + fromJoin + where +
+	query := "SELECT " + profileColumns + " " + fromProfileJoins + where +
 		" ORDER BY users.id LIMIT $" + itoa(i) + " OFFSET $" + itoa(i+1)
 
 	rows, err := r.pool.Query(ctx, query, args...)
@@ -241,7 +248,7 @@ func (r *UserRepository) List(ctx context.Context, f ListFilter) ([]*models.User
 
 	var users []*models.User
 	for rows.Next() {
-		u, err := scanUserWithTutorProfile(rows)
+		u, err := scanUserWithProfiles(rows)
 		if err != nil {
 			return nil, 0, err
 		}

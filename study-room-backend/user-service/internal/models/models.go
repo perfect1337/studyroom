@@ -41,6 +41,14 @@ type User struct {
 	// (см. user_repository.go). Для остальных ролей всегда nil.
 	Specialization *string      `json:"specialization,omitempty"`
 	TutorStatus    *TutorStatus `json:"tutor_status,omitempty"`
+
+	// Заполняются только для role=student через LEFT JOIN student_profiles
+	// в List/ListAll/GetByID (см. user_repository.go, scanUserWithProfiles).
+	// Для остальных ролей всегда nil.
+	ClassInfo     *string  `json:"class_info,omitempty"`
+	School        *string  `json:"school,omitempty"`
+	AvgGrade      *float64 `json:"avg_grade,omitempty"`
+	AttendancePct *float64 `json:"attendance_pct,omitempty"`
 }
 
 type Branch struct {

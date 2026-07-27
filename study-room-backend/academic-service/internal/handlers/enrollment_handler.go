@@ -79,6 +79,29 @@ func (h *EnrollmentHandler) AssignTutor(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	existing, err := h.repo.GetByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "enrollment not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load enrollment")
+		return
+	}
+	// Личным тьютором ученика на курсе можно назначить только того, кто
+	// вообще ведёт этот курс (course_tutors) — иначе легко получить
+	// рассинхрон: enrollments.tutor_id указывает на человека, который
+	// в этом курсе формально не преподаёт.
+	teachesCourse, err := h.repo.CourseTaughtBy(r.Context(), existing.CourseID, req.TutorID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check course access")
+		return
+	}
+	if !teachesCourse {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "tutor_id does not teach this course")
+		return
+	}
+
 	enrollment, err := h.repo.AssignTutor(r.Context(), id, req.TutorID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -151,11 +174,25 @@ func (h *EnrollmentHandler) List(w http.ResponseWriter, r *http.Request) {
 			filter.CourseID = v
 		}
 	case models.RoleTutor:
-		tutorID := claims.UserID
-		filter.TutorID = &tutorID
-		if v, ok := parseIntQuery(r, "course_id"); ok {
-			filter.CourseID = v
+		// "Мои ученики" — ученики его филиала, записанные на курс(ы),
+		// которые он реально ведёт (course_tutors), а не только те, кому
+		// его вручную проставили в enrollments.tutor_id (см. ADR в
+		// repository.EnrollmentRepository.ListForTutor).
+		if claims.BranchID == nil {
+			writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
+			return
 		}
+		var courseID *int64
+		if v, ok := parseIntQuery(r, "course_id"); ok {
+			courseID = v
+		}
+		enrollments, err := h.repo.ListForTutor(r.Context(), claims.UserID, claims.BranchID, courseID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list enrollments")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"items": nonNilEnrollments(enrollments)})
+		return
 	case models.RoleStudent:
 		studentID := claims.UserID
 		filter.StudentID = &studentID
@@ -231,9 +268,17 @@ func (h *EnrollmentHandler) Update(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case models.RoleTutor:
-		if enrollment.TutorID == nil || *enrollment.TutorID != claims.UserID {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "not your student")
-			return
+		isAssigned := enrollment.TutorID != nil && *enrollment.TutorID == claims.UserID
+		if !isAssigned {
+			teachesCourse, err := h.repo.CourseTaughtBy(r.Context(), enrollment.CourseID, claims.UserID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check course access")
+				return
+			}
+			if !teachesCourse {
+				writeError(w, http.StatusForbidden, "FORBIDDEN", "not your student")
+				return
+			}
 		}
 	default:
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "role not permitted")
