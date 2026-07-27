@@ -7,9 +7,9 @@ import { fetchUserById } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
 const STATUS_LABEL = {
-  active: "Активен",
-  completed: "Завершён",
-  paused: "На паузе",
+  "active": "Активен",
+  "completed": "Завершён",
+  "paused": "На паузе",
 };
 
 /**
@@ -40,7 +40,12 @@ export default function StudentCourses() {
         ]);
         if (cancelled) return;
 
-        const enrollItems = enrollRes?.items ?? [];
+        const enrollItems = (enrollRes?.items ?? []).map(item => ({
+          ...item,
+          // Заменяем статус на русский сразу при получении
+          status: STATUS_LABEL[item.status] || item.status
+        }));
+        
         setEnrollments(enrollItems);
 
         const cMap = {};
@@ -70,7 +75,11 @@ export default function StudentCourses() {
   }, [user?.id]);
 
   const filtered = useMemo(
-    () => (statusFilter === "all" ? enrollments : enrollments.filter((e) => e.status === statusFilter)),
+    () => {
+      if (statusFilter === "all") return enrollments;
+      // Фильтруем по русскому статусу
+      return enrollments.filter((e) => e.status === statusFilter);
+    },
     [enrollments, statusFilter]
   );
 
@@ -88,9 +97,9 @@ export default function StudentCourses() {
           <div className="flex gap-2">
             {[
               ["all", "Все"],
-              ["active", "Активные"],
-              ["paused", "На паузе"],
-              ["completed", "Завершённые"],
+              ["Активен", "Активные"],
+              ["На паузе", "На паузе"],
+              ["Завершён", "Завершённые"],
             ].map(([value, label]) => (
               <button
                 key={value}
@@ -153,7 +162,9 @@ export default function StudentCourses() {
                       <span className="text-on-surface-variant">
                         Преп: {tutor ? fullName(tutor) : "не назначен"}
                       </span>
-                      <span className="font-bold text-primary">{STATUS_LABEL[e.status] ?? e.status}</span>
+                      <span className="font-bold text-primary">
+                        {e.status}
+                      </span>
                     </div>
                   </div>
                 </div>

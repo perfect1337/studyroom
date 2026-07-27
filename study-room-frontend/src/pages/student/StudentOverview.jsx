@@ -258,7 +258,7 @@ export default function StudentOverview() {
                             {hw.link_url}
                           </h5>
                           <span className="text-xs font-medium flex items-center gap-1 text-on-surface-variant">
-                            {isViewed ? "Открыто" : "Ожидает открытия"}
+                            {isViewed ? "Сделано" : "Не сделано"}
                           </span>
                         </div>
                       </li>

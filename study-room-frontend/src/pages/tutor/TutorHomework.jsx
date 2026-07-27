@@ -6,8 +6,8 @@ import { fetchMyPeople } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
 const STATUS_LABEL = {
-  assigned: "Ожидает открытия",
-  viewed: "Открыто учеником",
+  assigned: "Не сделано учеником",
+  viewed: "Сделано учеником",
 };
 
 /**
