@@ -20,8 +20,8 @@ import (
 // expiringSoonWithinDays — за сколько дней до окончания договора публиковать
 // contract.expiring_soon. Значение и сам механизм периодической проверки не
 // описаны в api-contracts.md/event-schema.md — см. README.md.
-const expiringSoonWithinDays = 14
-const expiringSoonCheckInterval = 24 * time.Hour
+const expiringSoonWithinDays = 5
+const expiringSoonCheckInterval = 24 * time.Hours
 
 func main() {
 	ctx := context.Background()
@@ -125,7 +125,7 @@ func checkExpiringSoon(ctx context.Context, deps *app.Deps) {
 		return
 	}
 	for _, c := range contracts {
-		deps.Events.ContractExpiringSoon(c.ParentID, c.ContractNumber, c.EndDate.Format("2006-01-02"))
+		deps.Events.ContractExpiringSoon(c.ParentID, c.StudentID, c.ContractNumber, c.EndDate.Format("2006-01-02"))
 		if err := deps.Contracts.MarkExpiryNotified(ctx, c.ID); err != nil {
 			log.Printf("[expiring-soon-job] mark notified contract=%d error: %v", c.ID, err)
 		}

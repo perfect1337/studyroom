@@ -175,7 +175,7 @@ func (r *ContractRepository) ListExpiringSoon(ctx context.Context, withinDays in
 	query := `SELECT ` + contractColumns + ` FROM contracts
 		WHERE status = 'active'
 		AND expiry_notified_at IS NULL
-		AND end_date <= (CURRENT_DATE + ($1 || ' days')::interval)
+		AND end_date <= CURRENT_DATE + ($1 * INTERVAL '1 day')
 		ORDER BY end_date ASC`
 	rows, err := r.pool.Query(ctx, query, withinDays)
 	if err != nil {
