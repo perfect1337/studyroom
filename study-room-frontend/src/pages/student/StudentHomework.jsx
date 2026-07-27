@@ -4,7 +4,8 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchHomework, markHomeworkOpened } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
-const FILTERS = ["Все", "Не открыто", "Открыто"];
+const FILTERS = ["Все", "Сделано ", "Не сделано"];
+
 
 function formatDate(iso) {
   if (!iso) return "—";
@@ -36,7 +37,7 @@ export default function StudentHomework() {
 
   const items = homework.filter((hw) => {
     if (filter === "Все") return true;
-    if (filter === "Не открыто") return hw.status !== "viewed";
+    if (filter === "Не сделано") return hw.status !== "viewed";
     return hw.status === "viewed";
   });
 
@@ -122,7 +123,7 @@ export default function StudentHomework() {
                       <td className="px-6 py-5">
                         <span className={`flex items-center gap-1.5 font-bold text-[13px] ${isViewed ? "text-primary" : "text-secondary"}`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${isViewed ? "bg-primary" : "bg-secondary"}`} />
-                          {isViewed ? `Открыто ${formatDate(hw.viewed_at)}` : "Не открыто"}
+                          {isViewed ? `Сделано ${formatDate(hw.viewed_at)}` : "Не сделано"}
                         </span>
                       </td>
                       <td className="px-6 py-5 text-on-surface-variant font-body-md">{formatDate(hw.created_at)}</td>
