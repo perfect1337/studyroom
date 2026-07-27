@@ -16,7 +16,7 @@ const MONTH_NAMES = [
 // lesson_handler.go — там это обязательное поле), но в этом UI блок
 // "время окончания" убран по просьбе продукта, поэтому длительность
 // занятия считаем сами: старт + фиксированная длительность.
-const DEFAULT_DURATION_MINUTES = 60;
+const DEFAULT_DURATION_MINUTES = 105;
 
 function pad(n) {
   return String(n).padStart(2, "0");
@@ -226,7 +226,10 @@ export default function TutorNewLesson() {
     }
 
     const course = coursesById[selectedCourseId];
-    const topic = course?.title ?? course?.subject ?? "Занятие";
+    // Темы у занятия больше нет — бэк всё ещё требует непустой topic,
+    // поэтому туда передаётся название курса, но никакого отдельного
+    // поля/ввода темы в UI нет и пользователь его не задаёт.
+    const topic = course?.title ?? course?.subject ?? "";
     const endTime = addMinutes(form.startTime, DEFAULT_DURATION_MINUTES);
 
     setSubmitting(true);
@@ -462,7 +465,7 @@ export default function TutorNewLesson() {
                   className="w-full px-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                 />
                 <p className="font-body-md text-[12px] text-on-surface-variant">
-                  Занятие будет создано {selectedDates.length > 1 ? "на все выбранные даты" : "на выбранную дату"}, длительность — {DEFAULT_DURATION_MINUTES} мин.
+                  Занятие будет создано {selectedDates.length > 1 ? "на все выбранные даты" : "на выбранную дату"}, длительность — {DEFAULT_DURATION_MINUTES} мин (1 ч 45 мин) с момента начала.
                 </p>
               </div>
             </div>

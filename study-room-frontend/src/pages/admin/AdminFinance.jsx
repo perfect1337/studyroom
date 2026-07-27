@@ -5,7 +5,7 @@ import Pagination from "../../components/ui/Pagination.jsx";
 import { usePagination } from "../../utils/usePagination.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchContracts, createContract, updateContract, setContractStatus, setContractPaymentStatus } from "../../api/contracts.js";
-import { fetchMyPeople, fetchBranches } from "../../api/users.js";
+import { fetchMyPeople, fetchBranches, fetchParentChildren, createStudent } from "../../api/users.js";
 import { fetchCourses } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
@@ -23,14 +23,25 @@ const CONTRACT_STATUS_LABEL = {
 const CONTRACTS_PAGE_SIZE = 8;
 const UNPAID_PAGE_SIZE = 5;
 
+// Спец-значение в выпадающем списке детей родителя: ребёнка ещё нет в
+// системе, и его личный кабинет нужно создать прямо здесь, при оформлении
+// договора.
+const NO_STUDENT_OPTION = "__new_student__";
+
 const EMPTY_CONTRACT_FORM = {
-  student_id: "",
   parent_id: "",
+  student_id: "",
   course_id: "",
   branch_id: "",
   amount: "",
   start_date: "",
   end_date: "",
+  // Поля для создания нового ученика, если его ещё нет в списке детей родителя.
+  new_student_last_name: "",
+  new_student_first_name: "",
+  new_student_patronymic: "",
+  new_student_school: "",
+  new_student_class_info: "",
 };
 
 function formatMoney(n) {
@@ -52,6 +63,9 @@ export default function AdminFinance() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState(EMPTY_CONTRACT_FORM);
   const [addStatus, setAddStatus] = useState("");
+  const [addFormError, setAddFormError] = useState("");
+  const [parentChildren, setParentChildren] = useState([]);
+  const [loadingChildren, setLoadingChildren] = useState(false);
 
   const [search, setSearch] = useState(""); // поиск по ФИО ученика/родителя или номеру договора
 
@@ -127,7 +141,25 @@ export default function AdminFinance() {
   function openAddModal() {
     setAddForm(EMPTY_CONTRACT_FORM);
     setAddStatus("");
+    setAddFormError("");
+    setParentChildren([]);
     setShowAddModal(true);
+  }
+
+  async function handleParentChange(parentId) {
+    setAddForm((f) => ({ ...f, parent_id: parentId, student_id: "" }));
+    setParentChildren([]);
+    if (!parentId) return;
+    setLoadingChildren(true);
+    try {
+      const res = await fetchParentChildren(parentId);
+      setParentChildren(res?.items ?? []);
+    } catch {
+      // Список детей не загрузился — админ всё равно сможет завести нового ученика.
+      setParentChildren([]);
+    } finally {
+      setLoadingChildren(false);
+    }
   }
 
   function openEditModal(contract) {
@@ -172,12 +204,46 @@ export default function AdminFinance() {
 
   async function handleAddContract(e) {
     e.preventDefault();
-    const { student_id, parent_id, course_id, branch_id, amount, start_date, end_date } = addForm;
-    if (!student_id || !parent_id || !course_id || !branch_id || !amount || !start_date || !end_date) return;
+    setAddFormError("");
+    const {
+      student_id, parent_id, course_id, branch_id, amount, start_date, end_date,
+      new_student_last_name, new_student_first_name, new_student_patronymic,
+      new_student_school, new_student_class_info,
+    } = addForm;
+
+    const creatingNewStudent = student_id === NO_STUDENT_OPTION;
+
+    if (!parent_id || !student_id || !course_id || !branch_id || !amount || !start_date || !end_date) {
+      setAddFormError("Заполните все обязательные поля.");
+      return;
+    }
+    if (creatingNewStudent && (!new_student_last_name.trim() || !new_student_first_name.trim())) {
+      setAddFormError("Укажите фамилию и имя нового ученика.");
+      return;
+    }
+    if (end_date < start_date) {
+      setAddFormError("Дата окончания договора не может быть раньше даты начала.");
+      return;
+    }
+
     setAddStatus("saving");
     try {
+      let studentId = Number(student_id);
+      if (creatingNewStudent) {
+        const created = await createStudent({
+          last_name: new_student_last_name.trim(),
+          first_name: new_student_first_name.trim(),
+          patronymic: new_student_patronymic.trim() || undefined,
+          school: new_student_school.trim() || undefined,
+          class_info: new_student_class_info.trim() || undefined,
+          branch_id: Number(branch_id),
+          parent_id: Number(parent_id),
+        });
+        studentId = created?.id ?? created?.user?.id;
+      }
+
       await createContract({
-        student_id: Number(student_id),
+        student_id: studentId,
         parent_id: Number(parent_id),
         course_id: Number(course_id),
         branch_id: Number(branch_id),
@@ -186,7 +252,7 @@ export default function AdminFinance() {
         end_date,
       });
       setAddStatus("done");
-      await load(); // подтягиваем свежий список договоров
+      await load(); // подтягиваем свежий список договоров (в т.ч. нового ученика)
     } catch (err) {
       setAddStatus(err.message || "Не удалось создать договор");
     }
