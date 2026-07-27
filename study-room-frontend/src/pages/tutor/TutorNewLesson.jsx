@@ -243,7 +243,7 @@ export default function TutorNewLesson() {
             lesson_date: date,
             start_time: form.startTime,
             end_time: endTime,
-            location_type: form.lessonType === "online" ? "remote" : "offline",
+            location_type: form.lessonType === "online" ? "remote" : "onsite",
             group_type: form.lessonFormat,
             comment: form.comment || undefined,
           })

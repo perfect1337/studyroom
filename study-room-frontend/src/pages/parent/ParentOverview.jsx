@@ -139,8 +139,12 @@ export default function ParentOverview() {
       <div className="space-y-stack-lg pb-stack-lg">
         <header className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant flex flex-col md:flex-row items-center md:items-start justify-between gap-6 mt-4">
           <div className="flex items-center gap-6 z-10">
-            <div className="w-24 h-24 rounded-full bg-primary-fixed flex items-center justify-center text-primary font-headline-md font-bold border-4 border-surface shadow-sm shrink-0">
-              {initials(user)}
+            <div className="w-24 h-24 rounded-full overflow-hidden bg-primary-fixed flex items-center justify-center text-primary font-headline-md font-bold border-4 border-surface shadow-sm shrink-0">
+              {user?.avatar_url ? (
+                <img src={user.avatar_url} alt={fullName(user)} className="w-full h-full object-cover" />
+              ) : (
+                <span>{initials(user)}</span>
+              )}
             </div>
             <div>
               <h2 className="font-headline-md text-headline-md text-on-surface">{fullName(user)}</h2>

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import ConfirmDeleteModal from "../../components/ui/ConfirmDeleteModal.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchBranches, createBranch, deleteBranch, createBranchOwner } from "../../api/users.js";
+import { fetchBranches, createBranch, deleteBranch, createBranchOwner, fetchMyPeople, setUserActive } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import { sanitizePhoneInput, isValidPhone } from "../../utils/phone.js";
 
@@ -44,6 +44,14 @@ export default function AdminBranches() {
   const [ownerStatus, setOwnerStatus] = useState("");
   const [ownerSuccess, setOwnerSuccess] = useState(null);
 
+  const [branchOwners, setBranchOwners] = useState([]);
+  const [ownersLoading, setOwnersLoading] = useState(true);
+  const [ownersError, setOwnersError] = useState("");
+
+  const [ownerToDelete, setOwnerToDelete] = useState(null);
+  const [ownerDeleteBusy, setOwnerDeleteBusy] = useState(false);
+  const [ownerDeleteError, setOwnerDeleteError] = useState("");
+
   async function load() {
     setLoading(true);
     setError("");
@@ -57,8 +65,28 @@ export default function AdminBranches() {
     }
   }
 
+  // Владельцы филиалов — берём из общего справочника "мои люди" (см.
+  // user-service handlers/user_handler.go:List): для owner без фильтра
+  // branch_id приходят владельцы всех филиалов сети. Деактивированных
+  // (is_active=false) в таблице не показываем — с точки зрения этого экрана
+  // они уже "удалены" (см. handleConfirmDeleteOwner).
+  async function loadOwners() {
+    setOwnersLoading(true);
+    setOwnersError("");
+    try {
+      const res = await fetchMyPeople();
+      const list = (res?.branch_owners ?? []).filter((o) => o.is_active !== false);
+      setBranchOwners(list);
+    } catch (e) {
+      setOwnersError(e.message || "Не удалось загрузить список владельцев филиалов");
+    } finally {
+      setOwnersLoading(false);
+    }
+  }
+
   useEffect(() => {
     load();
+    loadOwners();
   }, []);
 
   function openAddModal() {
@@ -112,7 +140,11 @@ export default function AdminBranches() {
       setOwnerStatus("");
       // Пароль на сервере не возвращается (уходит только на почту), поэтому
       // подтверждаем создание нейтральным сообщением, без вывода пароля в UI.
-      setOwnerSuccess({ email: res?.user?.email || ownerForm.email });
+      const createdUser = res?.user ?? res;
+      setOwnerSuccess({ email: createdUser?.email || ownerForm.email });
+      if (createdUser?.id) {
+        setBranchOwners((list) => [...list, createdUser]);
+      }
     } catch (err) {
       setOwnerStatus(err.message || "Не удалось создать владельца филиала");
     }
@@ -132,6 +164,33 @@ export default function AdminBranches() {
       setDeleteBusy(false);
     }
   }
+
+  // "Удаление" владельца филиала — деактивация аккаунта (is_active=false).
+  // Сам пользователь при этом не стирается из базы (история договоров,
+  // авторства курсов и т.д. остаётся консистентной), но: 1) все его
+  // refresh-токены отзываются на бэкенде (см. SetStatus в user_handler.go),
+  // то есть активные сессии сразу обрываются; 2) войти по старому паролю он
+  // больше не сможет — учётная запись фактически сброшена. Из этой таблицы
+  // он пропадает сразу после подтверждения (см. loadOwners — деактивированных не показываем).
+  async function handleConfirmDeleteOwner() {
+    if (!ownerToDelete) return;
+    setOwnerDeleteBusy(true);
+    setOwnerDeleteError("");
+    try {
+      await setUserActive(ownerToDelete.id, false);
+      setBranchOwners((list) => list.filter((o) => o.id !== ownerToDelete.id));
+      setOwnerToDelete(null);
+    } catch (err) {
+      setOwnerDeleteError(err.message || "Не удалось удалить владельца филиала");
+    } finally {
+      setOwnerDeleteBusy(false);
+    }
+  }
+
+  const branchNameById = branches.reduce((acc, b) => {
+    acc[b.id] = b.name;
+    return acc;
+  }, {});
 
   return (
     <DashboardShell
@@ -224,6 +283,78 @@ export default function AdminBranches() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <div>
+          <h2 className="font-headline-md text-headline-md text-primary mb-1">Владельцы филиалов</h2>
+          <p className="font-body-md text-body-md text-on-surface-variant mb-4">
+            Учётные записи с ролью «владелец филиала» по всей сети
+          </p>
+
+          {ownersError && (
+            <div className="p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md mb-4">
+              {ownersError}
+            </div>
+          )}
+
+          <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-surface-container-low text-on-surface-variant border-b border-outline-variant">
+                  <tr>
+                    <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap">ФИО</th>
+                    <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap">Email</th>
+                    <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap">Телефон</th>
+                    <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap">Филиал</th>
+                    <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap text-right">Действия</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outline-variant">
+                  {!ownersLoading && branchOwners.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-10 text-center text-on-surface-variant">
+                        Владельцев филиалов пока нет
+                      </td>
+                    </tr>
+                  )}
+                  {ownersLoading && (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-10 text-center text-on-surface-variant">
+                        Загрузка...
+                      </td>
+                    </tr>
+                  )}
+                  {branchOwners.map((o) => (
+                    <tr key={o.id} className="hover:bg-surface-container-low transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="font-label-md text-label-md font-bold text-on-surface">{fullName(o)}</div>
+                        <div className="text-[12px] text-outline">ID: {o.id}</div>
+                      </td>
+                      <td className="px-6 py-4 text-label-md font-label-md text-on-surface-variant">{o.email}</td>
+                      <td className="px-6 py-4 text-label-md font-label-md text-on-surface-variant whitespace-nowrap">
+                        {o.phone || "—"}
+                      </td>
+                      <td className="px-6 py-4 text-label-md font-label-md">
+                        {branchNameById[o.branch_id] || (o.branch_id ? `Филиал #${o.branch_id}` : "—")}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button
+                          onClick={() => {
+                            setOwnerDeleteError("");
+                            setOwnerToDelete(o);
+                          }}
+                          className="inline-flex items-center gap-1 text-error font-bold text-label-md hover:underline"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">delete</span>
+                          Удалить
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -424,6 +555,22 @@ export default function AdminBranches() {
         error={deleteError}
         onCancel={() => (deleteBusy ? null : setBranchToDelete(null))}
         onConfirm={handleConfirmDelete}
+      />
+
+      {/* Удаление владельца филиала — по факту деактивация аккаунта:
+          логин/пароль перестают работать, активные сессии обрываются
+          (см. handleConfirmDeleteOwner). Двойное подтверждение — та же
+          защита, что и для филиалов, т.к. действие тоже затрагивает доступ
+          живого человека к системе. */}
+      <ConfirmDeleteModal
+        open={!!ownerToDelete}
+        title="Удалить владельца филиала?"
+        itemLabel={ownerToDelete ? fullName(ownerToDelete) : ""}
+        description="Учётная запись будет деактивирована: логин и пароль перестанут работать, все активные сессии этого пользователя будут завершены."
+        busy={ownerDeleteBusy}
+        error={ownerDeleteError}
+        onCancel={() => (ownerDeleteBusy ? null : setOwnerToDelete(null))}
+        onConfirm={handleConfirmDeleteOwner}
       />
     </DashboardShell>
   );
