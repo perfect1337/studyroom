@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchLessons, fetchCourses, fetchHomework } from "../../api/academic.js";
+import { fetchLessons, fetchCourses, fetchHomework, fetchEnrollments } from "../../api/academic.js";
 import { fetchParentChildren, fetchUserById } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
@@ -38,6 +38,7 @@ export default function ParentSchedule() {
 
   const [lessons, setLessons] = useState([]);
   const [courses, setCourses] = useState([]);
+  const [enrollments, setEnrollments] = useState([]);
   const [tutorsById, setTutorsById] = useState({});
   const [homework, setHomework] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -73,9 +74,16 @@ export default function ParentSchedule() {
     };
   }, [user?.id]);
 
-  // Загружаем расписание выбранного ребёнка за текущий месяц.
+  // Загружаем расписание за текущий месяц.
+  //
+  // ВАЖНО: бэкенд для роли parent игнорирует query-параметр student_id и
+  // всегда возвращает данные по ВСЕМ детям родителя сразу (см. academic-service
+  // LessonHandler.List / HomeworkHandler.List: `filter.StudentIDs = children`).
+  // Поэтому фильтрацию по конкретному ребёнку делаем на фронте: подгружаем
+  // записи (enrollments) со связкой student_id -> course_id и по ним уже
+  // разбиваем общий список занятий/домашних заданий на конкретного ребёнка.
   useEffect(() => {
-    if (!selectedChildId) return;
+    if (!children.length) return;
     let cancelled = false;
 
     async function load() {
@@ -85,10 +93,11 @@ export default function ParentSchedule() {
         const date_from = toISODate(viewYear, viewMonth, 1);
         const date_to = toISODate(viewYear, viewMonth, daysInMonth);
 
-        const [lessonsRes, coursesRes, homeworkRes] = await Promise.all([
-          fetchLessons({ student_id: selectedChildId, date_from, date_to }),
+        const [lessonsRes, coursesRes, homeworkRes, enrollRes] = await Promise.all([
+          fetchLessons({ date_from, date_to }),
           fetchCourses(),
-          fetchHomework({ student_id: selectedChildId }),
+          fetchHomework(),
+          fetchEnrollments(),
         ]);
         if (cancelled) return;
 
@@ -96,6 +105,7 @@ export default function ParentSchedule() {
         setLessons(lessonItems);
         setCourses(coursesRes?.items ?? []);
         setHomework(homeworkRes?.items ?? []);
+        setEnrollments(enrollRes?.items ?? []);
         setSelectedDay(null);
 
         // Подтягиваем имена репетиторов по уникальным tutor_id (контракт 1.10 — GET /users/{id}).
@@ -120,7 +130,7 @@ export default function ParentSchedule() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedChildId, viewYear, viewMonth]);
+  }, [children, viewYear, viewMonth]);
 
   const coursesById = useMemo(() => {
     const map = {};
@@ -134,15 +144,37 @@ export default function ParentSchedule() {
     return map;
   }, [courses]);
 
+  // Курсы, на которые записан каждый ребёнок — используем, чтобы разложить общий
+  // (для всех детей родителя) список занятий по конкретному выбранному ребёнку.
+  const courseIdsByChild = useMemo(() => {
+    const map = {};
+    enrollments.forEach((e) => {
+      (map[e.student_id] ??= new Set()).add(e.course_id);
+    });
+    return map;
+  }, [enrollments]);
+
+  const childLessons = useMemo(() => {
+    if (!selectedChildId) return lessons;
+    const courseIds = courseIdsByChild[selectedChildId];
+    if (!courseIds) return [];
+    return lessons.filter((l) => courseIds.has(l.course_id));
+  }, [lessons, courseIdsByChild, selectedChildId]);
+
+  const childHomework = useMemo(() => {
+    if (!selectedChildId) return homework;
+    return homework.filter((hw) => hw.student_id === selectedChildId);
+  }, [homework, selectedChildId]);
+
   const lessonsByDay = useMemo(() => {
     const map = {};
-    for (const lesson of lessons) {
+    for (const lesson of childLessons) {
       const day = Number(lesson.lesson_date?.slice(8, 10));
       if (!day) continue;
       (map[day] ??= []).push(lesson);
     }
     return map;
-  }, [lessons]);
+  }, [childLessons]);
 
   const isCurrentMonthView = viewYear === today.getFullYear() && viewMonth === today.getMonth();
   const todayDay = isCurrentMonthView ? today.getDate() : null;
@@ -185,7 +217,10 @@ export default function ParentSchedule() {
           {children.map((child) => (
             <button
               key={child.id}
-              onClick={() => setSelectedChildId(child.id)}
+              onClick={() => {
+                setSelectedChildId(child.id);
+                setSelectedDay(null);
+              }}
               className={`flex items-center gap-2 px-4 py-2 rounded-full font-label-md text-label-md border transition-all ${
                 selectedChildId === child.id
                   ? "bg-primary text-on-primary border-primary"
@@ -219,7 +254,7 @@ export default function ParentSchedule() {
                 <p className="font-body-md text-body-md text-on-surface-variant">
                   {loading
                     ? "Загрузка занятий…"
-                    : `У ${selectedChild ? fullName(selectedChild) : "ребёнка"} ${lessons.length} занятий в этом месяце`}
+                    : `У ${selectedChild ? fullName(selectedChild) : "ребёнка"} ${childLessons.length} занятий в этом месяце`}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -304,11 +339,11 @@ export default function ParentSchedule() {
           {/* Homework list (не привязаны к конкретному занятию в API — показываем отдельным списком) */}
           <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-6">
             <h4 className="font-label-md font-bold mb-4">Домашние задания</h4>
-            {homework.length === 0 && (
+            {childHomework.length === 0 && (
               <p className="text-on-surface-variant font-body-md text-body-md">Заданий пока нет</p>
             )}
             <div className="space-y-2">
-              {homework.map((hw) => (
+              {childHomework.map((hw) => (
                 <div key={hw.id} className="flex items-center justify-between gap-3 p-2 hover:bg-surface-container rounded transition-all">
                   <div className="flex items-center gap-3 min-w-0">
                     <span className="material-symbols-outlined text-primary shrink-0">link</span>

@@ -63,6 +63,12 @@ export default function ParentContracts() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [paymentFilter, setPaymentFilter] = useState("all");
+  const [childFilter, setChildFilter] = useState("all");
+  const [expiringOnly, setExpiringOnly] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -115,6 +121,59 @@ export default function ParentContracts() {
     [contracts]
   );
 
+  const childrenOptions = useMemo(
+    () => Object.values(childrenById).sort((a, b) => fullName(a).localeCompare(fullName(b), "ru")),
+    [childrenById]
+  );
+
+  const filteredContracts = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return contracts
+      .filter((c) => {
+        if (statusFilter !== "all" && c.status !== statusFilter) return false;
+        if (paymentFilter !== "all" && c.payment_status !== paymentFilter) return false;
+        if (childFilter !== "all" && String(c.student_id) !== childFilter) return false;
+        if (expiringOnly && !(isExpiringSoon(c.end_date) && c.status !== "terminated")) return false;
+        if (q) {
+          const child = childrenById[c.student_id];
+          const course = coursesById[c.course_id];
+          const haystack = [
+            c.contract_number,
+            `№${c.id}`,
+            child ? fullName(child) : "",
+            course?.title,
+            course?.subject,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          if (!haystack.includes(q)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const aExpiring = isExpiringSoon(a.end_date) && a.status !== "terminated";
+        const bExpiring = isExpiringSoon(b.end_date) && b.status !== "terminated";
+        if (aExpiring !== bExpiring) return aExpiring ? -1 : 1;
+        return (a.end_date || "").localeCompare(b.end_date || "");
+      });
+  }, [contracts, search, statusFilter, paymentFilter, childFilter, expiringOnly, childrenById, coursesById]);
+
+  const filtersActive = search.trim() !== "" || statusFilter !== "all" || paymentFilter !== "all" || childFilter !== "all" || expiringOnly;
+
+  const expiringCount = useMemo(
+    () => contracts.filter((c) => isExpiringSoon(c.end_date) && c.status !== "terminated").length,
+    [contracts]
+  );
+
+  function resetFilters() {
+    setSearch("");
+    setStatusFilter("all");
+    setPaymentFilter("all");
+    setChildFilter("all");
+    setExpiringOnly(false);
+  }
+
   return (
     <DashboardShell role="parent" user={toSidebarUser(user)} searchPlaceholder="Поиск по кабинету..." userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
       <div className="mt-4 pb-stack-lg space-y-stack-lg">
@@ -129,20 +188,118 @@ export default function ParentContracts() {
           <div className="p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high">
-            <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-2">Оплачено</p>
-            <h3 className="font-display-lg text-display-lg text-on-surface">{loading ? "…" : formatMoney(totalPaid)}</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined">task_alt</span>
+            </div>
+            <div className="min-w-0">
+              <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-1">Оплачено</p>
+              <h3 className="font-headline-sm text-headline-sm text-on-surface truncate">{loading ? "…" : formatMoney(totalPaid)}</h3>
+            </div>
           </div>
-          <div className="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high">
-            <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-2">К оплате</p>
-            <h3 className="font-display-lg text-display-lg text-warning">{loading ? "…" : formatMoney(totalDue)}</h3>
+
+          <div className="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined">pending_actions</span>
+            </div>
+            <div className="min-w-0">
+              <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-1">К оплате</p>
+              <h3 className="font-headline-sm text-headline-sm text-on-surface truncate">{loading ? "…" : formatMoney(totalDue)}</h3>
+            </div>
+          </div>
+
+          <div className="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high flex items-center gap-4">
+            <div
+              className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                expiringCount > 0 ? "bg-rose-50 text-rose-600" : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              <span className="material-symbols-outlined">event_upcoming</span>
+            </div>
+            <div className="min-w-0">
+              <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-1">Истекают скоро</p>
+              <h3 className="font-headline-sm text-headline-sm text-on-surface truncate">
+                {loading ? "…" : expiringCount}
+              </h3>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high p-4 md:p-5">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+            <div className="relative flex-1 min-w-[200px]">
+              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">search</span>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Поиск по № договора, ребёнку или курсу..."
+                className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-outline-variant bg-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-body-md text-body-md text-on-surface"
+              />
+            </div>
+
+            {childrenOptions.length > 1 && (
+              <select
+                value={childFilter}
+                onChange={(e) => setChildFilter(e.target.value)}
+                className="px-3 py-2.5 rounded-lg border border-outline-variant bg-surface font-label-md text-label-md text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              >
+                <option value="all">Все дети</option>
+                {childrenOptions.map((c) => (
+                  <option key={c.id} value={String(c.id)}>{fullName(c)}</option>
+                ))}
+              </select>
+            )}
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-3 py-2.5 rounded-lg border border-outline-variant bg-surface font-label-md text-label-md text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            >
+              <option value="all">Любой статус</option>
+              <option value="active">Активен</option>
+              <option value="completed">Завершён</option>
+              <option value="terminated">Расторгнут</option>
+            </select>
+
+            <select
+              value={paymentFilter}
+              onChange={(e) => setPaymentFilter(e.target.value)}
+              className="px-3 py-2.5 rounded-lg border border-outline-variant bg-surface font-label-md text-label-md text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            >
+              <option value="all">Любая оплата</option>
+              <option value="paid">Оплачено</option>
+              <option value="unpaid">Ожидание оплаты</option>
+            </select>
+
+            <label className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-outline-variant bg-surface cursor-pointer select-none whitespace-nowrap">
+              <input
+                type="checkbox"
+                checked={expiringOnly}
+                onChange={(e) => setExpiringOnly(e.target.checked)}
+                className="w-4 h-4 rounded text-primary focus:ring-primary border-outline-variant"
+              />
+              <span className="font-label-md text-label-md text-on-surface">Скоро истекают</span>
+            </label>
+
+            {filtersActive && (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="px-3 py-2.5 rounded-lg text-primary font-label-md text-label-md hover:bg-surface-container-low transition-colors whitespace-nowrap"
+              >
+                Сбросить фильтры
+              </button>
+            )}
           </div>
         </div>
 
         <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high overflow-hidden">
-          <div className="p-6 border-b border-surface-container-high">
+          <div className="p-6 border-b border-surface-container-high flex items-center justify-between">
             <h4 className="font-headline-sm text-headline-sm text-on-surface">Все договоры</h4>
+            <span className="text-sm text-on-surface-variant">
+              {loading ? "…" : `Показано ${filteredContracts.length} из ${contracts.length}`}
+            </span>
           </div>
           <table className="w-full text-left">
             <thead className="bg-surface-container text-on-surface-variant text-label-md font-bold uppercase tracking-wider">
@@ -167,13 +324,33 @@ export default function ParentContracts() {
                   <td colSpan={7} className="px-6 py-8 text-center text-on-surface-variant">Договоров пока нет</td>
                 </tr>
               )}
-              {!loading && contracts.map((c) => {
+              {!loading && contracts.length > 0 && filteredContracts.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-6 py-8 text-center text-on-surface-variant">
+                    Ничего не найдено по заданным фильтрам.{" "}
+                    <button type="button" onClick={resetFilters} className="text-primary hover:underline font-bold">
+                      Сбросить фильтры
+                    </button>
+                  </td>
+                </tr>
+              )}
+              {!loading && filteredContracts.map((c, idx) => {
                 const child = childrenById[c.student_id];
                 const course = coursesById[c.course_id];
                 const expiring = isExpiringSoon(c.end_date) && c.status !== "terminated";
                 return (
-                  <tr key={c.id} className="hover:bg-surface-container-low transition-colors">
-                    <td className="px-6 py-5 font-label-md font-bold text-on-surface">{c.contract_number || `№${c.id}`}</td>
+                  <tr
+                    key={c.id}
+                    className={`transition-colors hover:bg-surface-container-low ${
+                      expiring ? "bg-warning/5" : idx % 2 === 1 ? "bg-surface-container-lowest" : "bg-surface"
+                    }`}
+                  >
+                    <td className="px-6 py-5 font-label-md font-bold text-on-surface">
+                      <div className="flex items-center gap-2">
+                        {expiring && <span className="material-symbols-outlined text-warning text-[18px]">warning</span>}
+                        {c.contract_number || `№${c.id}`}
+                      </div>
+                    </td>
                     <td className="px-6 py-5 font-label-md text-on-surface">{child ? fullName(child) : `#${c.student_id}`}</td>
                     <td className="px-6 py-5 font-label-md text-on-surface-variant">{course?.title ?? course?.subject ?? `Курс #${c.course_id}`}</td>
                     <td className="px-6 py-5 font-label-md font-bold text-on-surface">{formatMoney(c.amount)}</td>

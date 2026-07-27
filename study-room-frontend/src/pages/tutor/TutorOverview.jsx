@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchLessons, fetchEnrollments, fetchCourses, fetchAttendance, assignHomework } from "../../api/academic.js";
@@ -24,6 +24,7 @@ function initials(person) {
 
 export default function TutorOverview() {
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const [todayLessons, setTodayLessons] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
@@ -219,7 +220,11 @@ export default function TutorOverview() {
                 const student = studentsById[e.student_id];
                 const course = coursesById[e.course_id];
                 return (
-                  <div key={e.id} className="flex items-center gap-3 p-2 hover:bg-surface-container rounded-lg cursor-pointer transition-colors">
+                  <div
+                    key={e.id}
+                    onClick={() => navigate(`/tutor/students/${e.student_id}`)}
+                    className="flex items-center gap-3 p-2 hover:bg-surface-container rounded-lg cursor-pointer transition-colors"
+                  >
                     <div className="w-10 h-10 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant font-bold">
                       {initials(student)}
                     </div>

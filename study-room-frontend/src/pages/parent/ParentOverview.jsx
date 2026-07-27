@@ -4,6 +4,7 @@ import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchParentChildren } from "../../api/users.js";
 import { fetchEnrollments, fetchCourses, fetchLessons } from "../../api/academic.js";
+import { fetchMyContracts } from "../../api/contracts.js";
 import { createInternalApplication } from "../../api/crm.js";
 import { fetchNotificationSettings, updateNotificationSettings } from "../../api/notifications.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
@@ -18,6 +19,25 @@ function initials(person) {
   if (!person) return "?";
   return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
 }
+function formatMoney(n) {
+  return `₽ ${Number(n ?? 0).toLocaleString("ru-RU")}`;
+}
+function formatDate(dateStr) {
+  if (!dateStr) return "—";
+  const datePart = String(dateStr).slice(0, 10);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
+  if (!match) return dateStr;
+  const [, year, month, day] = match;
+  return `${day}.${month}.${year}`;
+}
+function daysUntil(endDateStr) {
+  if (!endDateStr) return null;
+  const endDate = new Date(endDateStr);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  endDate.setHours(0, 0, 0, 0);
+  return Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
 
 export default function ParentOverview() {
   const { user } = useAuth();
@@ -26,6 +46,7 @@ export default function ParentOverview() {
   const [courses, setCourses] = useState([]);
   const [enrollmentsByChild, setEnrollmentsByChild] = useState({});
   const [upcomingLessons, setUpcomingLessons] = useState([]);
+  const [contracts, setContracts] = useState([]);
   const [notif, setNotif] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -53,10 +74,11 @@ export default function ParentOverview() {
       setLoading(true);
       setError("");
       try {
-        const [childrenRes, coursesRes, settingsRes] = await Promise.all([
+        const [childrenRes, coursesRes, settingsRes, contractsRes] = await Promise.all([
           fetchParentChildren(user.id),
           fetchCourses(),
           fetchNotificationSettings().catch(() => null),
+          fetchMyContracts().catch(() => ({ items: [] })),
         ]);
         if (cancelled) return;
 
@@ -64,6 +86,7 @@ export default function ParentOverview() {
         setChildren(kids);
         setCourses(coursesRes?.items ?? []);
         setNotif(settingsRes ?? { email_enabled: true, sms_enabled: false, messenger_enabled: true });
+        setContracts(contractsRes?.items ?? []);
         if (kids[0]) setApplyChildId(String(kids[0].id));
 
         if (kids.length) {
@@ -105,6 +128,31 @@ export default function ParentOverview() {
     courses.forEach((c) => (map[c.id] = c));
     return map;
   }, [courses]);
+
+  const childrenById = useMemo(() => {
+    const map = {};
+    children.forEach((c) => (map[c.id] = c));
+    return map;
+  }, [children]);
+
+  // Договоры, отсортированные так, чтобы скоро истекающие активные договоры
+  // были в начале списка — на них родителю нужно обратить внимание в первую очередь.
+  const priorityContracts = useMemo(() => {
+    return contracts
+      .map((c) => ({ ...c, _daysLeft: daysUntil(c.end_date) }))
+      .sort((a, b) => {
+        const rank = (c) => (c.status === "active" && c._daysLeft != null && c._daysLeft >= 0 ? c._daysLeft : Infinity);
+        const diff = rank(a) - rank(b);
+        if (diff !== 0) return diff;
+        return (a.end_date || "").localeCompare(b.end_date || "");
+      })
+      .slice(0, 3);
+  }, [contracts]);
+
+  const contractsDue = useMemo(
+    () => contracts.reduce((sum, c) => sum + (c.payment_status !== "paid" ? Number(c.amount) || 0 : 0), 0),
+    [contracts]
+  );
 
   async function toggleNotif(key) {
     const next = { ...notif, [key]: !notif[key] };
@@ -309,14 +357,79 @@ export default function ParentOverview() {
 
           <div className="space-y-stack-md">
             <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant">
-              <h3 className="font-headline-sm text-headline-sm text-on-surface mb-4 flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary">payments</span>
-                Договоры и Оплата
-              </h3>
-              <p className="text-sm text-on-surface-variant">
-                Подробная информация о договорах, суммах и статусе оплаты доступна администрации учебного центра.
-                Обратитесь к вашему филиалу, чтобы получить актуальные данные по договору ребёнка.
-              </p>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-headline-sm text-headline-sm text-on-surface flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary">payments</span>
+                  Договоры и Оплата
+                </h3>
+                {contractsDue > 0 && (
+                  <span className="text-[11px] font-bold uppercase px-2 py-0.5 rounded-full bg-orange-100 text-orange-800">
+                    К оплате
+                  </span>
+                )}
+              </div>
+
+              {contractsDue > 0 && (
+                <p className="text-sm text-on-surface-variant mb-3">
+                  Сумма к оплате по всем детям: <span className="font-bold text-warning">{formatMoney(contractsDue)}</span>
+                </p>
+              )}
+
+              {loading && <p className="text-sm text-on-surface-variant">Загрузка…</p>}
+
+              {!loading && contracts.length === 0 && (
+                <p className="text-sm text-on-surface-variant">
+                  Договоров пока нет. Обратитесь к вашему филиалу, чтобы оформить договор на обучение.
+                </p>
+              )}
+
+              {!loading && contracts.length > 0 && (
+                <div className="space-y-2 mb-4">
+                  {priorityContracts.map((c) => {
+                    const child = childrenById[c.student_id];
+                    const course = coursesById[c.course_id];
+                    const expiringSoon = c.status === "active" && c._daysLeft != null && c._daysLeft >= 0 && c._daysLeft <= 14;
+                    return (
+                      <div
+                        key={c.id}
+                        className={`flex items-center justify-between gap-3 p-3 rounded-lg border ${
+                          expiringSoon ? "border-warning/40 bg-warning/5" : "border-outline-variant"
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-on-surface truncate">
+                            {c.contract_number || `№${c.id}`} · {child ? fullName(child) : `Ученик #${c.student_id}`}
+                          </p>
+                          <p className="text-[12px] text-on-surface-variant truncate">
+                            {course?.title ?? course?.subject ?? `Курс #${c.course_id}`}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className={`text-[12px] font-bold ${expiringSoon ? "text-warning" : "text-on-surface-variant"}`}>
+                            до {formatDate(c.end_date)}
+                          </p>
+                          {expiringSoon && (
+                            <p className="text-[10px] font-bold uppercase text-warning">
+                              {c._daysLeft === 0 ? "Истекает сегодня" : `Осталось ${c._daysLeft} дн.`}
+                            </p>
+                          )}
+                          {c.payment_status === "unpaid" && (
+                            <p className="text-[10px] font-bold uppercase text-orange-700">Не оплачено</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <Link
+                to="/parent/contracts"
+                className="w-full flex items-center justify-center gap-2 bg-primary text-on-primary py-2.5 rounded-lg font-label-md text-label-md hover:bg-primary-container transition-all"
+              >
+                <span className="material-symbols-outlined text-[18px]">description</span>
+                Все договоры
+              </Link>
             </div>
 
             <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant">

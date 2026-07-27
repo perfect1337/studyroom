@@ -89,10 +89,32 @@ export default function TeacherDetail({ role = "owner" }) {
   const [courseTutorError, setCourseTutorError] = useState("");
 
   const today = new Date();
-  const viewYear = today.getFullYear();
-  const viewMonth = today.getMonth();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const [selectedDay, setSelectedDay] = useState(null);
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstWeekday = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7;
+  const isCurrentMonth = viewYear === today.getFullYear() && viewMonth === today.getMonth();
+
+  function prevMonth() {
+    if (viewMonth === 0) {
+      setViewMonth(11);
+      setViewYear(viewYear - 1);
+    } else {
+      setViewMonth(viewMonth - 1);
+    }
+    setSelectedDay(null);
+  }
+
+  function nextMonth() {
+    if (viewMonth === 11) {
+      setViewMonth(0);
+      setViewYear(viewYear + 1);
+    } else {
+      setViewMonth(viewMonth + 1);
+    }
+    setSelectedDay(null);
+  }
 
   async function load() {
     setLoading(true);
@@ -175,7 +197,7 @@ export default function TeacherDetail({ role = "owner" }) {
     if (!teacherId) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teacherId]);
+  }, [teacherId, viewYear, viewMonth]);
 
   const studentsById = useMemo(() => {
     const map = {};
@@ -243,8 +265,9 @@ export default function TeacherDetail({ role = "owner" }) {
 
   const todayDay = today.getDate();
   const upcomingLessons = lessons
-    .filter((l) => l.lesson_date >= toISODate(viewYear, viewMonth, todayDay))
+    .filter((l) => l.lesson_date >= toISODate(viewYear, viewMonth, 1))
     .sort((a, b) => (a.lesson_date + a.start_time).localeCompare(b.lesson_date + b.start_time));
+  const selectedDayLessons = selectedDay ? (lessonsByDay[selectedDay] ?? []) : [];
 
   const statusOptions = STATUS_OPTIONS_BY_ROLE[role] ?? STATUS_OPTIONS_BY_ROLE.branch_owner;
   const tutorStatus = teacher?.tutor_status ?? "active";
@@ -323,7 +346,7 @@ export default function TeacherDetail({ role = "owner" }) {
                   setFireStatus("");
                   setShowFireModal(true);
                 }}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-error text-error hover:bg-error-container hover:text-on-error-container transition-colors text-label-md font-label-md"
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 transition-colors text-label-md font-label-md"
               >
                 <span className="material-symbols-outlined text-[18px]">person_remove</span>
                 Уволить
@@ -525,9 +548,36 @@ export default function TeacherDetail({ role = "owner" }) {
 
               <aside className="col-span-12 lg:col-span-4 space-y-stack-lg">
                 <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 p-4">
-                  <div className="flex justify-between items-center mb-2">
+                  <div className="flex justify-between items-center mb-4">
+                    <button
+                      onClick={prevMonth}
+                      className="p-1 hover:bg-surface-container rounded-full text-on-surface-variant"
+                    >
+                      <span className="material-symbols-outlined">chevron_left</span>
+                    </button>
                     <h4 className="font-bold text-on-surface">{MONTH_NAMES[viewMonth]} {viewYear}</h4>
+                    <button
+                      onClick={nextMonth}
+                      className="p-1 hover:bg-surface-container rounded-full text-on-surface-variant"
+                    >
+                      <span className="material-symbols-outlined">chevron_right</span>
+                    </button>
                   </div>
+
+                  {selectedDay && (
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm text-primary font-bold">
+                        Выбрано: {selectedDay} {MONTH_NAMES[viewMonth].toLowerCase().slice(0, 3)}
+                      </span>
+                      <button
+                        onClick={() => setSelectedDay(null)}
+                        className="text-xs text-primary hover:underline"
+                      >
+                        Сбросить
+                      </button>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-7 gap-1 text-center text-on-surface-variant font-bold text-[11px] mb-1">
                     {WEEKDAYS.map((d) => (
                       <div key={d}>{d}</div>
@@ -540,25 +590,38 @@ export default function TeacherDetail({ role = "owner" }) {
                     {Array.from({ length: daysInMonth }).map((_, i) => {
                       const day = i + 1;
                       const hasLessons = (lessonsByDay[day] ?? []).length > 0;
-                      const isToday = day === todayDay;
+                      const isToday = isCurrentMonth && day === todayDay;
+                      const isSelected = day === selectedDay;
                       return (
-                        <div
+                        <button
                           key={day}
-                          className={`text-label-md py-1 rounded-lg relative flex justify-center items-center ${
-                            isToday ? "font-bold bg-primary text-white" : "text-on-surface hover:bg-primary/10"
+                          onClick={() => setSelectedDay(isSelected ? null : day)}
+                          disabled={!hasLessons}
+                          className={`text-label-md py-1 rounded-lg relative flex justify-center items-center transition-colors ${
+                            isSelected
+                              ? "font-bold bg-primary text-white"
+                              : isToday
+                              ? "font-bold bg-primary/20 text-primary ring-2 ring-primary"
+                              : hasLessons
+                              ? "text-on-surface hover:bg-primary/10 cursor-pointer"
+                              : "text-on-surface-variant/40 cursor-default"
                           }`}
                         >
                           {day}
-                          {hasLessons && !isToday && <span className="absolute bottom-1 w-1 h-1 rounded-full bg-primary" />}
-                        </div>
+                          {hasLessons && !isToday && !isSelected && (
+                            <span className="absolute bottom-1 w-1 h-1 rounded-full bg-primary" />
+                          )}
+                        </button>
                       );
                     })}
                   </div>
                   <div className="mt-4 pt-4 border-t border-outline-variant space-y-3">
-                    {upcomingLessons.length === 0 && (
-                      <p className="text-sm text-on-surface-variant">Занятий в этом месяце не запланировано.</p>
+                    {(selectedDay ? selectedDayLessons : upcomingLessons).length === 0 && (
+                      <p className="text-sm text-on-surface-variant">
+                        {selectedDay ? "Занятий в этот день нет." : "Занятий в этом месяце не запланировано."}
+                      </p>
                     )}
-                    {upcomingLessons.slice(0, 5).map((l) => {
+                    {(selectedDay ? selectedDayLessons : upcomingLessons).slice(0, 5).map((l) => {
                       const course = coursesById[l.course_id];
                       return (
                         <div key={l.id} className="flex items-center gap-3">
@@ -687,7 +750,7 @@ export default function TeacherDetail({ role = "owner" }) {
                   <button
                     onClick={handleFireConfirm}
                     disabled={fireStatus === "saving"}
-                    className="flex-1 bg-error text-on-error-container py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60"
+                    className="flex-1 bg-slate-800 text-white py-3 rounded-lg font-bold hover:bg-slate-900 transition-all disabled:opacity-60"
                   >
                     {fireStatus === "saving" ? "Увольнение…" : "Уволить"}
                   </button>
