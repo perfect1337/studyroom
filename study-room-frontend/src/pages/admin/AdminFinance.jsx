@@ -20,12 +20,16 @@ const CONTRACT_STATUS_LABEL = {
   completed: "Завершён",
 };
 
+// Цвета для статусов договора
+const CONTRACT_STATUS_COLORS = {
+  active: "bg-green-100 text-green-800",
+  terminated: "bg-red-100 text-red-800",
+  completed: "bg-blue-100 text-blue-800",
+};
+
 const CONTRACTS_PAGE_SIZE = 8;
 const UNPAID_PAGE_SIZE = 5;
 
-// Спец-значение в выпадающем списке детей родителя: ребёнка ещё нет в
-// системе, и его личный кабинет нужно создать прямо здесь, при оформлении
-// договора.
 const NO_STUDENT_OPTION = "__new_student__";
 
 const EMPTY_CONTRACT_FORM = {
@@ -36,7 +40,6 @@ const EMPTY_CONTRACT_FORM = {
   amount: "",
   start_date: "",
   end_date: "",
-  // Поля для создания нового ученика, если его ещё нет в списке детей родителя.
   new_student_last_name: "",
   new_student_first_name: "",
   new_student_patronymic: "",
@@ -48,21 +51,15 @@ function formatMoney(n) {
   return `₽ ${Number(n ?? 0).toLocaleString("ru-RU")}`;
 }
 
-// Приводит дату из формата "YYYY-MM-DD" (или ISO со временем) к виду "12.05.2026",
-// без указания времени, независимо от системной локали/часового пояса.
 function formatDate(dateStr) {
   if (!dateStr) return "";
-  const datePart = String(dateStr).slice(0, 10); // отрезаем время, если оно есть
+  const datePart = String(dateStr).slice(0, 10);
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
   if (!match) return dateStr;
   const [, year, month, day] = match;
   return `${day}.${month}.${year}`;
 }
 
-// Приводит дату к формату "YYYY-MM-DD", ожидаемому <input type="date">.
-// Бэкенд отдаёт даты договора как ISO-строку со временем ("2026-06-15T00:00:00Z"),
-// поэтому без такой нормализации поле даты в форме оставалось бы пустым —
-// input не понимает значения со временем/часовым поясом.
 function toInputDate(dateStr) {
   if (!dateStr) return "";
   return String(dateStr).slice(0, 10);
@@ -87,10 +84,10 @@ export default function AdminFinance() {
   const [parentChildren, setParentChildren] = useState([]);
   const [loadingChildren, setLoadingChildren] = useState(false);
 
-  const [search, setSearch] = useState(""); // поиск по ФИО ученика/родителя или номеру договора
-  const [showOnlyUnpaid, setShowOnlyUnpaid] = useState(false); // фильтр по клику на карточку "Ожидают оплаты"
+  const [search, setSearch] = useState("");
+  const [showOnlyUnpaid, setShowOnlyUnpaid] = useState(false);
 
-  const [editContract, setEditContract] = useState(null); // выбранный договор для редактирования
+  const [editContract, setEditContract] = useState(null);
   const [editForm, setEditForm] = useState(null);
   const [editStatus, setEditStatus] = useState("");
 
@@ -177,7 +174,6 @@ export default function AdminFinance() {
       const res = await fetchParentChildren(parentId);
       setParentChildren(res?.items ?? []);
     } catch {
-      // Список детей не загрузился — админ всё равно сможет завести нового ученика.
       setParentChildren([]);
     } finally {
       setLoadingChildren(false);
@@ -188,9 +184,6 @@ export default function AdminFinance() {
     setEditContract(contract);
     setEditForm({
       amount: contract.amount ?? "",
-      // Подставляем текущую дату окончания договора (нормализуя её к YYYY-MM-DD,
-      // т.к. бэкенд отдаёт её в ISO-формате со временем) — при этом поле
-      // остаётся редактируемым, дату можно поменять перед сохранением.
       end_date: toInputDate(contract.end_date),
       status: contract.status ?? "active",
       payment_status: contract.payment_status ?? "unpaid",
@@ -226,7 +219,7 @@ export default function AdminFinance() {
       }
       await Promise.all(tasks);
       setEditStatus("done");
-      await load(); // подтягиваем свежие данные по договорам
+      await load();
     } catch (err) {
       setEditStatus(err.message || "Не удалось сохранить изменения");
     }
@@ -282,7 +275,7 @@ export default function AdminFinance() {
         end_date,
       });
       setAddStatus("done");
-      await load(); // подтягиваем свежий список договоров (в т.ч. нового ученика)
+      await load();
     } catch (err) {
       setAddStatus(err.message || "Не удалось создать договор");
     }
@@ -378,13 +371,14 @@ export default function AdminFinance() {
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Ученик / Родитель</th>
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Период</th>
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Сумма</th>
+                    <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Статус</th>
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Оплата</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-surface-container-high">
                   {!loading && filteredContracts.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-6 py-8 text-center text-on-surface-variant">
+                      <td colSpan={6} className="px-6 py-8 text-center text-on-surface-variant">
                         {contracts.length === 0 ? "Договоров пока нет" : "Ничего не найдено"}
                       </td>
                     </tr>
@@ -407,6 +401,11 @@ export default function AdminFinance() {
                         </td>
                         <td className="px-6 py-4 font-body-md text-body-md text-on-surface-variant">{formatDate(c.start_date)} — {formatDate(c.end_date)}</td>
                         <td className="px-6 py-4 font-body-md text-body-md font-semibold text-on-surface">{formatMoney(c.amount)}</td>
+                        <td className="px-6 py-4">
+                          <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${CONTRACT_STATUS_COLORS[c.status] ?? "bg-gray-100 text-gray-800"}`}>
+                            {CONTRACT_STATUS_LABEL[c.status] ?? c.status}
+                          </span>
+                        </td>
                         <td className="px-6 py-4">
                           <StatusBadge status={PAYMENT_STATUS_LABEL[c.payment_status] ?? c.payment_status} />
                         </td>
