@@ -80,10 +80,10 @@ func NewSubscriber(nc *nats.Conn, userRefRepo *repository.UserRefRepository, enr
 // (соединение с NATS закрывается в main.go при shutdown, что автоматически
 // останавливает и подписчиков) — тот же паттерн, что в notification-service.
 func (s *Subscriber) Start(ctx context.Context) error {
-	if _, err := s.nc.QueueSubscribe("user.created", "academic-service", s.handleUserEvent(ctx)); err != nil {
+	if _, err := s.nc.QueueSubscribe("user.created", "academic-service", s.handleUserCreated(ctx)); err != nil {
 		return err
 	}
-	if _, err := s.nc.QueueSubscribe("user.updated", "academic-service", s.handleUserEvent(ctx)); err != nil {
+	if _, err := s.nc.QueueSubscribe("user.updated", "academic-service", s.handleUserUpdated(ctx)); err != nil {
 		return err
 	}
 	if _, err := s.nc.QueueSubscribe("contract.created", "academic-service", s.handleContractCreated(ctx)); err != nil {
@@ -92,36 +92,80 @@ func (s *Subscriber) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s *Subscriber) handleUserEvent(ctx context.Context) nats.MsgHandler {
+func (s *Subscriber) upsertUserRef(ctx context.Context, ev UserEvent) {
+	ref := &models.UserRef{
+		UserID:   ev.ID,
+		FullName: (ev.FirstName + " " + ev.LastName),
+		Role:     ev.Role,
+		BranchID: ev.BranchID,
+	}
+	if err := s.userRefRepo.Upsert(ctx, ref); err != nil {
+		log.Printf("[events] upsert user_ref %d error: %v", ev.ID, err)
+	}
+}
+
+// detachTutor — отвязывает репетитора от всех course_tutors/enrollments в
+// этой БД. Общая часть для двух разных сценариев (см. вызовы ниже):
+// увольнение существующего репетитора и зачистка "унаследованных"
+// назначений у только что созданного.
+func (s *Subscriber) detachTutor(ctx context.Context, tutorID int64, reason string) {
+	if err := s.courseRepo.RemoveTutorEverywhere(ctx, tutorID); err != nil {
+		log.Printf("[events] %s: detach tutor %d from courses error: %v", reason, tutorID, err)
+	}
+	if err := s.enrollRepo.UnassignTutorEverywhere(ctx, tutorID); err != nil {
+		log.Printf("[events] %s: detach tutor %d from enrollments error: %v", reason, tutorID, err)
+	}
+}
+
+// handleUserCreated — заводит user_ref и, для роли tutor, СРАЗУ подчищает
+// любые уже существующие в этой БД course_tutors/enrollments.tutor_id на
+// этот числовой id.
+//
+// Зачем: id пользователей — это SERIAL в БД User Service, а course_tutors/
+// enrollments живут в отдельной БД Academic Service БЕЗ настоящего FK
+// (см. 0001_init.up.sql). Если БД User Service когда-либо пересоздавалась
+// "с нуля" (например, `docker compose down -v` только для одного сервиса,
+// или повторный прогон seed_studyroom.py после ручной очистки только
+// users-базы), нумерация id начинается заново — и новый пользователь может
+// получить тот же числовой id, что раньше был у старого/тестового
+// репетитора, чьи course_tutors/enrollments в Academic Service никуда не
+// делись. В результате свежесозданный репетитор "по наследству" оказывается
+// привязан к чужим ученикам, хотя в User Service это два разных аккаунта.
+//
+// У только что созданного пользователя не может быть ЛЕГИТИМНЫХ назначений
+// (он появился секунду назад), поэтому чистка здесь безопасна в любом
+// случае — если хвостов не было, обе операции просто ничего не удалят.
+func (s *Subscriber) handleUserCreated(ctx context.Context) nats.MsgHandler {
 	return func(msg *nats.Msg) {
 		var ev UserEvent
 		if err := json.Unmarshal(msg.Data, &ev); err != nil {
-			log.Printf("[events] user.* unmarshal error: %v", err)
+			log.Printf("[events] user.created unmarshal error: %v", err)
 			return
 		}
-		ref := &models.UserRef{
-			UserID:   ev.ID,
-			FullName: (ev.FirstName + " " + ev.LastName),
-			Role:     ev.Role,
-			BranchID: ev.BranchID,
-		}
-		if err := s.userRefRepo.Upsert(ctx, ref); err != nil {
-			log.Printf("[events] upsert user_ref %d error: %v", ev.ID, err)
-		}
+		s.upsertUserRef(ctx, ev)
 
-		// Увольнение репетитора (User Service выставил users.is_active=false
-		// в PATCH /users/{id}/status и прислал user.updated) — отвязываем его
-		// от всех курсов (course_tutors) и enrollments.tutor_id локально, в
-		// своей БД. Сами enrollments/lessons/homework не удаляются — это
-		// исторические записи, они остаются, просто теряют закреплённого
-		// репетитора. Best-effort: ошибка логируется, подписчика не валит.
+		if ev.Role == models.RoleTutor {
+			s.detachTutor(ctx, ev.ID, "cleanup stale assignments on user.created")
+		}
+	}
+}
+
+// handleUserUpdated — обновляет user_ref и, если User Service прислал
+// увольнение репетитора (is_active=false), отвязывает его от всех курсов и
+// учеников. Сами enrollments/lessons/homework не удаляются — это
+// исторические записи, они остаются, просто теряют закреплённого
+// репетитора. Best-effort: ошибка логируется, подписчика не валит.
+func (s *Subscriber) handleUserUpdated(ctx context.Context) nats.MsgHandler {
+	return func(msg *nats.Msg) {
+		var ev UserEvent
+		if err := json.Unmarshal(msg.Data, &ev); err != nil {
+			log.Printf("[events] user.updated unmarshal error: %v", err)
+			return
+		}
+		s.upsertUserRef(ctx, ev)
+
 		if ev.Role == models.RoleTutor && !ev.IsActive {
-			if err := s.courseRepo.RemoveTutorEverywhere(ctx, ev.ID); err != nil {
-				log.Printf("[events] detach fired tutor %d from courses error: %v", ev.ID, err)
-			}
-			if err := s.enrollRepo.UnassignTutorEverywhere(ctx, ev.ID); err != nil {
-				log.Printf("[events] detach fired tutor %d from enrollments error: %v", ev.ID, err)
-			}
+			s.detachTutor(ctx, ev.ID, "tutor fired")
 		}
 	}
 }
