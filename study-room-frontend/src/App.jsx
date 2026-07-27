@@ -23,6 +23,7 @@ import ParentOverview from "./pages/parent/ParentOverview.jsx";
 import ParentChildren from "./pages/parent/ParentChildren.jsx";
 import ParentChildDetail from "./pages/parent/ParentChildDetail.jsx";
 import ParentSchedule from "./pages/parent/ParentSchedule.jsx";
+import ParentContracts from "./pages/parent/ParentContracts.jsx";
 
 import AdminOverview from "./pages/admin/AdminOverview.jsx";
 import AdminStudents from "./pages/admin/AdminStudents.jsx";
@@ -31,6 +32,7 @@ import AdminFinance from "./pages/admin/AdminFinance.jsx";
 import AdminTeachers from "./pages/admin/AdminTeachers.jsx";
 import AdminTeacherDetail from "./pages/admin/AdminTeacherDetail.jsx";
 import AdminSchedule from "./pages/admin/AdminSchedule.jsx";
+import AdminBranches from "./pages/admin/AdminBranches.jsx";
 import BranchOverview from "./pages/admin/BranchOverview.jsx";
 import BranchStudents from "./pages/admin/BranchStudents.jsx";
 import BranchStudentDetail from "./pages/admin/BranchStudentDetail.jsx";
@@ -74,6 +76,7 @@ export default function App() {
           <Route path="/parent/children" element={<ProtectedRoute roles={["parent"]}><ParentChildren /></ProtectedRoute>} />
           <Route path="/parent/children/:childId" element={<ProtectedRoute roles={["parent"]}><ParentChildDetail /></ProtectedRoute>} />
           <Route path="/parent/schedule" element={<ProtectedRoute roles={["parent"]}><ParentSchedule /></ProtectedRoute>} />
+          <Route path="/parent/contracts" element={<ProtectedRoute roles={["parent"]}><ParentContracts /></ProtectedRoute>} />
           <Route path="/parent/settings" element={<ProtectedRoute roles={["parent"]}><SettingsPage role="parent" /></ProtectedRoute>} />
 
           {/* Владелец сети филиалов (role: owner) — раздел /admin */}
@@ -84,6 +87,7 @@ export default function App() {
           <Route path="/admin/teachers/:teacherId" element={<ProtectedRoute roles={["owner"]}><AdminTeacherDetail /></ProtectedRoute>} />
           <Route path="/admin/schedule" element={<ProtectedRoute roles={["owner"]}><AdminSchedule /></ProtectedRoute>} />
           <Route path="/admin/finance" element={<ProtectedRoute roles={["owner"]}><AdminFinance /></ProtectedRoute>} />
+          <Route path="/admin/branches" element={<ProtectedRoute roles={["owner"]}><AdminBranches /></ProtectedRoute>} />
           <Route path="/admin/settings" element={<ProtectedRoute roles={["owner"]}><SettingsPage role="owner" /></ProtectedRoute>} />
 
           {/* Управляющий филиалом (role: branch_owner) — отдельный раздел /branch */}
