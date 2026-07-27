@@ -53,7 +53,7 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, userServiceURL string, p
 // NewRouter собирает HTTP-роутер academic-service (общий для main и тестов).
 // Публичный префикс — /api/v1/academic (см. api-contracts.md, раздел 2).
 func NewRouter(d *Deps) http.Handler {
-	courseHandler := handlers.NewCourseHandler(d.Courses, d.UserRefs)
+	courseHandler := handlers.NewCourseHandler(d.Courses, d.UserRefs, d.Enrollments, d.UserClient)
 	enrollHandler := handlers.NewEnrollmentHandler(d.Enrollments, d.UserClient)
 	lessonHandler := handlers.NewLessonHandler(d.Lessons, d.Enrollments, d.Attendance, d.UserRefs, d.UserClient, d.Events)
 	homeworkHandler := handlers.NewHomeworkHandler(d.Homework, d.UserRefs, d.UserClient)

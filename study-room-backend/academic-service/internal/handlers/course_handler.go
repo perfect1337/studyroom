@@ -14,10 +14,12 @@ import (
 type CourseHandler struct {
 	repo     *repository.CourseRepository
 	userRefs *repository.UserRefRepository
+	enrollRepo *repository.EnrollmentRepository
+	userClient ChildrenResolver
 }
 
-func NewCourseHandler(repo *repository.CourseRepository, userRefs *repository.UserRefRepository) *CourseHandler {
-	return &CourseHandler{repo: repo, userRefs: userRefs}
+func NewCourseHandler(repo *repository.CourseRepository, userRefs *repository.UserRefRepository, enrollRepo *repository.EnrollmentRepository, userClient ChildrenResolver ) *CourseHandler {
+	return &CourseHandler{repo: repo, userRefs: userRefs, enrollRepo: enrollRepo, userClient: userClient}
 }
 
 // List — GET /courses?branch_id=&subject=&tutor_id= (api-contracts.md 2.1).
@@ -32,38 +34,81 @@ func NewCourseHandler(repo *repository.CourseRepository, userRefs *repository.Us
 // tutor_id ему запрещён, чтобы не подглядывать нагрузку других
 // преподавателей своего филиала.
 func (h *CourseHandler) List(w http.ResponseWriter, r *http.Request) {
-	claims, _ := middleware.FromContext(r.Context())
+    claims, _ := middleware.FromContext(r.Context())
+    filter := repository.CourseFilter{Subject: r.URL.Query().Get("subject")}
 
-	filter := repository.CourseFilter{Subject: r.URL.Query().Get("subject")}
-	if claims.Role == models.RoleOwner {
-		branchID, ok := parseIntQuery(r, "branch_id")
-		if !ok {
-			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid branch_id")
-			return
-		}
-		filter.BranchID = branchID
-	} else {
-		if claims.BranchID == nil {
-			writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
-			return
-		}
-		filter.BranchID = claims.BranchID
-	}
+    // ---- Родитель: видит курсы, на которые записаны его дети ----
+    if claims.Role == models.RoleParent {
+        children, err := h.userClient.Children(r.Context(), bearerToken(r), claims.UserID)
+        if err != nil {
+            writeError(w, http.StatusBadGateway, "UPSTREAM_ERROR", "failed to resolve children")
+            return
+        }
+        if len(children) == 0 {
+            writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
+            return
+        }
+        // Получаем все энролменты для этих детей
+        enrollFilter := repository.EnrollmentFilter{StudentIDs: children}
+        enrollments, err := h.enrollRepo.List(r.Context(), enrollFilter)
+        if err != nil {
+            writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to get enrollments")
+            return
+        }
+        // Извлекаем уникальные course_id
+        courseIDSet := map[int64]bool{}
+        for _, e := range enrollments {
+            courseIDSet[e.CourseID] = true
+        }
+        if len(courseIDSet) == 0 {
+            writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
+            return
+        }
+        // Превращаем в слайс
+        courseIDs := make([]int64, 0, len(courseIDSet))
+        for id := range courseIDSet {
+            courseIDs = append(courseIDs, id)
+        }
+        // Вызываем метод репозитория для получения курсов по списку ID
+        courses, err := h.repo.List(r.Context(), repository.CourseFilter{IDs: courseIDs})
+		if err != nil {
+    		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list courses")
+    		return
+		}		
+        writeJSON(w, http.StatusOK, map[string]any{"items": nonNilCourses(courses)})
+        return
+    }
 
-	if v, ok := parseIntQuery(r, "tutor_id"); ok && v != nil {
-		if claims.Role == models.RoleTutor && *v != claims.UserID {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor can only filter by their own tutor_id")
-			return
-		}
-		filter.TutorID = v
-	}
+    // ---- Остальные роли (owner, branch_owner, tutor, student) ----
+    if claims.Role == models.RoleOwner {
+        branchID, ok := parseIntQuery(r, "branch_id")
+        if !ok {
+            writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid branch_id")
+            return
+        }
+        filter.BranchID = branchID
+    } else {
+        if claims.BranchID == nil {
+            writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
+            return
+        }
+        filter.BranchID = claims.BranchID
+    }
 
-	courses, err := h.repo.List(r.Context(), filter)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list courses")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": nonNilCourses(courses)})
+    if v, ok := parseIntQuery(r, "tutor_id"); ok && v != nil {
+        if claims.Role == models.RoleTutor && *v != claims.UserID {
+            writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor can only filter by their own tutor_id")
+            return
+        }
+        filter.TutorID = v
+    }
+
+    courses, err := h.repo.List(r.Context(), filter)
+    if err != nil {
+        writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list courses")
+        return
+    }
+    writeJSON(w, http.StatusOK, map[string]any{"items": nonNilCourses(courses)})
 }
 
 func nonNilCourses(c []*models.Course) []*models.Course {

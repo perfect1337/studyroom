@@ -80,6 +80,7 @@ type CourseFilter struct {
 	BranchID *int64
 	Subject  string
 	TutorID  *int64
+	IDs      []int64
 }
 
 func (r *CourseRepository) List(ctx context.Context, f CourseFilter) ([]*models.Course, error) {
@@ -102,6 +103,11 @@ func (r *CourseRepository) List(ctx context.Context, f CourseFilter) ([]*models.
 		where += " AND c.id IN (SELECT course_id FROM course_tutors WHERE tutor_id = $" + itoa(i) + ")"
 		args = append(args, *f.TutorID)
 		i++
+	}
+	if len(f.IDs) > 0 {
+    	where += " AND c.id = ANY($" + itoa(i) + ")"
+    	args = append(args, f.IDs)
+    	i++
 	}
 	query += where + " GROUP BY c.id ORDER BY c.id"
 
