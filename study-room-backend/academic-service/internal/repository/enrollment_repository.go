@@ -214,6 +214,18 @@ func (r *EnrollmentRepository) AssignTutor(ctx context.Context, id, tutorID int6
 	return scanEnrollment(r.pool.QueryRow(ctx, query, tutorID, id))
 }
 
+// UnassignTutorEverywhere — снимает личное закрепление преподавателя со ВСЕХ
+// его enrollments сразу (tutor_id -> NULL). Используется при увольнении
+// (users.is_active=false в User Service) по событию user.updated — см.
+// events/subscriber.go и CourseRepository.RemoveTutorEverywhere (парная
+// операция для course_tutors). Сами enrollments не удаляются — ученик
+// остаётся записан на курс, просто теряет закреплённого лично за ним
+// репетитора, пока ему не назначат нового.
+func (r *EnrollmentRepository) UnassignTutorEverywhere(ctx context.Context, tutorID int64) error {
+	_, err := r.pool.Exec(ctx, `UPDATE enrollments SET tutor_id = NULL WHERE tutor_id = $1`, tutorID)
+	return err
+}
+
 func (r *EnrollmentRepository) UpdateProgress(ctx context.Context, id int64, fields map[string]any) (*models.Enrollment, error) {
 	if len(fields) == 0 {
 		return r.GetByID(ctx, id)

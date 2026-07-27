@@ -53,7 +53,7 @@ func main() {
 			defer nc.Close()
 			deps.Events = events.NewNATSPublisher(nc)
 
-			sub := events.NewSubscriber(nc, deps.UserRefs, deps.Enrollments)
+			sub := events.NewSubscriber(nc, deps.UserRefs, deps.Enrollments, deps.Courses)
 			if err := sub.Start(ctx); err != nil {
 				log.Printf("events: subscribe failed: %v", err)
 			}

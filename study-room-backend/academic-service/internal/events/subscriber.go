@@ -26,6 +26,10 @@ type UserEvent struct {
 	LastName  string      `json:"last_name"`
 	Role      models.Role `json:"role"`
 	BranchID  *int64      `json:"branch_id"`
+	// IsActive — из users.is_active. Нужно, чтобы поймать увольнение
+	// репетитора (is_active=false) и отвязать его от курсов/учеников —
+	// см. handleUserEvent ниже.
+	IsActive bool `json:"is_active"`
 }
 
 // ContractCreatedEvent — контракт события ещё не зафиксирован в
@@ -65,10 +69,11 @@ type Subscriber struct {
 	nc          *nats.Conn
 	userRefRepo *repository.UserRefRepository
 	enrollRepo  *repository.EnrollmentRepository
+	courseRepo  *repository.CourseRepository
 }
 
-func NewSubscriber(nc *nats.Conn, userRefRepo *repository.UserRefRepository, enrollRepo *repository.EnrollmentRepository) *Subscriber {
-	return &Subscriber{nc: nc, userRefRepo: userRefRepo, enrollRepo: enrollRepo}
+func NewSubscriber(nc *nats.Conn, userRefRepo *repository.UserRefRepository, enrollRepo *repository.EnrollmentRepository, courseRepo *repository.CourseRepository) *Subscriber {
+	return &Subscriber{nc: nc, userRefRepo: userRefRepo, enrollRepo: enrollRepo, courseRepo: courseRepo}
 }
 
 // Start подписывается на нужные субъекты. Подписки живут вместе с процессом
@@ -102,6 +107,21 @@ func (s *Subscriber) handleUserEvent(ctx context.Context) nats.MsgHandler {
 		}
 		if err := s.userRefRepo.Upsert(ctx, ref); err != nil {
 			log.Printf("[events] upsert user_ref %d error: %v", ev.ID, err)
+		}
+
+		// Увольнение репетитора (User Service выставил users.is_active=false
+		// в PATCH /users/{id}/status и прислал user.updated) — отвязываем его
+		// от всех курсов (course_tutors) и enrollments.tutor_id локально, в
+		// своей БД. Сами enrollments/lessons/homework не удаляются — это
+		// исторические записи, они остаются, просто теряют закреплённого
+		// репетитора. Best-effort: ошибка логируется, подписчика не валит.
+		if ev.Role == models.RoleTutor && !ev.IsActive {
+			if err := s.courseRepo.RemoveTutorEverywhere(ctx, ev.ID); err != nil {
+				log.Printf("[events] detach fired tutor %d from courses error: %v", ev.ID, err)
+			}
+			if err := s.enrollRepo.UnassignTutorEverywhere(ctx, ev.ID); err != nil {
+				log.Printf("[events] detach fired tutor %d from enrollments error: %v", ev.ID, err)
+			}
 		}
 	}
 }

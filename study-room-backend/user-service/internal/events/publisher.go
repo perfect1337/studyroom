@@ -44,6 +44,11 @@ type UserEvent struct {
 	// student_id → parent_id локально при attendance.marked_absent,
 	// не дёргая User Service синхронно (см. event-schema.md, п. attendance.marked_absent).
 	ParentID *int64 `json:"parent_id,omitempty"`
+	// IsActive — текущее значение users.is_active. Добавлено, чтобы подписчики
+	// (Academic Service) могли реагировать на увольнение репетитора
+	// (is_active=false) и отвязывать его от курсов/учеников локально, не
+	// дёргая User Service синхронно — см. academic-service/internal/events/subscriber.go.
+	IsActive bool `json:"is_active"`
 }
 
 type PasswordResetEvent struct {
@@ -89,7 +94,7 @@ func (p *NATSPublisher) UserCreated(u *models.User, tempPassword, notifyEmail st
 		ID: u.ID, Email: u.Email, FirstName: u.FirstName, LastName: u.LastName,
 		Role: string(u.Role), BranchID: u.BranchID,
 		TempPassword: tempPassword, NotifyEmail: notifyEmail,
-		ParentID: parentID,
+		ParentID: parentID, IsActive: u.IsActive,
 	})
 }
 
@@ -101,7 +106,7 @@ func (p *NATSPublisher) CredentialsReset(u *models.User, tempPassword, notifyEma
 		ID: u.ID, Email: u.Email, FirstName: u.FirstName, LastName: u.LastName,
 		Role: string(u.Role), BranchID: u.BranchID,
 		TempPassword: tempPassword, NotifyEmail: notifyEmail,
-		ParentID: parentID,
+		ParentID: parentID, IsActive: u.IsActive,
 	})
 }
 
@@ -111,7 +116,7 @@ func (p *NATSPublisher) UserUpdated(u *models.User) {
 	}
 	p.publish(SubjectUserUpdated, UserEvent{
 		ID: u.ID, Email: u.Email, FirstName: u.FirstName, LastName: u.LastName,
-		Role: string(u.Role), BranchID: u.BranchID,
+		Role: string(u.Role), BranchID: u.BranchID, IsActive: u.IsActive,
 	})
 }
 

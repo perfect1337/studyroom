@@ -291,7 +291,12 @@ export default function TeacherDetail({ role = "owner" }) {
     setFireStatus("saving");
     try {
       await setUserActive(teacherId, false);
-      setTeacher((t) => (t ? { ...t, is_active: false } : t));
+      // Увольнение на бэкенде (см. user-service SetStatus) дополнительно
+      // переводит tutor_status в inactive и асинхронно отвязывает ученика
+      // от курсов/enrollments (Academic Service, событие user.updated).
+      // Перезагружаем карточку целиком, чтобы не показывать устаревший
+      // статус и список учеников, которые уже отвязаны на бэкенде.
+      await load();
       setFireStatus("done");
     } catch (e) {
       setFireStatus(e.message || "Не удалось уволить преподавателя");

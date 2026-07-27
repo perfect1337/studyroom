@@ -560,6 +560,15 @@ func (h *UserHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid body")
 		return
 	}
+
+	// Нужна роль пользователя ДО обновления, чтобы понять, увольняем ли мы
+	// именно репетитора (иначе tutor_profiles трогать не за чем).
+	target, err := h.users.GetByID(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "user not found")
+		return
+	}
+
 	updated, err := h.users.Update(r.Context(), id, map[string]any{"is_active": body.IsActive})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
@@ -567,6 +576,20 @@ func (h *UserHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	if !body.IsActive {
 		_ = h.authRepo.RevokeAllRefreshTokens(r.Context(), id)
+
+		// Увольнение репетитора: помимо блокировки входа (is_active=false),
+		// его статус в tutor_profiles тоже переводится в inactive — это то,
+		// что видно в карточке преподавателя и в списках (см. TeacherDetail.jsx,
+		// TUTOR_STATUS_LABEL.inactive = "Неактивен"). Отвязка его учеников
+		// (course_tutors / enrollments.tutor_id) происходит асинхронно в
+		// Academic Service по событию user.updated с is_active=false — см.
+		// academic-service/internal/events/subscriber.go.
+		if target.Role == models.RoleTutor {
+			if err := h.tutorProfiles.SetStatus(r.Context(), id, models.TutorStatusInactive); err != nil {
+				writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
+				return
+			}
+		}
 	}
 	h.events.UserUpdated(updated)
 	w.WriteHeader(http.StatusOK)

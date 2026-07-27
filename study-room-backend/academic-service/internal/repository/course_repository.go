@@ -212,6 +212,17 @@ func (r *CourseRepository) RemoveTutor(ctx context.Context, courseID, tutorID in
 	return nil
 }
 
+// RemoveTutorEverywhere — снимает преподавателя со ВСЕХ курсов сразу.
+// Используется при увольнении (users.is_active=false, см. user-service
+// SetStatus) по событию user.updated — см. events/subscriber.go. В отличие
+// от RemoveTutor, не требует id конкретного курса и не считается ошибкой,
+// если преподаватель ни на одном курсе не значился (tag.RowsAffected() == 0
+// в этом случае — валидный исход, не ErrNotFound).
+func (r *CourseRepository) RemoveTutorEverywhere(ctx context.Context, tutorID int64) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM course_tutors WHERE tutor_id = $1`, tutorID)
+	return err
+}
+
 // ListTutorIDs — id преподавателей, ведущих курс.
 func (r *CourseRepository) ListTutorIDs(ctx context.Context, courseID int64) ([]int64, error) {
 	rows, err := r.pool.Query(ctx, `SELECT tutor_id FROM course_tutors WHERE course_id = $1 ORDER BY tutor_id`, courseID)
