@@ -32,7 +32,8 @@ export const NAV_ITEMS = {
     { to: "/admin/teachers", icon: "school", label: "Учителя" },
     { to: "/admin/schedule", icon: "calendar_month", label: "Расписание" },
     { to: "/admin/finance", icon: "payments", label: "Финансы" },
-    { to: "/admin/branches", icon: "storefront", label: "Филиалы" },
+    { to: "/admin/branches", icon: "store", label: "Филиалы" },
+    { to: "/admin/courses", icon: "menu_book", label: "Курсы" },
     { to: "/admin/settings", icon: "settings", label: "Настройки" },
   ],
   branch_owner: [

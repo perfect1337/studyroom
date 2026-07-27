@@ -14,6 +14,12 @@ export function createCourse(payload) {
   return academicApi("/courses", { method: "POST", body: payload });
 }
 
+// 2.2b Удалить курс (owner). Внимание: у enrollments/lessons на courses стоит
+// ON DELETE CASCADE — удаление курса удалит и связанные записи/занятия.
+export function deleteCourse(id) {
+  return academicApi(`/courses/${id}`, { method: "DELETE" });
+}
+
 // 2.1a Список преподавателей курса
 export function fetchCourseTutors(courseId) {
   return academicApi(`/courses/${courseId}/tutors`);

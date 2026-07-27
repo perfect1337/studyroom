@@ -6,7 +6,7 @@ import Pagination from "../../components/ui/Pagination.jsx";
 import { usePagination } from "../../utils/usePagination.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople, fetchBranches, createTutor, setTutorStatus } from "../../api/users.js";
-import { fetchEnrollments } from "../../api/academic.js";
+import { fetchEnrollments, fetchCourses, assignCourseTutor } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import { sanitizePhoneInput, isValidPhone } from "../../utils/phone.js";
 
@@ -38,7 +38,7 @@ const EMPTY_FORM = {
   email: "",
   phone: "",
   branch_id: "",
-  specialization: "",
+  course_ids: [],
 };
 
 /**
@@ -68,6 +68,34 @@ export default function TeachersDirectory({ role }) {
   const [addForm, setAddForm] = useState(EMPTY_FORM);
   const [addStatus, setAddStatus] = useState("");
   const [createdCreds, setCreatedCreds] = useState(null);
+  const [addFormCourses, setAddFormCourses] = useState([]); // курсы филиала, выбранного в форме добавления
+  const [addFormCoursesLoading, setAddFormCoursesLoading] = useState(false);
+
+  // Курсы для формы добавления преподавателя — зависят от выбранного в форме
+  // филиала (курс всегда принадлежит конкретному филиалу, см. api-contracts.md 2.2).
+  // При смене филиала уже выбранные курсы сбрасываем — они относились к другому филиалу.
+  useEffect(() => {
+    if (!isOwner || !showAddModal || !addForm.branch_id) {
+      setAddFormCourses([]);
+      return;
+    }
+    let cancelled = false;
+    setAddFormCoursesLoading(true);
+    fetchCourses({ branch_id: Number(addForm.branch_id) })
+      .then((res) => {
+        if (!cancelled) setAddFormCourses(res?.items ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setAddFormCourses([]);
+      })
+      .finally(() => {
+        if (!cancelled) setAddFormCoursesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOwner, showAddModal, addForm.branch_id]);
 
   // Список филиалов — нужен только owner, чтобы выбрать, какой филиал смотреть, и в форме добавления.
   useEffect(() => {
@@ -160,15 +188,32 @@ export default function TeachersDirectory({ role }) {
     setShowAddModal(true);
   }
 
+  function toggleAddFormCourse(courseId) {
+    setAddForm((f) => {
+      const has = f.course_ids.includes(courseId);
+      return { ...f, course_ids: has ? f.course_ids.filter((id) => id !== courseId) : [...f.course_ids, courseId] };
+    });
+  }
+
   async function handleAddTeacher(e) {
     e.preventDefault();
     if (!addForm.last_name || !addForm.first_name || !addForm.email || !addForm.branch_id) return;
+    if (addForm.course_ids.length === 0) {
+      setAddStatus("Выберите хотя бы один курс — по нему преподавателю будут показаны его ученики");
+      return;
+    }
     if (!isValidPhone(addForm.phone)) {
       setAddStatus("Введите телефон в формате из 10-15 цифр (можно с +)");
       return;
     }
     setAddStatus("saving");
     try {
+      // Специализация в профиле преподавателя больше не вводится вручную —
+      // формируем её автоматически из предметов выбранных курсов, чтобы
+      // колонка "Специализация" в таблице по-прежнему было чем заполнить.
+      const chosenCourses = addFormCourses.filter((c) => addForm.course_ids.includes(c.id));
+      const specialization = [...new Set(chosenCourses.map((c) => c.subject).filter(Boolean))].join(", ") || undefined;
+
       const res = await createTutor({
         email: addForm.email,
         phone: addForm.phone || undefined,
@@ -176,12 +221,29 @@ export default function TeachersDirectory({ role }) {
         first_name: addForm.first_name,
         patronymic: addForm.patronymic || undefined,
         branch_id: Number(addForm.branch_id),
-        specialization: addForm.specialization || undefined,
+        specialization,
       });
+      const newTutorId = (res?.user ?? res)?.id;
+
+      // Закрепляем преподавателя за выбранными курсами (course_tutors) — именно
+      // по этой связи ему затем будут показаны "его" ученики (см. ADR в
+      // academic-service/internal/repository/enrollment_repository.go:ListForTutor).
+      let assignError = "";
+      if (newTutorId) {
+        const results = await Promise.allSettled(
+          addForm.course_ids.map((courseId) => assignCourseTutor(courseId, newTutorId))
+        );
+        const failed = results.filter((r) => r.status === "rejected").length;
+        if (failed > 0) {
+          assignError = `Преподаватель создан, но не удалось закрепить за ним ${failed} из ${addForm.course_ids.length} курс(ов). Закрепите их вручную на странице курса.`;
+        }
+      }
+
       setAddStatus("done");
       setCreatedCreds({
         email: addForm.email,
         temp_password: res?.temp_password ?? res?.temporary_password ?? res?.password ?? null,
+        warning: assignError,
       });
       // Обновляем список, если новый учитель попадает в текущий фильтр по филиалу.
       if (!isOwner || !selectedBranch || Number(selectedBranch) === Number(addForm.branch_id)) {
@@ -276,14 +338,15 @@ export default function TeachersDirectory({ role }) {
 
         {/* Таблица преподавателей */}
         <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead className="bg-surface-container-low text-on-surface-variant border-b border-outline-variant">
               <tr>
-                <th className="px-6 py-4 font-label-md text-label-md">ФИО Преподавателя</th>
-                <th className="px-6 py-4 font-label-md text-label-md">Специализация</th>
-                {isOwner && <th className="px-6 py-4 font-label-md text-label-md">Филиал</th>}
-                <th className="px-6 py-4 font-label-md text-label-md">Активные ученики</th>
-                <th className="px-6 py-4 font-label-md text-label-md">Статус</th>
+                <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap">ФИО Преподавателя</th>
+                <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap">Специализация</th>
+                {isOwner && <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap">Филиал</th>}
+                <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap">Активные ученики</th>
+                <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap min-w-[220px]">Статус</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant">
@@ -322,7 +385,7 @@ export default function TeachersDirectory({ role }) {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className="bg-primary-fixed text-on-primary-fixed px-3 py-1 rounded-full text-label-md font-medium">
+                      <span className="inline-block whitespace-nowrap bg-primary-fixed text-on-primary-fixed px-3 py-1 rounded-full text-label-md font-medium">
                         {t.specialization || "—"}
                       </span>
                     </td>
@@ -332,14 +395,14 @@ export default function TeachersDirectory({ role }) {
                       </td>
                     )}
                     <td className="px-6 py-4 font-bold text-on-surface">{studentCount}</td>
-                    <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center gap-2">
+                    <td className="px-6 py-4 min-w-[220px]" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-2 flex-nowrap">
                         <StatusBadge status={TUTOR_STATUS_LABEL[status] ?? status} />
                         <select
                           value={status}
                           disabled={rowUpdating === t.id}
                           onChange={(e) => handleStatusChange(t.id, e.target.value)}
-                          className="text-[12px] border border-outline-variant rounded-md px-2 py-1 bg-surface-container-lowest disabled:opacity-50"
+                          className="shrink-0 text-[12px] border border-outline-variant rounded-md px-2 py-1 bg-surface-container-lowest disabled:opacity-50"
                         >
                           {statusOptions.map((s) => (
                             <option key={s} value={s}>
@@ -354,6 +417,7 @@ export default function TeachersDirectory({ role }) {
               })}
             </tbody>
           </table>
+          </div>
           <Pagination page={page} pageSize={PAGE_SIZE} total={visibleTutors.length} onPageChange={setPage} itemLabel="преподавателей" />
         </div>
       </div>
@@ -383,6 +447,11 @@ export default function TeachersDirectory({ role }) {
                     <div>Временный пароль: <span className="font-bold text-on-surface">{createdCreds.temp_password}</span></div>
                   )}
                 </div>
+                {createdCreds.warning && (
+                  <div className="p-3 rounded-lg bg-amber-100 text-amber-800 font-label-md text-label-md">
+                    {createdCreds.warning}
+                  </div>
+                )}
                 <button
                   onClick={() => setShowAddModal(false)}
                   className="w-full bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all"
@@ -450,7 +519,7 @@ export default function TeachersDirectory({ role }) {
                   <select
                     required
                     value={addForm.branch_id}
-                    onChange={(e) => setAddForm((f) => ({ ...f, branch_id: e.target.value }))}
+                    onChange={(e) => setAddForm((f) => ({ ...f, branch_id: e.target.value, course_ids: [] }))}
                     className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
                   >
                     <option value="">Выберите филиал</option>
@@ -462,13 +531,41 @@ export default function TeachersDirectory({ role }) {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Специализация</label>
-                  <input
-                    value={addForm.specialization}
-                    onChange={(e) => setAddForm((f) => ({ ...f, specialization: e.target.value }))}
-                    placeholder="Например: Математика, ЕГЭ"
-                    className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-                  />
+                  <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Курсы *</label>
+                  <p className="text-[12px] text-on-surface-variant mb-2">
+                    Преподаватель будет закреплён за выбранными курсами и увидит только тех учеников, которые на них записаны.
+                  </p>
+                  {!addForm.branch_id && (
+                    <p className="text-[12px] text-on-surface-variant italic">Сначала выберите филиал.</p>
+                  )}
+                  {addForm.branch_id && addFormCoursesLoading && (
+                    <p className="text-[12px] text-on-surface-variant italic">Загрузка курсов...</p>
+                  )}
+                  {addForm.branch_id && !addFormCoursesLoading && addFormCourses.length === 0 && (
+                    <p className="text-[12px] text-on-surface-variant italic">
+                      В этом филиале пока нет курсов — сначала создайте курс в разделе «Курсы».
+                    </p>
+                  )}
+                  {addFormCourses.length > 0 && (
+                    <div className="border border-outline-variant rounded-lg divide-y divide-outline-variant max-h-48 overflow-y-auto">
+                      {addFormCourses.map((c) => (
+                        <label
+                          key={c.id}
+                          className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-surface-container-high transition-colors"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={addForm.course_ids.includes(c.id)}
+                            onChange={() => toggleAddFormCourse(c.id)}
+                            className="w-4 h-4 accent-primary"
+                          />
+                          <span className="text-label-md text-on-surface">
+                            {c.title} <span className="text-on-surface-variant">· {c.subject}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {addStatus && addStatus !== "saving" && addStatus !== "done" && (

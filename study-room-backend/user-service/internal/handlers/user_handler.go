@@ -540,6 +540,28 @@ func (h *UserHandler) CreateBranch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, created)
 }
 
+// --- 1.17b. DELETE /branches/{id} ---
+// Доступ только owner. Двойное подтверждение удаления реализовано на
+// фронтенде (см. AdminBranches.jsx) — бэкенд просто выполняет удаление.
+// Пользователи филиала не удаляются (FK ON DELETE SET NULL), они лишь
+// теряют привязку к филиалу.
+func (h *UserHandler) DeleteBranch(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid branch id")
+		return
+	}
+	if err := h.branches.Delete(r.Context(), id); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "branch not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "delete failed")
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
 // --- 1.18. GET /parents/{parentId}/children ---
 func (h *UserHandler) ListChildren(w http.ResponseWriter, r *http.Request) {
 	parentID, err := strconv.ParseInt(chi.URLParam(r, "parentId"), 10, 64)

@@ -46,6 +46,12 @@ export function createBranch(payload) {
   return usersApi("/branches", { method: "POST", body: payload });
 }
 
+// Удалить филиал (owner). Двойное подтверждение — на фронте (см. AdminBranches.jsx).
+// Пользователи филиала не удаляются, они лишь теряют привязку к филиалу (branch_id -> null).
+export function deleteBranch(id) {
+  return usersApi(`/branches/${id}`, { method: "DELETE" });
+}
+
 // 1.18 Дети родителя
 export function fetchParentChildren(parentId) {
   return usersApi(`/parents/${parentId}/children`);

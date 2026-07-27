@@ -104,6 +104,7 @@ func NewRouter(d *Deps) http.Handler {
 				r.Patch("/users/{id}/status", userHandler.SetStatus)
 				r.Get("/branches", userHandler.ListBranches)
 				r.Post("/branches", userHandler.CreateBranch)
+				r.Delete("/branches/{id}", userHandler.DeleteBranch)
 			})
 
 			r.Group(func(r chi.Router) {

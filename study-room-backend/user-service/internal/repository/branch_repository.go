@@ -27,6 +27,22 @@ func (r *BranchRepository) Create(ctx context.Context, b *models.Branch) (*model
 	return &created, nil
 }
 
+// Delete — удаляет филиал по id. Пользователи, привязанные к филиалу
+// (branch_id), не удаляются — FK branches(id) настроен ON DELETE SET NULL
+// (см. миграцию 0001_init.up.sql), поэтому они просто останутся без филиала.
+// Возвращает ErrNotFound, если филиала с таким id не существует — обработчик
+// сам решает, каким статусом на это ответить.
+func (r *BranchRepository) Delete(ctx context.Context, id int64) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM branches WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // List — без onlyID возвращает все филиалы (для owner).
 // onlyID оставлен на случай точечной выборки внутри сервиса.
 func (r *BranchRepository) List(ctx context.Context, onlyID *int64) ([]*models.Branch, error) {

@@ -32,13 +32,14 @@ import AdminFinance from "./pages/admin/AdminFinance.jsx";
 import AdminTeachers from "./pages/admin/AdminTeachers.jsx";
 import AdminTeacherDetail from "./pages/admin/AdminTeacherDetail.jsx";
 import AdminSchedule from "./pages/admin/AdminSchedule.jsx";
-import AdminBranches from "./pages/admin/AdminBranches.jsx";
 import BranchOverview from "./pages/admin/BranchOverview.jsx";
 import BranchStudents from "./pages/admin/BranchStudents.jsx";
 import BranchStudentDetail from "./pages/admin/BranchStudentDetail.jsx";
 import BranchTeachers from "./pages/admin/BranchTeachers.jsx";
 import BranchTeacherDetail from "./pages/admin/BranchTeacherDetail.jsx";
 import BranchSchedule from "./pages/admin/BranchSchedule.jsx";
+import AdminBranches from "./pages/admin/AdminBranches.jsx";
+import AdminCourses from "./pages/admin/AdminCourses.jsx";
 
 import PlaceholderPage from "./components/ui/PlaceholderPage.jsx";
 import SettingsPage from "./pages/settings/SettingsPage.jsx";
@@ -88,6 +89,7 @@ export default function App() {
           <Route path="/admin/schedule" element={<ProtectedRoute roles={["owner"]}><AdminSchedule /></ProtectedRoute>} />
           <Route path="/admin/finance" element={<ProtectedRoute roles={["owner"]}><AdminFinance /></ProtectedRoute>} />
           <Route path="/admin/branches" element={<ProtectedRoute roles={["owner"]}><AdminBranches /></ProtectedRoute>} />
+          <Route path="/admin/courses" element={<ProtectedRoute roles={["owner"]}><AdminCourses /></ProtectedRoute>} />
           <Route path="/admin/settings" element={<ProtectedRoute roles={["owner"]}><SettingsPage role="owner" /></ProtectedRoute>} />
 
           {/* Управляющий филиалом (role: branch_owner) — отдельный раздел /branch */}

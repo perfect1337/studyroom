@@ -26,7 +26,7 @@ export default function StatusBadge({ status, color }) {
   const resolvedColor = color || STATUS_COLOR[status] || "secondary";
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold uppercase ${COLOR_MAP[resolvedColor]}`}
+      className={`inline-flex items-center whitespace-nowrap px-2.5 py-1 rounded-full text-[11px] font-bold uppercase shrink-0 ${COLOR_MAP[resolvedColor]}`}
     >
       {status}
     </span>
