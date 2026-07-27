@@ -4,6 +4,7 @@ import ProtectedRoute from "./components/routing/ProtectedRoute.jsx";
 
 import LoginPage from "./pages/auth/LoginPage.jsx";
 import RegisterPage from "./pages/auth/RegisterPage.jsx";
+import ResetPasswordPage from "./pages/auth/ResetPasswordPage.jsx";
 
 import StudentOverview from "./pages/student/StudentOverview.jsx";
 import StudentHomework from "./pages/student/StudentHomework.jsx";
@@ -49,6 +50,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           {/* Ученик (role: student) */}
           <Route path="/student" element={<ProtectedRoute roles={["student"]}><StudentOverview /></ProtectedRoute>} />

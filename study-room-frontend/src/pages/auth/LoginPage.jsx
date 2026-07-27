@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth, ROLE_HOME_ROUTE } from "../../context/AuthContext.jsx";
+import { forgotPassword } from "../../api/auth.js";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -11,6 +12,7 @@ export default function LoginPage() {
   const [form, setForm] = useState({ login: "", password: "" });
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
 
   function update(field) {
     return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
@@ -33,6 +35,23 @@ export default function LoginPage() {
       setSubmitting(false);
     }
   }
+
+  async function handleForgotPassword(e) {
+    e.preventDefault(); 
+    const email = form.login.trim();
+    if (!email) {
+      setError("Введите ваш email в поле «Логин или Email»");
+      return;
+    }
+    setError("");
+    setSuccessMessage("");
+    try {
+      await forgotPassword({ email });
+      setSuccessMessage("Пароль отправлен на вашу почту. Проверьте ящик.");
+    } catch (err) {
+      setError(err.message || "Не удалось отправить запрос. Попробуйте позже.");
+    }
+}
 
   return (
     <div className="bg-background text-on-background min-h-screen flex flex-col font-body-md antialiased">
@@ -81,6 +100,12 @@ export default function LoginPage() {
                 {error}
               </div>
             )}
+            {successMessage && (
+              <div className="mb-stack-md p-3 rounded-lg bg-green-100 text-green-800 font-label-md text-label-md flex items-center gap-2">
+                <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                {successMessage}
+              </div>
+            )}
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-stack-md">
               <div className="flex flex-col gap-stack-sm">
@@ -110,9 +135,13 @@ export default function LoginPage() {
                   <label className="font-label-md text-label-md text-on-surface" htmlFor="password">
                     Пароль
                   </label>
-                  <a className="font-label-md text-label-md text-primary hover:text-primary-container transition-colors" href="#">
-                    Забыли пароль?
-                  </a>
+                  <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  className="font-label-md text-label-md text-primary hover:text-primary-container transition-colors bg-transparent border-none cursor-pointer p-0"
+                  >
+                  Забыли пароль?
+                  </button>
                 </div>
                 <div className="relative">
                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">
