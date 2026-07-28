@@ -93,6 +93,23 @@ func (h *LessonHandler) List(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list lessons")
 		return
 	}
+
+	// Отдаём participant_ids вместе со списком занятий: фронту это нужно,
+	// чтобы у тьютора строить "Мои ученики" по факту созданных занятий,
+	// а не по enrollments/course_tutors (см. models.Lesson.ParticipantIDs).
+	lessonIDs := make([]int64, len(lessons))
+	for i, l := range lessons {
+		lessonIDs[i] = l.ID
+	}
+	participantsByLesson, err := h.lessons.ParticipantsByLessons(r.Context(), lessonIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load lesson participants")
+		return
+	}
+	for _, l := range lessons {
+		l.ParticipantIDs = participantsByLesson[l.ID]
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"items": nonNilLessons(lessons)})
 }
 

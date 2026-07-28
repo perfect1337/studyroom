@@ -118,6 +118,12 @@ type Lesson struct {
 	Status       LessonStatus `json:"status"`
 	Comment      *string      `json:"comment,omitempty"`
 	CreatedAt    time.Time    `json:"created_at"`
+	// ParticipantIDs — id учеников занятия (lesson_participants). Заполняется
+	// в хендлере (см. LessonHandler.List) отдельным батч-запросом, а не в
+	// каждом scanLesson, чтобы не плодить N+1. Нужно фронту, чтобы строить
+	// "Мои ученики" тьютора из реально созданных занятий, а не из enrollments/
+	// course_tutors — см. TutorStudents.jsx / PeopleDirectory.jsx.
+	ParticipantIDs []int64 `json:"participant_ids,omitempty"`
 }
 
 type AttendanceStatus string

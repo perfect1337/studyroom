@@ -216,6 +216,32 @@ func (r *LessonRepository) CourseBranchID(ctx context.Context, lessonID int64) (
 	return branchID, nil
 }
 
+// ParticipantsByLessons — батч-версия Participants для списка занятий сразу
+// (используется в LessonHandler.List, чтобы отдать participant_ids вместе
+// со списком занятий без N+1 запросов). Возвращает map lesson_id -> student_ids;
+// занятия без участников в карте просто отсутствуют.
+func (r *LessonRepository) ParticipantsByLessons(ctx context.Context, lessonIDs []int64) (map[int64][]int64, error) {
+	out := map[int64][]int64{}
+	if len(lessonIDs) == 0 {
+		return out, nil
+	}
+	rows, err := r.pool.Query(ctx,
+		`SELECT lesson_id, student_id FROM lesson_participants WHERE lesson_id = ANY($1)`, lessonIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var lessonID, studentID int64
+		if err := rows.Scan(&lessonID, &studentID); err != nil {
+			return nil, err
+		}
+		out[lessonID] = append(out[lessonID], studentID)
+	}
+	return out, rows.Err()
+}
+
 // Participants — id учеников, участвующих в занятии (для проверки доступа
 // parent/student к посещаемости, см. api-contracts.md 2.11).
 func (r *LessonRepository) Participants(ctx context.Context, lessonID int64) ([]int64, error) {

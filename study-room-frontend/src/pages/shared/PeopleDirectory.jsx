@@ -5,7 +5,7 @@ import Pagination from "../../components/ui/Pagination.jsx";
 import { usePagination } from "../../utils/usePagination.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople, fetchBranches, createStudent } from "../../api/users.js";
-import { fetchCourses, fetchEnrollments } from "../../api/academic.js";
+import { fetchCourses, fetchEnrollments, fetchLessons } from "../../api/academic.js";
 import { fetchContracts } from "../../api/contracts.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
@@ -35,7 +35,9 @@ function initials(person) {
  *  - parent (role="parent", /parent/children): видит только своих детей,
  *    может добавить нового ребёнка (создаётся личный кабинет ученика).
  *  - tutor (role="tutor", /tutor/students): видит только тех учеников,
- *    которые реально записаны к нему (фильтр по своим enrollments).
+ *    которым он лично создал занятие (фильтр по participant_ids из своих
+ *    lessons), а не всех учеников филиала/курса — enrollments тут не при
+ *    делах, т.к. запись на курс ещё не означает, что занятие проведено.
  *  - branch_owner (role="branch_owner", /branch/students): видит учеников
  *    своего филиала (сервер сам ограничивает выборку по branch_id из JWT).
  *  - owner (role="owner", /admin/students): видит всех учеников сети,
@@ -63,6 +65,7 @@ export default function PeopleDirectory({ role }) {
   const [people, setPeople] = useState([]);
   const [courses, setCourses] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
+  const [lessons, setLessons] = useState([]); // только для tutor — источник "своих" учеников
   const [contracts, setContracts] = useState([]);
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -83,16 +86,20 @@ export default function PeopleDirectory({ role }) {
     try {
       const enrollParams = isTutor ? { tutor_id: user.id } : {};
       const coursesParams = isTutor ? { tutor_id: user.id } : {};
-      const [peopleRes, coursesRes, enrollRes, contractsRes, branchesRes] = await Promise.all([
+      const lessonParams = isTutor ? { tutor_id: user.id } : null;
+      const [peopleRes, coursesRes, enrollRes, lessonsRes, contractsRes, branchesRes] = await Promise.all([
         fetchMyPeople(),
         fetchCourses(coursesParams),
         fetchEnrollments(enrollParams).catch(() => ({ items: [] })),
+        isTutor ? fetchLessons(lessonParams).catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
         showContracts ? fetchContracts().catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
         isOwner || isParent ? fetchBranches().catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
       ]);
 
       const enrollItems = enrollRes?.items ?? [];
+      const lessonItems = lessonsRes?.items ?? [];
       setEnrollments(enrollItems);
+      setLessons(lessonItems);
       setCourses(coursesRes?.items ?? []);
       setContracts(contractsRes?.items ?? []);
       setBranches(branchesRes?.items ?? []);
@@ -100,15 +107,19 @@ export default function PeopleDirectory({ role }) {
       if (isParent) {
         setPeople(peopleRes?.children ?? []);
       } else if (isTutor) {
-        // "Мои ученики" у репетитора — это только те, на кого есть его enrollments,
-        // а не все ученики филиала (peopleRes.students — более широкий список).
+        // "Мои ученики" у репетитора — это только те, кому он лично создал
+        // занятие (participant_ids из его lessons), а не все, кто записан
+        // на курс (enrollments/course_tutors — более широкий список, там
+        // может быть ученик, с которым занятие ещё ни разу не проводилось).
         const byId = {};
         (peopleRes?.students ?? []).forEach((s) => (byId[s.id] = s));
         const seen = new Map();
-        enrollItems.forEach((e) => {
-          if (!seen.has(e.student_id)) {
-            seen.set(e.student_id, byId[e.student_id] ?? { id: e.student_id });
-          }
+        lessonItems.forEach((l) => {
+          (l.participant_ids ?? []).forEach((studentId) => {
+            if (!seen.has(studentId)) {
+              seen.set(studentId, byId[studentId] ?? { id: studentId });
+            }
+          });
         });
         setPeople(Array.from(seen.values()));
       } else {

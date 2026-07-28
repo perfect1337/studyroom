@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import ProgressBar from "../../components/ui/ProgressBar.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchCourses, fetchEnrollments } from "../../api/academic.js";
+import { fetchCourses, fetchEnrollments, fetchLessons } from "../../api/academic.js";
 import { fetchUserById } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
@@ -22,6 +22,7 @@ export default function StudentCourses() {
   const [enrollments, setEnrollments] = useState([]);
   const [coursesById, setCoursesById] = useState({});
   const [tutorsById, setTutorsById] = useState({});
+  const [courseTutorId, setCourseTutorId] = useState({}); // course_id -> tutor_id, из реально созданных занятий
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -34,9 +35,12 @@ export default function StudentCourses() {
       setLoading(true);
       setError("");
       try {
-        const [enrollRes, coursesRes] = await Promise.all([
+        const [enrollRes, coursesRes, lessonsRes] = await Promise.all([
           fetchEnrollments({ student_id: user.id }),
           fetchCourses(),
+          // enrollments.tutor_id часто пустой (проставляется вручную/по договору) —
+          // реальный препод по курсу виден по тому, кто создал занятие (lessons.tutor_id).
+          fetchLessons({ student_id: user.id }).catch(() => ({ items: [] })),
         ]);
         if (cancelled) return;
 
@@ -52,7 +56,24 @@ export default function StudentCourses() {
         (coursesRes?.items ?? []).forEach((c) => (cMap[c.id] = c));
         setCoursesById(cMap);
 
-        const tutorIds = [...new Set(enrollItems.map((e) => e.tutor_id).filter(Boolean))];
+        // Самое свежее занятие по курсу определяет преподавателя, если в
+        // enrollment он не проставлен.
+        const lessonItems = (lessonsRes?.items ?? [])
+          .slice()
+          .sort((a, b) => (a.lesson_date + a.start_time).localeCompare(b.lesson_date + b.start_time));
+        const cTutorMap = {};
+        lessonItems.forEach((l) => {
+          if (l.tutor_id) cTutorMap[l.course_id] = l.tutor_id;
+        });
+        setCourseTutorId(cTutorMap);
+
+        const tutorIds = [
+          ...new Set(
+            enrollItems
+              .map((e) => e.tutor_id || cTutorMap[e.course_id])
+              .filter(Boolean)
+          ),
+        ];
         if (tutorIds.length) {
           const fetched = await Promise.all(tutorIds.map((id) => fetchUserById(id).catch(() => null)));
           if (!cancelled) {
@@ -132,7 +153,7 @@ export default function StudentCourses() {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-stack-md">
             {filtered.map((e) => {
               const course = coursesById[e.course_id];
-              const tutor = tutorsById[e.tutor_id];
+              const tutor = tutorsById[e.tutor_id || courseTutorId[e.course_id]];
               return (
                 <div
                   key={e.id}

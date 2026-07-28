@@ -21,6 +21,18 @@ function todayISO() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// "2026-12-25T00:00:00Z" + "13:00:00" -> "25.12.2026 13:00"
+function formatLessonDateTime(lessonDate, startTime) {
+  if (!lessonDate) return "";
+  const d = new Date(lessonDate);
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const yyyy = d.getUTCFullYear();
+  const datePart = `${dd}.${mm}.${yyyy}`;
+  const timePart = startTime ? startTime.slice(0, 5) : "";
+  return timePart ? `${datePart} ${timePart}` : datePart;
+}
+
 export default function StudentOverview() {
   const { user } = useAuth();
 
@@ -29,6 +41,7 @@ export default function StudentOverview() {
   const [upcomingLessons, setUpcomingLessons] = useState([]);
   const [homework, setHomework] = useState([]);
   const [tutorsById, setTutorsById] = useState({});
+  const [courseTutorId, setCourseTutorId] = useState({}); // course_id -> tutor_id, из реально созданных занятий
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -40,11 +53,14 @@ export default function StudentOverview() {
       setLoading(true);
       setError("");
       try {
-        const [enrollRes, coursesRes, lessonsRes, homeworkRes] = await Promise.all([
+        const [enrollRes, coursesRes, lessonsRes, homeworkRes, allLessonsRes] = await Promise.all([
           fetchEnrollments({ student_id: user.id }),
           fetchCourses(),
           fetchLessons({ student_id: user.id, date_from: todayISO() }),
           fetchHomework({ student_id: user.id }),
+          // enrollments.tutor_id часто пустой — реальный препод по курсу виден
+          // по тому, кто создал занятие (lessons.tutor_id), без ограничения по дате.
+          fetchLessons({ student_id: user.id }).catch(() => ({ items: [] })),
         ]);
         if (cancelled) return;
 
@@ -54,7 +70,22 @@ export default function StudentOverview() {
         setUpcomingLessons((lessonsRes?.items ?? []).slice().sort((a, b) => a.lesson_date.localeCompare(b.lesson_date)));
         setHomework(homeworkRes?.items ?? []);
 
-        const tutorIds = [...new Set(enrollItems.map((e) => e.tutor_id).filter(Boolean))];
+        const allLessonItems = (allLessonsRes?.items ?? [])
+          .slice()
+          .sort((a, b) => (a.lesson_date + a.start_time).localeCompare(b.lesson_date + b.start_time));
+        const cTutorMap = {};
+        allLessonItems.forEach((l) => {
+          if (l.tutor_id) cTutorMap[l.course_id] = l.tutor_id;
+        });
+        setCourseTutorId(cTutorMap);
+
+        const tutorIds = [
+          ...new Set(
+            enrollItems
+              .map((e) => e.tutor_id || cTutorMap[e.course_id])
+              .filter(Boolean)
+          ),
+        ];
         if (tutorIds.length) {
           const fetched = await Promise.all(tutorIds.map((id) => fetchUserById(id).catch(() => null)));
           if (!cancelled) {
@@ -177,7 +208,7 @@ export default function StudentOverview() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-stack-md">
               {enrollments.map((e) => {
                 const course = coursesById[e.course_id];
-                const tutor = tutorsById[e.tutor_id];
+                const tutor = tutorsById[e.tutor_id || courseTutorId[e.course_id]];
                 const nextLesson = nextLessonByCourse[e.course_id];
                 return (
                   <div
@@ -214,7 +245,7 @@ export default function StudentOverview() {
                         <span className="material-symbols-outlined text-[16px]">event</span>
                         <span className="font-body-md text-body-md text-sm font-medium">
                           {nextLesson
-                            ? `След. урок: ${nextLesson.lesson_date} в ${nextLesson.start_time}`
+                            ? `След. урок: ${formatLessonDateTime(nextLesson.lesson_date, nextLesson.start_time)}`
                             : "Занятий не запланировано"}
                         </span>
                       </div>
