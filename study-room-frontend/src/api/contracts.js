@@ -10,7 +10,9 @@ export function createContract(payload) {
   return contractsApi("", { method: "POST", body: payload });
 }
 
-// 3.2 Список договоров (owner only — полные данные с суммой/оплатой)
+// 3.2 Список договоров: owner (полные данные с суммой/оплатой, любой филиал);
+// branch_owner (только свой филиал — сервер сам подставляет branch_id из JWT,
+// в ответе нет amount/payment_status, зато есть status/start_date/end_date).
 export function fetchContracts({ branch_id, student_id, status } = {}) {
   return contractsApi("", { params: { branch_id, student_id, status } });
 }

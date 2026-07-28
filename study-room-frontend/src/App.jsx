@@ -8,8 +8,6 @@ import ResetPasswordPage from "./pages/auth/ResetPasswordPage.jsx";
 
 import StudentOverview from "./pages/student/StudentOverview.jsx";
 import StudentHomework from "./pages/student/StudentHomework.jsx";
-import StudentTests from "./pages/student/StudentTests.jsx";
-import StudentGrades from "./pages/student/StudentGrades.jsx";
 import StudentSchedule from "./pages/student/StudentSchedule.jsx";
 import StudentCourses from "./pages/student/StudentCourses.jsx";
 import StudentProfile from "./pages/student/StudentProfile.jsx";
@@ -20,7 +18,6 @@ import TutorStudentDetail from "./pages/tutor/TutorStudentDetail.jsx";
 import TutorNewLesson from "./pages/tutor/TutorNewLesson.jsx";
 import TutorSchedule from "./pages/tutor/TutorSchedule.jsx";
 import TutorHomework from "./pages/tutor/TutorHomework.jsx";
-import TutorTests from "./pages/tutor/TutorTests.jsx";
 
 import ParentOverview from "./pages/parent/ParentOverview.jsx";
 import ParentChildren from "./pages/parent/ParentChildren.jsx";
@@ -63,8 +60,6 @@ export default function App() {
           <Route path="/student/schedule" element={<ProtectedRoute roles={["student"]}><StudentSchedule /></ProtectedRoute>} />
           <Route path="/student/courses" element={<ProtectedRoute roles={["student"]}><StudentCourses /></ProtectedRoute>} />
           <Route path="/student/homework" element={<ProtectedRoute roles={["student"]}><StudentHomework /></ProtectedRoute>} />
-          <Route path="/student/tests" element={<ProtectedRoute roles={["student"]}><StudentTests /></ProtectedRoute>} />
-          <Route path="/student/grades" element={<ProtectedRoute roles={["student"]}><StudentGrades /></ProtectedRoute>} />
           <Route path="/student/profile" element={<ProtectedRoute roles={["student"]}><StudentProfile /></ProtectedRoute>} />
           <Route path="/student/settings" element={<ProtectedRoute roles={["student"]}><SettingsPage role="student" /></ProtectedRoute>} />
 
@@ -75,7 +70,6 @@ export default function App() {
           <Route path="/tutor/schedule" element={<ProtectedRoute roles={["tutor"]}><TutorSchedule /></ProtectedRoute>} />
           <Route path="/tutor/schedule/new" element={<ProtectedRoute roles={["tutor"]}><TutorNewLesson /></ProtectedRoute>} />
           <Route path="/tutor/homework" element={<ProtectedRoute roles={["tutor"]}><TutorHomework /></ProtectedRoute>} />
-          <Route path="/tutor/tests" element={<ProtectedRoute roles={["tutor"]}><TutorTests /></ProtectedRoute>} />
           <Route path="/tutor/settings" element={<ProtectedRoute roles={["tutor"]}><SettingsPage role="tutor" /></ProtectedRoute>} />
 
           {/* Родитель (role: parent) */}

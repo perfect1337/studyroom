@@ -124,6 +124,41 @@ func TestListContracts_FilterByBranchAndStatus(t *testing.T) {
 	}
 }
 
+func TestListContracts_BranchOwner_OwnBranchOnlyRedacted(t *testing.T) {
+	e := getEnv(t)
+	ownerToken := e.accessToken(1, "owner", nil)
+	branch1 := int64(1)
+	branchOwnerToken := e.accessToken(900, "branch_owner", &branch1)
+
+	e.mustOK(e.do(http.MethodPost, "/api/v1/contracts", createContractBody(100, 300, 12, 1), ownerToken), http.StatusCreated)
+	e.mustOK(e.do(http.MethodPost, "/api/v1/contracts", createContractBody(101, 301, 12, 2), ownerToken), http.StatusCreated)
+
+	// branch_owner видит только договор своего филиала (1), даже если явно
+	// запросит чужой branch_id=2 в query — сервер подставляет свой из claims.
+	res := e.do(http.MethodGet, "/api/v1/contracts?branch_id=2", nil, branchOwnerToken)
+	e.mustOK(res, http.StatusOK)
+	items := asSlice(res.Body["items"])
+	if len(items) != 1 {
+		t.Fatalf("expected 1 contract scoped to own branch, got %+v", items)
+	}
+	item := items[0].(map[string]any)
+	if item["branch_id"] != float64(1) {
+		t.Fatalf("expected branch_id=1, got %+v", item)
+	}
+	if item["status"] == nil || item["start_date"] == nil || item["end_date"] == nil {
+		t.Fatalf("expected status/start_date/end_date to be present, got %+v", item)
+	}
+	if _, hasAmount := item["amount"]; hasAmount {
+		t.Fatalf("branch_owner must not see amount, got %+v", item)
+	}
+	if _, hasPaymentStatus := item["payment_status"]; hasPaymentStatus {
+		t.Fatalf("branch_owner must not see payment_status, got %+v", item)
+	}
+
+	forbidden := e.do(http.MethodGet, "/api/v1/contracts", nil, e.accessToken(300, "parent", nil))
+	e.mustOK(forbidden, http.StatusForbidden)
+}
+
 // --- 3.3. GET /contracts/{id} ----------------------------------------------
 
 func TestGetContract_NotFound(t *testing.T) {

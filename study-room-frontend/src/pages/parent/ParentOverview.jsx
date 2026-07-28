@@ -30,26 +30,6 @@ function formatDate(dateStr) {
   const [, year, month, day] = match;
   return `${day}.${month}.${year}`;
 }
-// "2026-12-25T00:00:00Z" + "16:00:00" -> "25.12.2026, 16:00 - 17:00"
-function formatLessonDateTime(lessonDate, startTime, endTime) {
-  if (!lessonDate) return "—";
-  const d = new Date(lessonDate);
-  const dd = String(d.getUTCDate()).padStart(2, "0");
-  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const yyyy = d.getUTCFullYear();
-  const datePart = `${dd}.${mm}.${yyyy}`;
-  const start = startTime ? startTime.slice(0, 5) : "";
-  const end = endTime ? endTime.slice(0, 5) : "";
-  const timePart = end ? `${start} - ${end}` : start;
-  return timePart ? `${datePart}, ${timePart}` : datePart;
-}
-// "9" -> "9 класс" (класс уже может быть с литерой, напр. "9А" -> "9А класс")
-function formatClass(classInfo) {
-  if (!classInfo) return null;
-  const str = String(classInfo).trim();
-  if (!str) return null;
-  return /класс/i.test(str) ? str : `${str} класс`;
-}
 function daysUntil(endDateStr) {
   if (!endDateStr) return null;
   const endDate = new Date(endDateStr);
@@ -268,7 +248,7 @@ export default function ParentOverview() {
                         </div>
                         {(child.class_info || child.school) && (
                           <p className="text-sm text-on-surface-variant mb-1">
-                            {[formatClass(child.class_info), child.school].filter(Boolean).join(" · ")}
+                            {[child.class_info, child.school].filter(Boolean).join(" · ")}
                           </p>
                         )}
                         {(child.avg_grade != null || child.attendance_pct != null) && (
@@ -337,7 +317,7 @@ export default function ParentOverview() {
                           {course?.title ?? course?.subject ?? l.topic} ({l._childName})
                         </p>
                         <p className="text-sm text-on-surface-variant flex items-center gap-1 mt-1">
-                          <span className="material-symbols-outlined text-[16px]">schedule</span> {formatLessonDateTime(l.lesson_date, l.start_time, l.end_time)}
+                          <span className="material-symbols-outlined text-[16px]">schedule</span> {l.lesson_date}, {l.start_time} - {l.end_time}
                         </p>
                       </div>
                       <span className="material-symbols-outlined text-primary bg-primary-container/10 p-2 rounded-full">

@@ -92,10 +92,21 @@ func (h *ContractHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, contract)
 }
 
-// List — GET /contracts?branch_id=&student_id=&status= (api-contracts.md 3.2), roles: owner.
+// List — GET /contracts?branch_id=&student_id=&status= (api-contracts.md 3.2),
+// roles: owner (любой филиал) / branch_owner (принудительно только свой —
+// query-параметр branch_id для него игнорируется, иначе он смог бы
+// подсмотреть договоры чужого филиала просто поменяв параметр в адресе).
 func (h *ContractHandler) List(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
 	filter := repository.ListFilter{Status: r.URL.Query().Get("status")}
-	if v, ok := parseIntQuery(r, "branch_id"); ok {
+
+	if claims.Role == models.RoleBranchOwner {
+		if claims.BranchID == nil {
+			writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
+			return
+		}
+		filter.BranchID = claims.BranchID
+	} else if v, ok := parseIntQuery(r, "branch_id"); ok {
 		filter.BranchID = v
 	}
 	if v, ok := parseIntQuery(r, "student_id"); ok {

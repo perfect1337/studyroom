@@ -58,6 +58,7 @@ export default function TeachersDirectory({ role }) {
   const [branches, setBranches] = useState([]);
   const [selectedBranch, setSelectedBranch] = useState(""); // "" = все филиалы (только owner)
   const [enrollments, setEnrollments] = useState([]);
+  const [courses, setCourses] = useState([]); // нужны, чтобы учитывать привязку курса к преподавателю (course_tutors)
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
@@ -122,13 +123,15 @@ export default function TeachersDirectory({ role }) {
         const params = { search: search || undefined };
         if (isOwner && selectedBranch) params.branch_id = Number(selectedBranch);
 
-        const [peopleRes, enrollRes] = await Promise.all([
+        const [peopleRes, enrollRes, coursesRes] = await Promise.all([
           fetchMyPeople(params),
           fetchEnrollments().catch(() => ({ items: [] })),
+          fetchCourses(isOwner && selectedBranch ? { branch_id: Number(selectedBranch) } : {}).catch(() => ({ items: [] })),
         ]);
         if (cancelled) return;
         setTutors(peopleRes?.tutors ?? []);
         setEnrollments(enrollRes?.items ?? []);
+        setCourses(coursesRes?.items ?? []);
       } catch (e) {
         if (!cancelled) setError(e.message || "Не удалось загрузить список преподавателей");
       } finally {
@@ -143,14 +146,25 @@ export default function TeachersDirectory({ role }) {
     };
   }, [isOwner, selectedBranch, search]);
 
+  // Считаем и личные назначения (enrollments.tutor_id), и учеников, записанных
+  // на курсы, которые преподаватель ведёт через course_tutors — иначе привязка
+  // нового курса к преподавателю никак не отражалась бы в этой таблице
+  // (см. ту же логику в TeacherDetail.jsx: myStudents/taughtCourseIds).
   const activeStudentsByTutor = useMemo(() => {
     const map = {};
+    const tutorsByCourse = {};
+    courses.forEach((c) => {
+      tutorsByCourse[c.id] = c.tutor_ids ?? [];
+    });
     enrollments.forEach((e) => {
-      if (!e.tutor_id) return;
-      (map[e.tutor_id] ??= new Set()).add(e.student_id);
+      const tutorIds = new Set(tutorsByCourse[e.course_id] ?? []);
+      if (e.tutor_id) tutorIds.add(e.tutor_id);
+      tutorIds.forEach((tutorId) => {
+        (map[tutorId] ??= new Set()).add(e.student_id);
+      });
     });
     return map;
-  }, [enrollments]);
+  }, [enrollments, courses]);
 
   const branchNameById = useMemo(() => {
     const map = {};

@@ -640,6 +640,11 @@ export default function TeacherDetail({ role = "owner" }) {
                             <p className="text-[12px] text-on-surface-variant">
                               {l.location_type === "remote" ? "Дистанционно" : "Очно"}
                             </p>
+                            <p className="text-[12px] text-primary font-bold truncate">
+                              {l.tutor_id === Number(teacherId) || l.tutor_id === teacher?.id
+                                ? fullName(teacher)
+                                : `Преподаватель #${l.tutor_id}`}
+                            </p>
                           </div>
                         </div>
                       );

@@ -70,3 +70,31 @@ type ContractExpiry struct {
 	ContractID int64     `json:"contract_id"`
 	EndDate    time.Time `json:"end_date"`
 }
+
+// ContractSummary — облегчённая версия договора для branch_owner в 3.2
+// (список договоров своего филиала). В отличие от полного Contract —
+// без Amount/PaymentStatus (финансовые поля видит только owner), но,
+// в отличие от ContractExpiry, со Status и StartDate — фронту нужно
+// показать управляющему филиалом даты и статус договора ученика
+// в общем списке, не открывая каждый договор по отдельности.
+type ContractSummary struct {
+	ID        int64          `json:"id"`
+	StudentID int64          `json:"student_id"`
+	CourseID  int64          `json:"course_id"`
+	BranchID  int64          `json:"branch_id"`
+	Status    ContractStatus `json:"status"`
+	StartDate time.Time      `json:"start_date"`
+	EndDate   time.Time      `json:"end_date"`
+}
+
+func NewContractSummary(c *Contract) ContractSummary {
+	return ContractSummary{
+		ID:        c.ID,
+		StudentID: c.StudentID,
+		CourseID:  c.CourseID,
+		BranchID:  c.BranchID,
+		Status:    c.Status,
+		StartDate: c.StartDate,
+		EndDate:   c.EndDate,
+	}
+}

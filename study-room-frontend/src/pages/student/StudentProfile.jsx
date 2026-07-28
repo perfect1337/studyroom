@@ -7,13 +7,6 @@ function initials(person) {
   if (!person) return "?";
   return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
 }
-// "9" -> "9 класс" (если уже указано "9 класс"/"9А класс" — не дублируем слово)
-function formatClass(classInfo) {
-  if (!classInfo) return null;
-  const str = String(classInfo).trim();
-  if (!str) return null;
-  return /класс/i.test(str) ? str : `${str} класс`;
-}
 
 /**
  * "Профиль ученика" — сводка данных из своего же профиля (GET /users/me
@@ -28,7 +21,7 @@ export default function StudentProfile() {
     ["Email", user?.email],
     ["Телефон", user?.phone || "Не указан"],
     ["Роль", "Ученик"],
-    ["Класс", formatClass(user?.class_info) || "Не указан"],
+    ["Класс", user?.class_info || "Не указан"],
     ["Школа", user?.school || "Не указана"],
     ["Статус аккаунта", user?.is_active === false ? "Деактивирован" : "Активен"],
   ];

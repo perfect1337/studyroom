@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchUserById, resetStudentCredentials } from "../../api/users.js";
-import { fetchEnrollments, fetchCourses, fetchHomework, fetchLessons, fetchTests } from "../../api/academic.js";
+import { fetchUserById, resetStudentCredentials, fetchMyPeople } from "../../api/users.js";
+import { fetchEnrollments, fetchCourses, fetchHomework, fetchLessons } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
 const WEEKDAYS = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"];
@@ -68,8 +68,8 @@ export default function StudentDetail({ role = "parent" }) {
   const [enrollments, setEnrollments] = useState([]);
   const [courses, setCourses] = useState([]);
   const [homework, setHomework] = useState([]);
-  const [tests, setTests] = useState([]);
   const [lessons, setLessons] = useState([]);
+  const [tutors, setTutors] = useState([]); // для отображения имени преподавателя в мини-календаре
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedDay, setSelectedDay] = useState(null);
@@ -131,13 +131,13 @@ export default function StudentDetail({ role = "parent" }) {
       try {
         const date_from = toISODate(viewYear, viewMonth, 1);
         const date_to = toISODate(viewYear, viewMonth, daysInMonth);
-        const [childRes, enrollRes, coursesRes, homeworkRes, lessonsRes, testsRes] = await Promise.all([
+        const [childRes, enrollRes, coursesRes, homeworkRes, lessonsRes, peopleRes] = await Promise.all([
           fetchUserById(childId),
           fetchEnrollments({ student_id: childId }),
           fetchCourses(),
           fetchHomework({ student_id: childId }),
           fetchLessons({ student_id: childId, date_from, date_to }),
-          fetchTests({ student_id: childId }),
+          fetchMyPeople().catch(() => ({ tutors: [] })),
         ]);
         if (cancelled) return;
         setChild(childRes);
@@ -146,7 +146,7 @@ export default function StudentDetail({ role = "parent" }) {
         setCourses(coursesRes?.items ?? []);
         setHomework(homeworkRes?.items ?? []);
         setLessons(lessonsRes?.items ?? []);
-        setTests(testsRes?.items ?? []);
+        setTutors(peopleRes?.tutors ?? []);
       } catch (e) {
         if (!cancelled) setError(e.message || "Не удалось загрузить данные ребёнка");
       } finally {
@@ -167,6 +167,12 @@ export default function StudentDetail({ role = "parent" }) {
     return map;
   }, [courses]);
 
+  const tutorsById = useMemo(() => {
+    const map = {};
+    tutors.forEach((t) => (map[t.id] = t));
+    return map;
+  }, [tutors]);
+
   const lessonsByDay = useMemo(() => {
     const map = {};
     for (const l of lessons) {
@@ -181,10 +187,6 @@ export default function StudentDetail({ role = "parent" }) {
     ? Math.round(enrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / enrollments.length)
     : 0;
   const homeworkDone = homework.filter((h) => h.status === "viewed").length;
-  const gradedTests = tests.filter((t) => t.grade != null);
-  const avgGrade = gradedTests.length
-    ? gradedTests.reduce((s, t) => s + t.grade, 0) / gradedTests.length
-    : null;
 
   // Занятия для выбранного дня
   const selectedDayLessons = selectedDay ? (lessonsByDay[selectedDay] ?? []) : [];
@@ -264,11 +266,11 @@ export default function StudentDetail({ role = "parent" }) {
                     Заданий выполнено: <strong className="text-primary">{homeworkDone}/{homework.length}</strong>
                   </span>
                 </div>
-                {avgGrade != null && (
+                {child?.avg_grade != null && (
                   <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg">
                     <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>grade</span>
                     <span className="font-label-md text-on-surface">
-                      Средний балл за тесты: <strong className="text-primary">{avgGrade.toFixed(1)}</strong>
+                      Средний балл: <strong className="text-primary">{child.avg_grade.toFixed(1)}</strong>
                     </span>
                   </div>
                 )}
@@ -364,64 +366,6 @@ export default function StudentDetail({ role = "parent" }) {
                 </table>
               </div>
             </div>
-
-            <div className="pt-stack-lg">
-              <div className="flex items-center justify-between mb-stack-md">
-                <h3 className="font-headline-sm text-headline-sm text-on-surface">Успеваемость (тесты)</h3>
-                {avgGrade != null && (
-                  <span className="text-label-md font-bold text-primary bg-primary/10 px-3 py-1.5 rounded-lg">
-                    Средний балл: {avgGrade.toFixed(1)}
-                  </span>
-                )}
-              </div>
-              <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 overflow-hidden">
-                <table className="w-full text-left">
-                  <thead className="bg-surface-container text-on-surface-variant text-label-md font-bold uppercase tracking-wider">
-                    <tr>
-                      <th className="px-6 py-4">Тест</th>
-                      <th className="px-6 py-4">Статус</th>
-                      <th className="px-6 py-4">Оценка</th>
-                      <th className="px-6 py-4 text-right">Выдан</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-outline-variant/30">
-                    {tests.length === 0 && (
-                      <tr>
-                        <td colSpan={4} className="px-6 py-8 text-center text-on-surface-variant">Тестов пока нет</td>
-                      </tr>
-                    )}
-                    {tests.map((t) => {
-                      const isSubmitted = t.status === "submitted";
-                      return (
-                        <tr key={t.id} className="hover:bg-surface-container-low transition-colors">
-                          <td className="px-6 py-5">
-                            <p className="font-label-md text-on-surface">{t.title}</p>
-                          </td>
-                          <td className="px-6 py-5">
-                            <span className={`flex items-center gap-1.5 font-bold text-[13px] ${isSubmitted ? "text-green-600" : "text-orange-600"}`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${isSubmitted ? "bg-green-600" : "bg-orange-600"}`} />
-                              {isSubmitted ? "Сдан" : "Не сдан"}
-                            </span>
-                          </td>
-                          <td className="px-6 py-5">
-                            {t.grade != null ? (
-                              <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 text-primary font-bold">
-                                {t.grade}
-                              </span>
-                            ) : (
-                              <span className="text-on-surface-variant text-sm">—</span>
-                            )}
-                          </td>
-                          <td className="px-6 py-5 text-right font-bold text-on-surface-variant text-label-md">
-                            {t.created_at ? new Date(t.created_at).toLocaleDateString("ru-RU") : "—"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
           </section>
 
           <aside className="col-span-12 lg:col-span-4 space-y-stack-lg">
@@ -504,6 +448,7 @@ export default function StudentDetail({ role = "parent" }) {
                 )}
                 {(selectedDay ? selectedDayLessons : upcomingDaily).map((l) => {
                   const course = coursesById[l.course_id];
+                  const tutor = tutorsById[l.tutor_id];
                   const lessonDay = Number(l.lesson_date.slice(8, 10));
                   return (
                     <div key={l.id} className="flex items-center gap-3">
@@ -517,9 +462,12 @@ export default function StudentDetail({ role = "parent" }) {
                         <p className="text-[13px] text-on-surface truncate">
                           {course?.subject ?? course?.title ?? l.topic}
                         </p>
-                        <p className="text-[12px] text-on-surface-variant">
+                        <p className="text-[12px] text-on-surface-variant truncate">
                           {l.location_type === "remote" ? "Дистанционно" : "Очно"}
                           {l.topic && <span> · {l.topic}</span>}
+                        </p>
+                        <p className="text-[12px] text-primary font-bold truncate">
+                          {tutor ? fullName(tutor) : l.tutor_id ? `Преподаватель #${l.tutor_id}` : "Преподаватель не назначен"}
                         </p>
                       </div>
                     </div>

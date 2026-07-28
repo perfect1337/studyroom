@@ -487,7 +487,7 @@
 { "items": [ { "id": 284, "student_id": 4588201, "amount": 4500, "payment_status": "unpaid", "status": "active", "start_date": "...", "end_date": "..." } ] }
 ```
 `auth`: true
-`roles`: `owner` **только**. Полный объект договора (сумма, статус оплаты, даты) больше никому, кроме владельца, не отдаётся — см. 3.3a для остальных ролей.
+`roles`: `owner` (полные данные — сумма, статус оплаты, даты, любой филиал через `?branch_id=`); `branch_owner` (только договоры своего филиала — `branch_id` принудительно подставляется из JWT и не берётся из query; в ответе только `id`, `student_id`, `course_id`, `branch_id`, `status`, `start_date`, `end_date` — **без `amount`/`payment_status`**, эти финансовые поля видит только owner).
 
 ## 3.3. Получить договор по id
 `GET /contracts/{id}`

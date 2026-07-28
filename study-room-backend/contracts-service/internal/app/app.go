@@ -65,16 +65,24 @@ func NewRouter(d *Deps) http.Handler {
 	r.Route("/api/v1/contracts", func(r chi.Router) {
 		r.Use(middleware.RequireAuth(d.TM))
 
-		// 3.1-3.2, 3.3-3.7 — owner-only.
+		// 3.1, 3.3-3.7 — owner-only.
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireRoles(models.RoleOwner))
 			r.Post("/", h.Create)
-			r.Get("/", h.List)
 			r.Get("/{id}", h.GetByID)
 			r.Patch("/{id}", h.UpdateFields)
 			r.Patch("/{id}/status", h.UpdateStatus)
 			r.Patch("/{id}/payment-status", h.UpdatePaymentStatus)
 			r.Delete("/{id}", h.Delete)
+		})
+
+		// 3.2 — owner (любой филиал) / branch_owner (только свой филиал,
+		// сервер сам подставляет branch_id из JWT — см. ContractHandler.List).
+		// Нужен branch_owner, чтобы показывать срок/статус договора в
+		// разделе "Ученики филиала" (/branch/students).
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireRoles(models.RoleOwner, models.RoleBranchOwner))
+			r.Get("/", h.List)
 		})
 
 		// 3.3a — branch_owner (свой филиал) / parent (свои дети),
