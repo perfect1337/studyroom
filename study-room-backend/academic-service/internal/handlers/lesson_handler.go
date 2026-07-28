@@ -66,6 +66,9 @@ func (h *LessonHandler) List(w http.ResponseWriter, r *http.Request) {
 		if v, ok := parseIntQuery(r, "tutor_id"); ok {
 			filter.TutorID = v
 		}
+		if v, ok := parseIntQuery(r, "student_id"); ok {
+			filter.StudentID = v
+		}
 	case models.RoleTutor:
 		tutorID := claims.UserID
 		filter.TutorID = &tutorID

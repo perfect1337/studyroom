@@ -641,9 +641,11 @@ export default function TeacherDetail({ role = "owner" }) {
                               {l.location_type === "remote" ? "Дистанционно" : "Очно"}
                             </p>
                             <p className="text-[12px] text-primary font-bold truncate">
-                              {l.tutor_id === Number(teacherId) || l.tutor_id === teacher?.id
-                                ? fullName(teacher)
-                                : `Преподаватель #${l.tutor_id}`}
+                              {(l.participant_ids ?? []).length > 0
+                                ? l.participant_ids
+                                    .map((sid) => studentsById[sid] ? fullName(studentsById[sid]) : `Ученик #${sid}`)
+                                    .join(", ")
+                                : "Ученики не назначены"}
                             </p>
                           </div>
                         </div>

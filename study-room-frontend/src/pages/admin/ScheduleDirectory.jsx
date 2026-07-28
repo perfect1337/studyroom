@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchLessons, fetchCourses, fetchEnrollments } from "../../api/academic.js";
+import { fetchLessons, fetchCourses } from "../../api/academic.js";
 import { fetchMyPeople, fetchBranches, fetchUserById } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
@@ -59,7 +59,6 @@ export default function ScheduleDirectory({ role }) {
 
   const [lessons, setLessons] = useState([]);
   const [courses, setCourses] = useState([]);
-  const [enrollments, setEnrollments] = useState([]);
   const [tutorsById, setTutorsById] = useState({});
   const [extraStudentsById, setExtraStudentsById] = useState({});
   const [loading, setLoading] = useState(true);
@@ -125,7 +124,7 @@ export default function ScheduleDirectory({ role }) {
         const date_from = toISODate(viewYear, viewMonth, 1);
         const date_to = toISODate(viewYear, viewMonth, daysInMonth);
 
-        const [lessonsRes, coursesRes, enrollRes] = await Promise.all([
+        const [lessonsRes, coursesRes] = await Promise.all([
           fetchLessons({
             tutor_id: tutorFilter ? Number(tutorFilter) : undefined,
             student_id: studentFilter ? Number(studentFilter) : undefined,
@@ -134,15 +133,12 @@ export default function ScheduleDirectory({ role }) {
             date_to,
           }),
           fetchCourses(),
-          fetchEnrollments().catch(() => ({ items: [] })),
         ]);
         if (cancelled) return;
 
         const lessonItems = lessonsRes?.items ?? [];
-        const enrollItems = enrollRes?.items ?? [];
         setLessons(lessonItems);
         setCourses(coursesRes?.items ?? []);
-        setEnrollments(enrollItems);
         setSelectedDay(null);
         setDetailPage(0);
 
@@ -153,15 +149,16 @@ export default function ScheduleDirectory({ role }) {
         people.tutors.forEach((t) => (knownTutorsById[t.id] = t));
         const missingTutorIds = uniqueTutorIds.filter((id) => !knownTutorsById[id]);
 
-        // Ученики каждого занятия определяются по записям (enrollments) с тем же
-        // course_id + tutor_id, что и у занятия (в API нет прямой ссылки lesson -> student).
+        // Ученики каждого занятия — из participant_ids, которые отдаёт API вместе
+        // с занятием (снимок реальных участников на момент создания занятия, см.
+        // lesson_participants на бэкенде). Раньше здесь пытались вычислить участников
+        // через enrollments с тем же course_id+tutor_id, но это пропускало учеников,
+        // записанных на курс без личного tutor_id (см. тот же нюанс в TeacherDetail.jsx).
         const knownStudentsById = {};
         people.students.forEach((s) => (knownStudentsById[s.id] = s));
         const lessonStudentIds = new Set();
         lessonItems.forEach((l) => {
-          enrollItems
-            .filter((e) => e.course_id === l.course_id && e.tutor_id === l.tutor_id)
-            .forEach((e) => lessonStudentIds.add(e.student_id));
+          (l.participant_ids ?? []).forEach((id) => lessonStudentIds.add(id));
         });
         const missingStudentIds = [...lessonStudentIds].filter((id) => !knownStudentsById[id]);
 
@@ -214,18 +211,16 @@ export default function ScheduleDirectory({ role }) {
     return map;
   }, [people.students, extraStudentsById]);
 
-  // Ученики, у которых сейчас конкретное занятие — по записям (enrollments)
-  // с тем же course_id + tutor_id, что и у занятия.
+  // Ученики, у которых сейчас конкретное занятие — берём напрямую из
+  // participant_ids занятия (реальные участники, а не вычисленные по enrollments).
   const studentsForLesson = useMemo(() => {
     const map = {}; // lesson.id -> [student, ...]
     lessons.forEach((l) => {
-      const ids = enrollments
-        .filter((e) => e.course_id === l.course_id && e.tutor_id === l.tutor_id)
-        .map((e) => e.student_id);
-      map[l.id] = [...new Set(ids)].map((id) => studentsById[id]).filter(Boolean);
+      const ids = [...new Set(l.participant_ids ?? [])];
+      map[l.id] = ids.map((id) => studentsById[id]).filter(Boolean);
     });
     return map;
-  }, [lessons, enrollments, studentsById]);
+  }, [lessons, studentsById]);
 
   const lessonsByDay = useMemo(() => {
     const map = {};
