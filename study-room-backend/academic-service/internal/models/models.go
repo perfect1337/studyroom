@@ -160,3 +160,28 @@ type Homework struct {
 	ViewedAt  *time.Time     `json:"viewed_at"`
 	CreatedAt time.Time      `json:"created_at"`
 }
+
+type TestStatus string
+
+const (
+	TestAssigned  TestStatus = "assigned"  // не сдан
+	TestSubmitted TestStatus = "submitted" // сдан
+)
+
+// Test — соответствует таблице tests. В отличие от Homework, тест имеет
+// оценку (Grade), которую тьютор выставляет после того, как ученик сдал
+// тест (Status = submitted). Grade — 1..5, nil пока не выставлена.
+// Средняя оценка по всем тестам ученика ("успеваемость") считается на
+// лету в TestRepository.AverageGrade, отдельно не хранится.
+type Test struct {
+	ID          int64      `json:"id"`
+	StudentID   int64      `json:"student_id"`
+	CreatedBy   int64      `json:"created_by"`
+	Title       string     `json:"title"`
+	LinkURL     string     `json:"link_url"`
+	Status      TestStatus `json:"status"`
+	Grade       *int       `json:"grade"`
+	SubmittedAt *time.Time `json:"submitted_at"`
+	GradedAt    *time.Time `json:"graded_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+}

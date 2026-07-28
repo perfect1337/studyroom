@@ -5,7 +5,7 @@ import Pagination from "../../components/ui/Pagination.jsx";
 import { usePagination } from "../../utils/usePagination.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople, fetchBranches, createStudent } from "../../api/users.js";
-import { fetchCourses, fetchEnrollments, fetchLessons } from "../../api/academic.js";
+import { fetchCourses, fetchEnrollments, fetchLessons, fetchTests } from "../../api/academic.js";
 import { fetchContracts } from "../../api/contracts.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
@@ -66,6 +66,7 @@ export default function PeopleDirectory({ role }) {
   const [courses, setCourses] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
   const [lessons, setLessons] = useState([]); // только для tutor — источник "своих" учеников
+  const [tests, setTests] = useState([]);
   const [contracts, setContracts] = useState([]);
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -87,13 +88,16 @@ export default function PeopleDirectory({ role }) {
       const enrollParams = isTutor ? { tutor_id: user.id } : {};
       const coursesParams = isTutor ? { tutor_id: user.id } : {};
       const lessonParams = isTutor ? { tutor_id: user.id } : null;
-      const [peopleRes, coursesRes, enrollRes, lessonsRes, contractsRes, branchesRes] = await Promise.all([
+      const [peopleRes, coursesRes, enrollRes, lessonsRes, contractsRes, branchesRes, testsRes] = await Promise.all([
         fetchMyPeople(),
         fetchCourses(coursesParams),
         fetchEnrollments(enrollParams).catch(() => ({ items: [] })),
         isTutor ? fetchLessons(lessonParams).catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
         showContracts ? fetchContracts().catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
         isOwner || isParent ? fetchBranches().catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
+        // Тесты уже приходят отфильтрованными по роли на бэкенде (см. TestHandler.List) —
+        // репетитору только свои выданные, родителю только тесты его детей и т.д.
+        fetchTests().catch(() => ({ items: [] })),
       ]);
 
       const enrollItems = enrollRes?.items ?? [];
@@ -103,6 +107,7 @@ export default function PeopleDirectory({ role }) {
       setCourses(coursesRes?.items ?? []);
       setContracts(contractsRes?.items ?? []);
       setBranches(branchesRes?.items ?? []);
+      setTests(testsRes?.items ?? []);
 
       if (isParent) {
         setPeople(peopleRes?.children ?? []);
@@ -155,6 +160,12 @@ export default function PeopleDirectory({ role }) {
     contracts.forEach((c) => (map[c.student_id] ??= []).push(c));
     return map;
   }, [contracts]);
+
+  const testsByStudent = useMemo(() => {
+    const map = {};
+    tests.forEach((t) => (map[t.student_id] ??= []).push(t));
+    return map;
+  }, [tests]);
 
   const subjects = useMemo(() => {
     const set = new Set();
@@ -338,6 +349,14 @@ export default function PeopleDirectory({ role }) {
                     : 0;
                   const pContracts = contractsByStudent[p.id] ?? [];
                   const latestContract = pContracts[0];
+                  const pTests = testsByStudent[p.id] ?? [];
+                  const gradedTests = pTests.filter((t) => t.grade != null);
+                  const avgGrade = gradedTests.length
+                    ? gradedTests.reduce((s, t) => s + t.grade, 0) / gradedTests.length
+                    : null;
+                  const courseNames = pEnrollments
+                    .map((e) => coursesById[e.course_id]?.title ?? coursesById[e.course_id]?.subject)
+                    .filter(Boolean);
                   return (
                     <tr
                       key={p.id}
@@ -378,12 +397,12 @@ export default function PeopleDirectory({ role }) {
                         <span className="font-bold text-on-surface">{avg}%</span>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex flex-col gap-0.5 text-[12px]">
-                          <span className="text-on-surface">
-                            {p.avg_grade != null ? `Балл: ${p.avg_grade.toFixed(1)}` : "—"}
+                        <div className="flex flex-col gap-0.5 text-[12px] max-w-[180px]">
+                          <span className="text-on-surface font-bold truncate" title={courseNames.join(", ")}>
+                            {courseNames.length ? courseNames.join(", ") : "Курс не назначен"}
                           </span>
-                          <span className="text-on-surface-variant">
-                            {p.attendance_pct != null ? `Посещаемость: ${Math.round(p.attendance_pct)}%` : ""}
+                          <span className={avgGrade != null ? "text-primary font-bold" : "text-on-surface-variant"}>
+                            {avgGrade != null ? `Средний балл за тесты: ${avgGrade.toFixed(1)}` : "Нет оценок за тесты"}
                           </span>
                         </div>
                       </td>

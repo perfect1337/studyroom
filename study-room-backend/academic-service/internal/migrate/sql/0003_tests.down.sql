@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS tests;
+DROP TYPE IF EXISTS test_status;

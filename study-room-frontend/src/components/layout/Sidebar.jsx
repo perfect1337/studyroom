@@ -11,6 +11,8 @@ export const NAV_ITEMS = {
     { to: "/student/schedule", icon: "calendar_today", label: "Расписание" },
     { to: "/student/courses", icon: "school", label: "Курсы" },
     { to: "/student/homework", icon: "assignment", label: "Задания" },
+    { to: "/student/tests", icon: "quiz", label: "Тесты" },
+    { to: "/student/grades", icon: "grade", label: "Успеваемость" },
     { to: "/student/profile", icon: "person", label: "Профиль" },
     { to: "/student/settings", icon: "settings", label: "Настройки" },
   ],
@@ -19,6 +21,7 @@ export const NAV_ITEMS = {
     { to: "/tutor/students", icon: "group", label: "Ученики" },
     { to: "/tutor/schedule", icon: "calendar_today", label: "Расписание" },
     { to: "/tutor/homework", icon: "assignment", label: "Задания" },
+    { to: "/tutor/tests", icon: "quiz", label: "Тесты" },
     { to: "/tutor/settings", icon: "settings", label: "Настройки" },
   ],
   parent: [

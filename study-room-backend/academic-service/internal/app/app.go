@@ -26,6 +26,7 @@ type Deps struct {
 	Lessons     *repository.LessonRepository
 	Attendance  *repository.AttendanceRepository
 	Homework    *repository.HomeworkRepository
+	Tests       *repository.TestRepository
 	UserRefs    *repository.UserRefRepository
 
 	UserClient handlers.ChildrenResolver
@@ -44,6 +45,7 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, userServiceURL string, p
 		Lessons:     repository.NewLessonRepository(pool),
 		Attendance:  repository.NewAttendanceRepository(pool),
 		Homework:    repository.NewHomeworkRepository(pool),
+		Tests:       repository.NewTestRepository(pool),
 		UserRefs:    repository.NewUserRefRepository(pool),
 		UserClient:  userclient.New(userServiceURL),
 		Events:      pub,
@@ -57,6 +59,7 @@ func NewRouter(d *Deps) http.Handler {
 	enrollHandler := handlers.NewEnrollmentHandler(d.Enrollments, d.UserClient)
 	lessonHandler := handlers.NewLessonHandler(d.Lessons, d.Enrollments, d.Attendance, d.UserRefs, d.UserClient, d.Events)
 	homeworkHandler := handlers.NewHomeworkHandler(d.Homework, d.UserRefs, d.UserClient)
+	testHandler := handlers.NewTestHandler(d.Tests, d.UserRefs, d.UserClient)
 
 	r := chi.NewRouter()
 	r.Use(middleware.CORS)
@@ -85,6 +88,7 @@ func NewRouter(d *Deps) http.Handler {
 			// проверяется внутри GetAttendance.
 			r.Get("/lessons/{id}/attendance", lessonHandler.GetAttendance)
 			r.Get("/homework", homeworkHandler.List)
+			r.Get("/tests", testHandler.List)
 
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRoles(models.RoleOwner))
@@ -117,11 +121,14 @@ func NewRouter(d *Deps) http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRoles(models.RoleTutor))
 				r.Post("/homework", homeworkHandler.Create)
+				r.Post("/tests", testHandler.Create)
+				r.Patch("/tests/{id}/grade", testHandler.Grade)
 			})
 
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRoles(models.RoleStudent))
 				r.Get("/homework/{id}/open", homeworkHandler.Open)
+				r.Post("/tests/{id}/submit", testHandler.Submit)
 			})
 		})
 	})
