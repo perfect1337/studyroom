@@ -181,9 +181,9 @@ export default function TeacherDetail({ role = "owner" }) {
     setCourseTutorError("");
     try {
       if (isAssigned) {
-        await removeCourseTutor(courseId, teacherId);
+        await removeCourseTutor(courseId, Number(teacherId));
       } else {
-        await assignCourseTutor(courseId, teacherId);
+        await assignCourseTutor(courseId, Number(teacherId));
       }
       await load();
     } catch (e) {
