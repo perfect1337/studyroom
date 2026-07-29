@@ -368,7 +368,9 @@ func (s *Subscriber) handleApplicationReceived(msg *nats.Msg) {
 		log.Printf("events: bad application.received payload: %v", err)
 		return
 	}
-	message := "Новая заявка от " + evt.Name + " (источник: " + evt.Source + ")"
+	// Раньше сюда добавлялась пометка "(источник: tilda/internal)" — это
+	// техническая деталь, не нужная получателю уведомления, поэтому убрали.
+	message := "Новая заявка от " + evt.Name
 	s.send(evt.OwnerUserID, "new_application", message, "")
 }
 

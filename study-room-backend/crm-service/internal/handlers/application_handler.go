@@ -238,23 +238,34 @@ func (h *ApplicationHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// notifyReceived — резолвит получателя (branch_owner филиала заявки, либо
-// owner как фолбэк — см. event-schema.md, "v1.application.received") и
-// публикует событие. Best-effort: ошибка резолва/публикации не блокирует
-// ответ пользователю, только логируется (см. events/publisher.go).
+// notifyReceived — уведомляет владельца сети (owner) о каждой заявке без
+// исключений, и дополнительно — branch_owner филиала заявки, если он
+// известен. Раньше owner уведомлялся только если у заявки не было
+// branch_owner (фолбэк), из-за чего владелец сети не видел заявки филиалов,
+// у которых есть свой branch_owner. Best-effort: ошибка резолва/публикации
+// не блокирует ответ пользователю, только логируется (см. events/publisher.go).
 func (h *ApplicationHandler) notifyReceived(ctx context.Context, app *models.Application) {
-	ownerID := h.resolveNotifyTarget(ctx, app.BranchID)
-	h.events.ApplicationReceived(ownerID, string(app.Source), app.Name)
+	branchOwnerID, globalOwnerID := h.resolveNotifyTargets(ctx, app.BranchID)
+
+	if branchOwnerID != 0 {
+		h.events.ApplicationReceived(branchOwnerID, string(app.Source), app.Name)
+	}
+	// globalOwnerID != branchOwnerID защищает от повторного уведомления,
+	// если вдруг это один и тот же человек (например, owner сам же назначен
+	// branch_owner-ом единственного филиала).
+	if globalOwnerID != 0 && globalOwnerID != branchOwnerID {
+		h.events.ApplicationReceived(globalOwnerID, string(app.Source), app.Name)
+	}
 }
 
-func (h *ApplicationHandler) resolveNotifyTarget(ctx context.Context, branchID *int64) int64 {
+func (h *ApplicationHandler) resolveNotifyTargets(ctx context.Context, branchID *int64) (branchOwnerID, globalOwnerID int64) {
 	if branchID != nil {
 		if owner, err := h.userRefs.FindBranchOwner(ctx, *branchID); err == nil {
-			return owner.UserID
+			branchOwnerID = owner.UserID
 		}
 	}
 	if owner, err := h.userRefs.FindAnyOwner(ctx); err == nil {
-		return owner.UserID
+		globalOwnerID = owner.UserID
 	}
-	return 0
+	return branchOwnerID, globalOwnerID
 }

@@ -263,7 +263,12 @@ export default function StudentDetail({ role = "parent" }) {
                 <h2 className="font-headline-md text-headline-md text-on-surface">{child ? fullName(child) : "—"}</h2>
               </div>
               <p className="text-on-surface-variant font-body-md mb-4">
-                {[child?.class_info, child?.school].filter(Boolean).join(" · ") || "—"}
+                {[
+                  child?.school ? `Школа: ${child.school}` : null,
+                  child?.class_info ? `Класс: ${child.class_info}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || "—"}
               </p>
               <div className="flex flex-wrap justify-center md:justify-start gap-4">
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg">
