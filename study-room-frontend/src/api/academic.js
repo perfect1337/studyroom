@@ -97,3 +97,22 @@ export function markHomeworkOpened(id) {
 export function openHomeworkUrl(id) {
   return academicApi(`/homework/${id}/open`);
 }
+
+// 2.19 Тесты: тьютор выдаёт ученику ссылку на тест, после сдачи выставляет
+// оценку (1..5). Область видимости списка сужается на бэкенде по роли
+// (см. test_handler.go: tutor — свои выданные, student — свои, parent —
+// детей, branch_owner — свой филиал, owner — всё/по фильтру).
+export function assignTest({ student_id, title, link_url }) {
+  return academicApi("/tests", { method: "POST", body: { student_id, title, link_url } });
+}
+export function fetchTests({ student_id, status } = {}) {
+  return academicApi("/tests", { params: { student_id, status } });
+}
+// Ученик отмечает тест сданным (assigned -> submitted).
+export function submitTest(id) {
+  return academicApi(`/tests/${id}/submit`, { method: "POST" });
+}
+// Тьютор выставляет/меняет оценку за сданный тест.
+export function gradeTest(id, grade) {
+  return academicApi(`/tests/${id}/grade`, { method: "PATCH", body: { grade } });
+}

@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchUserById, resetStudentCredentials, fetchMyPeople } from "../../api/users.js";
-import { fetchEnrollments, fetchCourses, fetchHomework, fetchLessons } from "../../api/academic.js";
+import { fetchEnrollments, fetchCourses, fetchHomework, fetchLessons, fetchTests } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
 const WEEKDAYS = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"];
@@ -68,6 +68,7 @@ export default function StudentDetail({ role = "parent" }) {
   const [enrollments, setEnrollments] = useState([]);
   const [courses, setCourses] = useState([]);
   const [homework, setHomework] = useState([]);
+  const [tests, setTests] = useState([]);
   const [lessons, setLessons] = useState([]);
   const [tutors, setTutors] = useState([]); // для отображения имени преподавателя в мини-календаре
   const [loading, setLoading] = useState(true);
@@ -131,13 +132,14 @@ export default function StudentDetail({ role = "parent" }) {
       try {
         const date_from = toISODate(viewYear, viewMonth, 1);
         const date_to = toISODate(viewYear, viewMonth, daysInMonth);
-        const [childRes, enrollRes, coursesRes, homeworkRes, lessonsRes, peopleRes] = await Promise.all([
+        const [childRes, enrollRes, coursesRes, homeworkRes, lessonsRes, peopleRes, testsRes] = await Promise.all([
           fetchUserById(childId),
           fetchEnrollments({ student_id: childId }),
           fetchCourses(),
           fetchHomework({ student_id: childId }),
           fetchLessons({ student_id: childId, date_from, date_to }),
           fetchMyPeople().catch(() => ({ tutors: [] })),
+          fetchTests({ student_id: childId }).catch(() => ({ items: [] })),
         ]);
         if (cancelled) return;
         setChild(childRes);
@@ -147,6 +149,7 @@ export default function StudentDetail({ role = "parent" }) {
         setHomework(homeworkRes?.items ?? []);
         setLessons(lessonsRes?.items ?? []);
         setTutors(peopleRes?.tutors ?? []);
+        setTests(testsRes?.items ?? []);
       } catch (e) {
         if (!cancelled) setError(e.message || "Не удалось загрузить данные ребёнка");
       } finally {
@@ -187,6 +190,14 @@ export default function StudentDetail({ role = "parent" }) {
     ? Math.round(enrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / enrollments.length)
     : 0;
   const homeworkDone = homework.filter((h) => h.status === "viewed").length;
+
+  // Средний балл — среднее арифметическое по всем оценённым тестам ученика.
+  // Если тестов с оценкой ещё нет, показываем статический avg_grade из
+  // профиля (student_profiles), если он был задан вручную.
+  const gradedTests = tests.filter((t) => t.grade != null);
+  const avgGrade = gradedTests.length
+    ? gradedTests.reduce((s, t) => s + t.grade, 0) / gradedTests.length
+    : child?.avg_grade ?? null;
 
   // Занятия для выбранного дня
   const selectedDayLessons = selectedDay ? (lessonsByDay[selectedDay] ?? []) : [];
@@ -266,11 +277,12 @@ export default function StudentDetail({ role = "parent" }) {
                     Заданий выполнено: <strong className="text-primary">{homeworkDone}/{homework.length}</strong>
                   </span>
                 </div>
-                {child?.avg_grade != null && (
+                {avgGrade != null && (
                   <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg">
                     <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>grade</span>
                     <span className="font-label-md text-on-surface">
-                      Средний балл: <strong className="text-primary">{child.avg_grade.toFixed(1)}</strong>
+                      Средний балл: <strong className="text-primary">{avgGrade.toFixed(1)}</strong>
+                      {gradedTests.length > 0 && <span className="text-on-surface-variant"> ({gradedTests.length} {gradedTests.length === 1 ? "тест" : "тестов"})</span>}
                     </span>
                   </div>
                 )}
@@ -362,6 +374,57 @@ export default function StudentDetail({ role = "parent" }) {
                         </tr>
                       );
                     })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="pt-stack-lg">
+              <h3 className="font-headline-sm text-headline-sm text-on-surface mb-stack-md">Тесты и оценки</h3>
+              <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 overflow-hidden">
+                <table className="w-full text-left">
+                  <thead className="bg-surface-container text-on-surface-variant text-label-md font-bold uppercase tracking-wider">
+                    <tr>
+                      <th className="px-6 py-4">Тест</th>
+                      <th className="px-6 py-4">Статус</th>
+                      <th className="px-6 py-4">Оценка</th>
+                      <th className="px-6 py-4 text-right">Выдан</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-outline-variant/30">
+                    {tests.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="px-6 py-8 text-center text-on-surface-variant">Тестов пока нет</td>
+                      </tr>
+                    )}
+                    {tests
+                      .slice()
+                      .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
+                      .map((t) => {
+                        const isSubmitted = t.status === "submitted";
+                        return (
+                          <tr key={t.id} className="hover:bg-surface-container-low transition-colors">
+                            <td className="px-6 py-5 max-w-xs">
+                              <p className="font-label-md text-on-surface truncate">{t.title}</p>
+                              <a href={t.link_url} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline break-all">
+                                {t.link_url}
+                              </a>
+                            </td>
+                            <td className="px-6 py-5">
+                              <span className={`flex items-center gap-1.5 font-bold text-[13px] ${isSubmitted ? "text-green-600" : "text-orange-600"}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${isSubmitted ? "bg-green-600" : "bg-orange-600"}`} />
+                                {isSubmitted ? "Сдан" : "Не сдан"}
+                              </span>
+                            </td>
+                            <td className="px-6 py-5 font-bold text-on-surface">
+                              {t.grade != null ? t.grade : <span className="text-on-surface-variant font-normal">—</span>}
+                            </td>
+                            <td className="px-6 py-5 text-right font-bold text-on-surface-variant text-label-md">
+                              {t.created_at ? new Date(t.created_at).toLocaleDateString("ru-RU") : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
               </div>

@@ -5,7 +5,7 @@ import Pagination from "../../components/ui/Pagination.jsx";
 import { usePagination } from "../../utils/usePagination.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople, fetchBranches, createStudent } from "../../api/users.js";
-import { fetchCourses, fetchEnrollments, fetchLessons } from "../../api/academic.js";
+import { fetchCourses, fetchEnrollments, fetchLessons, fetchTests } from "../../api/academic.js";
 import { fetchContracts } from "../../api/contracts.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
@@ -75,6 +75,7 @@ export default function PeopleDirectory({ role }) {
   const [courses, setCourses] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
   const [lessons, setLessons] = useState([]); // только для tutor — источник "своих" учеников
+  const [tests, setTests] = useState([]); // для среднего балла по всем сданным/оценённым тестам
   const [contracts, setContracts] = useState([]);
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -96,13 +97,16 @@ export default function PeopleDirectory({ role }) {
       const enrollParams = isTutor ? { tutor_id: user.id } : {};
       const coursesParams = isTutor ? { tutor_id: user.id } : {};
       const lessonParams = isTutor ? { tutor_id: user.id } : null;
-      const [peopleRes, coursesRes, enrollRes, lessonsRes, contractsRes, branchesRes] = await Promise.all([
+      const [peopleRes, coursesRes, enrollRes, lessonsRes, contractsRes, branchesRes, testsRes] = await Promise.all([
         fetchMyPeople(),
         fetchCourses(coursesParams),
         fetchEnrollments(enrollParams).catch(() => ({ items: [] })),
         isTutor ? fetchLessons(lessonParams).catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
         showContracts ? fetchContracts().catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
         isOwner || isParent ? fetchBranches().catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
+        // Область видимости сужается на бэкенде по роли (см. test_handler.go),
+        // поэтому запрашиваем без фильтров — сервер сам вернёт только "свои" тесты.
+        fetchTests().catch(() => ({ items: [] })),
       ]);
 
       const enrollItems = enrollRes?.items ?? [];
@@ -112,6 +116,7 @@ export default function PeopleDirectory({ role }) {
       setCourses(coursesRes?.items ?? []);
       setContracts(contractsRes?.items ?? []);
       setBranches(branchesRes?.items ?? []);
+      setTests(testsRes?.items ?? []);
 
       if (isParent) {
         setPeople(peopleRes?.children ?? []);
@@ -164,6 +169,30 @@ export default function PeopleDirectory({ role }) {
     contracts.forEach((c) => (map[c.student_id] ??= []).push(c));
     return map;
   }, [contracts]);
+
+  // Средний балл по всем оценённым тестам ученика (среднее арифметическое
+  // grade по всем t.grade != null) — считаем на фронте из полного списка
+  // тестов в области видимости роли; если у ученика нет ни одной оценки,
+  // используем статический avg_grade из профиля (см. student_profiles).
+  const gradesByStudent = useMemo(() => {
+    const map = {};
+    tests.forEach((t) => {
+      if (t.grade == null) return;
+      (map[t.student_id] ??= []).push(t);
+    });
+    const out = {};
+    Object.entries(map).forEach(([studentId, items]) => {
+      const sum = items.reduce((acc, t) => acc + t.grade, 0);
+      out[studentId] = { average: sum / items.length, count: items.length, items };
+    });
+    return out;
+  }, [tests]);
+
+  function avgGradeFor(person) {
+    const g = gradesByStudent[person.id];
+    if (g) return g.average;
+    return person.avg_grade ?? null;
+  }
 
   const subjects = useMemo(() => {
     const set = new Set();
@@ -391,7 +420,10 @@ export default function PeopleDirectory({ role }) {
                       <td className="px-6 py-4">
                         <div className="flex flex-col gap-0.5 text-[12px]">
                           <span className="text-on-surface">
-                            {p.avg_grade != null ? `Балл: ${p.avg_grade.toFixed(1)}` : "—"}
+                            {avgGradeFor(p) != null ? `Балл: ${avgGradeFor(p).toFixed(1)}` : "—"}
+                            {gradesByStudent[p.id] && (
+                              <span className="text-on-surface-variant"> ({gradesByStudent[p.id].count})</span>
+                            )}
                           </span>
                           <span className="text-on-surface-variant">
                             {p.attendance_pct != null ? `Посещаемость: ${Math.round(p.attendance_pct)}%` : ""}

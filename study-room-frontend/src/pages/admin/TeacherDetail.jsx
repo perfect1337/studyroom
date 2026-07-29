@@ -4,7 +4,7 @@ import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople, fetchBranches, setTutorStatus, setUserActive } from "../../api/users.js";
-import { fetchEnrollments, fetchCourses, fetchLessons, assignCourseTutor, removeCourseTutor } from "../../api/academic.js";
+import { fetchEnrollments, fetchCourses, fetchLessons, fetchTests, assignCourseTutor, removeCourseTutor } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
 const WEEKDAYS = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"];
@@ -78,6 +78,7 @@ export default function TeacherDetail({ role = "owner" }) {
   const [enrollments, setEnrollments] = useState([]); // только его записи (tutor_id=teacherId)
   const [courses, setCourses] = useState([]);
   const [lessons, setLessons] = useState([]);
+  const [tests, setTests] = useState([]);
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -122,11 +123,13 @@ export default function TeacherDetail({ role = "owner" }) {
     try {
       const date_from = toISODate(viewYear, viewMonth, 1);
       const date_to = toISODate(viewYear, viewMonth, daysInMonth);
-      const [peopleRes, coursesRes, lessonsRes, branchesRes] = await Promise.all([
+      const [peopleRes, coursesRes, lessonsRes, branchesRes, testsRes] = await Promise.all([
         fetchMyPeople(),
         fetchCourses(),
         fetchLessons({ tutor_id: teacherId, date_from, date_to }),
         isOwner ? fetchBranches().catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
+        // Область видимости сужается на бэкенде по роли (owner — всё, branch_owner — свой филиал).
+        fetchTests().catch(() => ({ items: [] })),
       ]);
 
       const foundTeacher = (peopleRes?.tutors ?? []).find((t) => String(t.id) === String(teacherId));
@@ -136,6 +139,7 @@ export default function TeacherDetail({ role = "owner" }) {
       setCourses(allCourses);
       setLessons(lessonsRes?.items ?? []);
       setBranches(branchesRes?.items ?? []);
+      setTests(testsRes?.items ?? []);
 
       if (!foundTeacher) {
         setError("Преподаватель не найден или у вас нет доступа к его профилю.");
@@ -204,6 +208,25 @@ export default function TeacherDetail({ role = "owner" }) {
     students.forEach((s) => (map[s.id] = s));
     return map;
   }, [students]);
+
+  // Средний балл ученика — среднее арифметическое по всем его оценённым
+  // тестам в области видимости (owner/branch_owner), а не статичное поле профиля.
+  const avgGradeByStudent = useMemo(() => {
+    const map = {};
+    tests.forEach((t) => {
+      if (t.grade == null) return;
+      (map[t.student_id] ??= []).push(t.grade);
+    });
+    const out = {};
+    Object.entries(map).forEach(([studentId, grades]) => {
+      out[studentId] = grades.reduce((s, g) => s + g, 0) / grades.length;
+    });
+    return out;
+  }, [tests]);
+
+  function avgGradeForStudent(student) {
+    return avgGradeByStudent[student.id] ?? student.avg_grade ?? null;
+  }
 
   const coursesById = useMemo(() => {
     const map = {};
@@ -493,7 +516,7 @@ export default function TeacherDetail({ role = "owner" }) {
                             <td className="px-6 py-4">
                               <div className="flex flex-col gap-0.5 text-[12px]">
                                 <span className="text-on-surface">
-                                  {student.avg_grade != null ? `Балл: ${student.avg_grade.toFixed(1)}` : "—"}
+                                  {avgGradeForStudent(student) != null ? `Балл: ${avgGradeForStudent(student).toFixed(1)}` : "—"}
                                 </span>
                                 <span className="text-on-surface-variant">
                                   {student.attendance_pct != null ? `Посещаемость: ${Math.round(student.attendance_pct)}%` : ""}

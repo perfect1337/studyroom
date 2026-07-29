@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
+import { fetchTests } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
 function initials(person) {
@@ -16,6 +18,15 @@ function initials(person) {
  */
 export default function StudentProfile() {
   const { user } = useAuth();
+  const [tests, setTests] = useState([]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    // Область видимости сужается на бэкенде до собственных тестов ученика.
+    fetchTests()
+      .then((res) => setTests(res?.items ?? []))
+      .catch(() => setTests([]));
+  }, [user?.id]);
 
   const fields = [
     ["Email", user?.email],
@@ -26,7 +37,14 @@ export default function StudentProfile() {
     ["Статус аккаунта", user?.is_active === false ? "Деактивирован" : "Активен"],
   ];
 
-  const showAcademicStats = user?.avg_grade != null || user?.attendance_pct != null;
+  // Средний балл — среднее арифметическое по всем оценённым тестам; если их
+  // ещё нет, показываем статический avg_grade из профиля (если был задан).
+  const gradedTests = tests.filter((t) => t.grade != null);
+  const avgGrade = gradedTests.length
+    ? gradedTests.reduce((s, t) => s + t.grade, 0) / gradedTests.length
+    : user?.avg_grade ?? null;
+
+  const showAcademicStats = avgGrade != null || user?.attendance_pct != null;
 
   return (
     <DashboardShell
@@ -49,13 +67,19 @@ export default function StudentProfile() {
             <h2 className="font-headline-md text-headline-md text-on-background">{fullName(user)}</h2>
             {showAcademicStats && (
               <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-2">
-                {user?.avg_grade != null && (
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg">
+                {avgGrade != null && (
+                  <Link
+                    to="/student/grades"
+                    className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg hover:bg-surface-container-high transition-colors"
+                  >
                     <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>grade</span>
                     <span className="font-label-md text-on-surface">
-                      Средний балл: <strong className="text-primary">{user.avg_grade.toFixed(1)}</strong>
+                      Средний балл: <strong className="text-primary">{avgGrade.toFixed(1)}</strong>
+                      {gradedTests.length > 0 && (
+                        <span className="text-on-surface-variant"> ({gradedTests.length} {gradedTests.length === 1 ? "тест" : "тестов"})</span>
+                      )}
                     </span>
-                  </div>
+                  </Link>
                 )}
                 {user?.attendance_pct != null && (
                   <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg">

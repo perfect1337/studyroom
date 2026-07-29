@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchParentChildren } from "../../api/users.js";
-import { fetchEnrollments, fetchCourses, fetchLessons } from "../../api/academic.js";
+import { fetchEnrollments, fetchCourses, fetchLessons, fetchTests } from "../../api/academic.js";
 import { fetchMyContracts } from "../../api/contracts.js";
 import { createInternalApplication } from "../../api/crm.js";
 import { fetchNotificationSettings, updateNotificationSettings } from "../../api/notifications.js";
@@ -45,6 +45,7 @@ export default function ParentOverview() {
   const [children, setChildren] = useState([]);
   const [courses, setCourses] = useState([]);
   const [enrollmentsByChild, setEnrollmentsByChild] = useState({});
+  const [tests, setTests] = useState([]);
   const [upcomingLessons, setUpcomingLessons] = useState([]);
   const [contracts, setContracts] = useState([]);
   const [notif, setNotif] = useState(null);
@@ -74,11 +75,13 @@ export default function ParentOverview() {
       setLoading(true);
       setError("");
       try {
-        const [childrenRes, coursesRes, settingsRes, contractsRes] = await Promise.all([
+        const [childrenRes, coursesRes, settingsRes, contractsRes, testsRes] = await Promise.all([
           fetchParentChildren(user.id),
           fetchCourses(),
           fetchNotificationSettings().catch(() => null),
           fetchMyContracts().catch(() => ({ items: [] })),
+          // Бэкенд сам сужает список тестов до детей текущего родителя.
+          fetchTests().catch(() => ({ items: [] })),
         ]);
         if (cancelled) return;
 
@@ -87,6 +90,7 @@ export default function ParentOverview() {
         setCourses(coursesRes?.items ?? []);
         setNotif(settingsRes ?? { email_enabled: true, sms_enabled: false, messenger_enabled: true });
         setContracts(contractsRes?.items ?? []);
+        setTests(testsRes?.items ?? []);
         if (kids[0]) setApplyChildId(String(kids[0].id));
 
         if (kids.length) {
@@ -134,6 +138,25 @@ export default function ParentOverview() {
     children.forEach((c) => (map[c.id] = c));
     return map;
   }, [children]);
+
+  // Средний балл ребёнка — среднее арифметическое по всем оценённым тестам;
+  // если оценённых тестов ещё нет, используем статический avg_grade профиля.
+  const avgGradeByChild = useMemo(() => {
+    const map = {};
+    tests.forEach((t) => {
+      if (t.grade == null) return;
+      (map[t.student_id] ??= []).push(t.grade);
+    });
+    const out = {};
+    Object.entries(map).forEach(([childId, grades]) => {
+      out[childId] = grades.reduce((s, g) => s + g, 0) / grades.length;
+    });
+    return out;
+  }, [tests]);
+
+  function avgGradeFor(child) {
+    return avgGradeByChild[child.id] ?? child.avg_grade ?? null;
+  }
 
   // Договоры, отсортированные так, чтобы скоро истекающие активные договоры
   // были в начале списка — на них родителю нужно обратить внимание в первую очередь.
@@ -251,9 +274,9 @@ export default function ParentOverview() {
                             {[child.class_info, child.school].filter(Boolean).join(" · ")}
                           </p>
                         )}
-                        {(child.avg_grade != null || child.attendance_pct != null) && (
+                        {(avgGradeFor(child) != null || child.attendance_pct != null) && (
                           <div className="flex flex-wrap gap-3 mb-2 text-[12px] text-on-surface-variant">
-                            {child.avg_grade != null && <span>Средний балл: <strong className="text-on-surface">{child.avg_grade.toFixed(1)}</strong></span>}
+                            {avgGradeFor(child) != null && <span>Средний балл: <strong className="text-on-surface">{avgGradeFor(child).toFixed(1)}</strong></span>}
                             {child.attendance_pct != null && <span>Посещаемость: <strong className="text-on-surface">{Math.round(child.attendance_pct)}%</strong></span>}
                           </div>
                         )}
