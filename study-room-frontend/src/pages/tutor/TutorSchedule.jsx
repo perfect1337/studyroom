@@ -28,6 +28,18 @@ function nowHHMM() {
   const d = new Date();
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
+// Занятие считается прошедшим, если его дата раньше сегодняшней, либо это
+// сегодняшнее занятие, которое уже закончилось по времени (end_time <= now).
+// Такие занятия должны отображаться в календаре как обычно, но не висеть
+// вечно в статусе "Ожидание" — визуально это выглядело как зависший/
+// "поплывший" статус для уже состоявшихся пар.
+function isLessonPast(lesson, today) {
+  const todayISO = toISODate(today.getFullYear(), today.getMonth(), today.getDate());
+  if (!lesson.lesson_date) return false;
+  if (lesson.lesson_date < todayISO) return true;
+  if (lesson.lesson_date > todayISO) return false;
+  return (lesson.end_time ?? "23:59") <= nowHHMM();
+}
 
 export default function TutorSchedule() {
   const { user } = useAuth();
@@ -280,7 +292,9 @@ export default function TutorSchedule() {
               selectedLessons.map((lesson) => {
                 const course = coursesById[lesson.course_id];
                 const color = courseColor[lesson.course_id] ?? "#004ac6";
-                const isDone = lesson.status === "completed" || lesson.status === "conducted";
+                const isCancelled = lesson.status === "cancelled";
+                const isDone =
+                  lesson.status === "completed" || lesson.status === "conducted" || (!isCancelled && isLessonPast(lesson, today));
                 const roster = activeStudentsByCourse[lesson.course_id] ?? [];
                 const attendance = attendanceByLesson[lesson.id] ?? [];
                 const attendanceByStudent = {};
@@ -302,11 +316,7 @@ export default function TutorSchedule() {
                             {course?.subject ?? course?.title ?? lesson.topic}
                           </h3>
                         </div>
-                        <StatusBadge
-                          status={
-                            isDone ? "Выполнено" : lesson.status === "cancelled" ? "Просрочен" : "Ожидание"
-                          }
-                        />
+                        <StatusBadge status={isCancelled ? "Отменено" : isDone ? "Выполнено" : "Ожидание"} />
                       </div>
 
                       <div className="space-y-4">

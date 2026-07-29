@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
+import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchUserById, resetStudentCredentials, fetchMyPeople } from "../../api/users.js";
 import { fetchEnrollments, fetchCourses, fetchHomework, fetchLessons, fetchTests } from "../../api/academic.js";
@@ -23,6 +24,20 @@ function initials(person) {
   if (!person) return "?";
   return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
 }
+
+// Статус записи на курс — раньше бейдж всегда рисовался зелёным и для
+// нестандартных статусов ("paused" и т.п.) показывал непереведённое
+// английское слово поверх зелёного фона "Активен" — визуально ломало карточку.
+const ENROLLMENT_STATUS_LABEL = {
+  active: "Активен",
+  paused: "Приостановлен",
+  completed: "Завершён",
+};
+const ENROLLMENT_STATUS_COLOR = {
+  active: "green",
+  paused: "amber",
+  completed: "secondary",
+};
 
 const ROLE_CONFIG = {
   parent: {
@@ -326,9 +341,10 @@ export default function StudentDetail({ role = "parent" }) {
                         <div className="p-2 bg-primary/10 text-primary rounded-lg">
                           <span className="material-symbols-outlined">calculate</span>
                         </div>
-                        <span className="bg-green-100 text-green-700 text-[12px] font-bold px-2 py-0.5 rounded-full uppercase">
-                          {e.status === "active" ? "Активен" : e.status}
-                        </span>
+                        <StatusBadge
+                          status={ENROLLMENT_STATUS_LABEL[e.status] ?? e.status}
+                          color={ENROLLMENT_STATUS_COLOR[e.status] ?? "secondary"}
+                        />
                       </div>
                       <h4 className="font-headline-sm text-[20px] mb-1">{course?.title ?? course?.subject ?? `Курс #${e.course_id}`}</h4>
                       <div className="w-full bg-surface-container-high h-2 rounded-full mb-2">

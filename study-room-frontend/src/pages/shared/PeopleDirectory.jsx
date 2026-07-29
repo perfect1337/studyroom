@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import Pagination from "../../components/ui/Pagination.jsx";
+import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import { usePagination } from "../../utils/usePagination.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople, fetchBranches, createStudent } from "../../api/users.js";
@@ -15,6 +16,22 @@ const CONTRACT_STATUS_LABEL = {
   active: "Активен",
   terminated: "Расторгнут",
   completed: "Завершён",
+};
+
+// Статус записи на курс (enrollment.status) — раньше бейдж всегда был
+// зелёным ("Активен") независимо от реального значения, из-за чего
+// приостановленные/завершённые записи выглядели визуально "поплывшими"
+// (зелёный фон + непереведённое английское слово). Теперь у каждого
+// статуса свой понятный текст и цвет через общий StatusBadge.
+const ENROLLMENT_STATUS_LABEL = {
+  active: "Активен",
+  paused: "Приостановлен",
+  completed: "Завершён",
+};
+const ENROLLMENT_STATUS_COLOR = {
+  active: "green",
+  paused: "amber",
+  completed: "secondary",
 };
 
 const EMPTY_CHILD_FORM = {
@@ -440,9 +457,22 @@ export default function PeopleDirectory({ role }) {
                             {latestContract ? CONTRACT_STATUS_LABEL[latestContract.status] ?? latestContract.status : "Без договора"}
                           </span>
                         ) : (
-                          <span className="px-2.5 py-1 rounded-full text-[11px] font-bold uppercase bg-green-100 text-green-700">
-                            {pEnrollments.some((e) => e.status === "active") ? "Активен" : "—"}
-                          </span>
+                          <StatusBadge
+                            status={
+                              pEnrollments.length === 0
+                                ? "Нет записи"
+                                : ENROLLMENT_STATUS_LABEL[
+                                    pEnrollments.find((e) => e.status === "active")?.status ?? pEnrollments[0].status
+                                  ] ?? pEnrollments[0].status
+                            }
+                            color={
+                              pEnrollments.length === 0
+                                ? "secondary"
+                                : ENROLLMENT_STATUS_COLOR[
+                                    pEnrollments.find((e) => e.status === "active")?.status ?? pEnrollments[0].status
+                                  ] ?? "secondary"
+                            }
+                          />
                         )}
                       </td>
                     </tr>

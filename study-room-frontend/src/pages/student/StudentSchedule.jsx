@@ -20,6 +20,21 @@ function pad(n) {
 function toISODate(year, monthIndex, day) {
   return `${year}-${pad(monthIndex + 1)}-${pad(day)}`;
 }
+function nowHHMM() {
+  const d = new Date();
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+// Занятие считается прошедшим, если его дата раньше сегодняшней, либо это
+// сегодняшнее занятие, которое уже закончилось по времени (end_time <= now).
+// Такие занятия должны отображаться в календаре как обычно, но не висеть
+// вечно в статусе "Ожидание".
+function isLessonPast(lesson, today) {
+  const todayISO = toISODate(today.getFullYear(), today.getMonth(), today.getDate());
+  if (!lesson.lesson_date) return false;
+  if (lesson.lesson_date < todayISO) return true;
+  if (lesson.lesson_date > todayISO) return false;
+  return (lesson.end_time ?? "23:59") <= nowHHMM();
+}
 
 export default function StudentSchedule() {
   const { user } = useAuth();
@@ -274,7 +289,9 @@ export default function StudentSchedule() {
                 const course = coursesById[lesson.course_id];
                 const tutor = tutorsById[lesson.tutor_id];
                 const color = courseColor[lesson.course_id] ?? "#004ac6";
-                const isDone = lesson.status === "completed" || lesson.status === "conducted";
+                const isCancelled = lesson.status === "cancelled";
+                const isDone =
+                  lesson.status === "completed" || lesson.status === "conducted" || (!isCancelled && isLessonPast(lesson, today));
 
                 return (
                   <div
@@ -292,11 +309,7 @@ export default function StudentSchedule() {
                             {course?.subject ?? course?.title ?? lesson.topic}
                           </h3>
                         </div>
-                        <StatusBadge
-                          status={
-                            isDone ? "Выполнено" : lesson.status === "cancelled" ? "Просрочен" : "Ожидание"
-                          }
-                        />
+                        <StatusBadge status={isCancelled ? "Отменено" : isDone ? "Выполнено" : "Ожидание"} />
                       </div>
 
                       <div className="space-y-4">

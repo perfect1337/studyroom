@@ -11,6 +11,8 @@ const STATUS_LABEL = {
   submitted: "Сдан",
 };
 
+const STATUS_FILTERS = ["Все", "Сдан", "Не сдан"];
+
 const GRADES = [2, 3, 4, 5];
 
 function formatDate(iso) {
@@ -42,6 +44,13 @@ export default function TutorTests() {
   const [submitError, setSubmitError] = useState("");
   const [gradingId, setGradingId] = useState(null);
 
+  // Фильтры списка выданных тестов (раньше их не было вовсе — список
+  // просто показывал все тесты подряд).
+  const [statusFilter, setStatusFilter] = useState("Все");
+  const [studentFilter, setStudentFilter] = useState("");
+  const [courseFilter, setCourseFilter] = useState("");
+  const [search, setSearch] = useState("");
+
   async function load() {
     setLoading(true);
     setError("");
@@ -72,6 +81,22 @@ export default function TutorTests() {
     () => tests.slice().sort((a, b) => (b.created_at || "").localeCompare(a.created_at || "")),
     [tests]
   );
+
+  const filteredSorted = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return sorted.filter((t) => {
+      if (statusFilter === "Сдан" && t.status !== "submitted") return false;
+      if (statusFilter === "Не сдан" && t.status === "submitted") return false;
+      if (studentFilter && String(t.student_id) !== String(studentFilter)) return false;
+      if (courseFilter && String(t.course_id) !== String(courseFilter)) return false;
+      if (query) {
+        const student = studentsById[t.student_id];
+        const haystack = `${fullName(student) || ""} ${t.title || ""}`.toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
+      return true;
+    });
+  }, [sorted, statusFilter, studentFilter, courseFilter, search, studentsById]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -193,13 +218,68 @@ export default function TutorTests() {
         </section>
 
         <section className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden overflow-x-auto">
-          <div className="p-stack-md border-b border-outline-variant">
+          <div className="p-stack-md border-b border-outline-variant flex flex-col md:flex-row md:items-center md:justify-between gap-stack-md">
             <h3 className="font-headline-sm text-headline-sm text-on-background">Выданные тесты</h3>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">
+                  search
+                </span>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Поиск по ученику или названию..."
+                  className="bg-surface border border-outline-variant rounded-lg pl-9 pr-4 py-2 text-label-md font-label-md outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary w-full sm:w-64"
+                />
+              </div>
+              <select
+                value={studentFilter}
+                onChange={(e) => setStudentFilter(e.target.value)}
+                className="bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md font-label-md outline-none focus:ring-2 focus:ring-primary/20"
+              >
+                <option value="">Все ученики</option>
+                {students.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {fullName(s)}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={courseFilter}
+                onChange={(e) => setCourseFilter(e.target.value)}
+                className="bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md font-label-md outline-none focus:ring-2 focus:ring-primary/20"
+              >
+                <option value="">Все курсы</option>
+                {courses.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.title} · {c.subject}
+                  </option>
+                ))}
+              </select>
+              <div className="flex gap-1.5">
+                {STATUS_FILTERS.map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setStatusFilter(f)}
+                    className={`px-3.5 py-2 rounded-full text-sm font-label-md font-medium border transition-colors ${
+                      statusFilter === f
+                        ? "bg-primary text-on-primary border-primary"
+                        : "bg-surface text-on-surface-variant border-outline-variant hover:bg-surface-container-low"
+                    }`}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
           {loading ? (
             <p className="p-stack-md text-on-surface-variant font-body-md">Загрузка…</p>
           ) : sorted.length === 0 ? (
             <p className="p-stack-md text-on-surface-variant font-body-md">Вы пока не выдали ни одного теста</p>
+          ) : filteredSorted.length === 0 ? (
+            <p className="p-stack-md text-on-surface-variant font-body-md">Тестов с такими фильтрами не найдено</p>
           ) : (
             <table className="w-full text-left min-w-[720px]">
               <thead className="bg-surface-container text-on-surface-variant text-label-md font-bold uppercase tracking-wider">
@@ -212,7 +292,7 @@ export default function TutorTests() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/30">
-                {sorted.map((t) => {
+                {filteredSorted.map((t) => {
                   const student = studentsById[t.student_id];
                   const isSubmitted = t.status === "submitted";
                   return (
