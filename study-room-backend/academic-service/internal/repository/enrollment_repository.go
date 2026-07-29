@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strconv"
 
 	"studyroom/academic-service/internal/models"
 
@@ -110,26 +111,26 @@ func (r *EnrollmentRepository) List(ctx context.Context, f EnrollmentFilter) ([]
 	args := []any{}
 	i := 1
 	if len(f.StudentIDs) > 0 {
-		query += " AND e.student_id = ANY($" + itoa(i) + ")"
+		query += " AND e.student_id = ANY($" + strconv.Itoa(i) + ")"
 		args = append(args, f.StudentIDs)
 		i++
 	} else if f.StudentID != nil {
-		query += " AND e.student_id = $" + itoa(i)
+		query += " AND e.student_id = $" + strconv.Itoa(i)
 		args = append(args, *f.StudentID)
 		i++
 	}
 	if f.TutorID != nil {
-		query += " AND e.tutor_id = $" + itoa(i)
+		query += " AND e.tutor_id = $" + strconv.Itoa(i)
 		args = append(args, *f.TutorID)
 		i++
 	}
 	if f.CourseID != nil {
-		query += " AND e.course_id = $" + itoa(i)
+		query += " AND e.course_id = $" + strconv.Itoa(i)
 		args = append(args, *f.CourseID)
 		i++
 	}
 	if f.BranchID != nil {
-		query += " AND c.branch_id = $" + itoa(i)
+		query += " AND c.branch_id = $" + strconv.Itoa(i)
 		args = append(args, *f.BranchID)
 		i++
 	}
@@ -167,12 +168,12 @@ func (r *EnrollmentRepository) ListForTutor(ctx context.Context, tutorID int64, 
 	args := []any{tutorID}
 	i := 2
 	if branchID != nil {
-		query += " AND c.branch_id = $" + itoa(i)
+		query += " AND c.branch_id = $" + strconv.Itoa(i)
 		args = append(args, *branchID)
 		i++
 	}
 	if courseID != nil {
-		query += " AND e.course_id = $" + itoa(i)
+		query += " AND e.course_id = $" + strconv.Itoa(i)
 		args = append(args, *courseID)
 		i++
 	}
@@ -270,7 +271,7 @@ func (r *EnrollmentRepository) UpdateProgress(ctx context.Context, id int64, fie
 		if i > 1 {
 			setClauses += ", "
 		}
-		setClauses += col + " = $" + itoa(i)
+		setClauses += col + " = $" + strconv.Itoa(i)
 		args = append(args, val)
 		i++
 	}
@@ -278,7 +279,7 @@ func (r *EnrollmentRepository) UpdateProgress(ctx context.Context, id int64, fie
 		return r.GetByID(ctx, id)
 	}
 	args = append(args, id)
-	query := "UPDATE enrollments SET " + setClauses + " WHERE id = $" + itoa(i) + " RETURNING " + enrollmentColumns
+	query := "UPDATE enrollments SET " + setClauses + " WHERE id = $" + strconv.Itoa(i) + " RETURNING " + enrollmentColumns
 	return scanEnrollment(r.pool.QueryRow(ctx, query, args...))
 }
 

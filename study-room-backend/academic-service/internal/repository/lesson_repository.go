@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -113,31 +114,31 @@ func (r *LessonRepository) List(ctx context.Context, f LessonFilter) ([]*models.
 	args := []any{}
 	i := 1
 	if f.TutorID != nil {
-		query += " AND l.tutor_id = $" + itoa(i)
+		query += " AND l.tutor_id = $" + strconv.Itoa(i)
 		args = append(args, *f.TutorID)
 		i++
 	}
 	if len(f.StudentIDs) > 0 {
-		query += " AND lp.student_id = ANY($" + itoa(i) + ")"
+		query += " AND lp.student_id = ANY($" + strconv.Itoa(i) + ")"
 		args = append(args, f.StudentIDs)
 		i++
 	} else if f.StudentID != nil {
-		query += " AND lp.student_id = $" + itoa(i)
+		query += " AND lp.student_id = $" + strconv.Itoa(i)
 		args = append(args, *f.StudentID)
 		i++
 	}
 	if f.BranchID != nil {
-		query += " AND c.branch_id = $" + itoa(i)
+		query += " AND c.branch_id = $" + strconv.Itoa(i)
 		args = append(args, *f.BranchID)
 		i++
 	}
 	if f.DateFrom != "" {
-		query += " AND l.lesson_date >= $" + itoa(i)
+		query += " AND l.lesson_date >= $" + strconv.Itoa(i)
 		args = append(args, f.DateFrom)
 		i++
 	}
 	if f.DateTo != "" {
-		query += " AND l.lesson_date <= $" + itoa(i)
+		query += " AND l.lesson_date <= $" + strconv.Itoa(i)
 		args = append(args, f.DateTo)
 		i++
 	}
@@ -178,7 +179,7 @@ func (r *LessonRepository) Update(ctx context.Context, id int64, fields map[stri
 		if i > 1 {
 			setClauses += ", "
 		}
-		setClauses += col + " = $" + itoa(i)
+		setClauses += col + " = $" + strconv.Itoa(i)
 		args = append(args, val)
 		i++
 	}
@@ -186,7 +187,7 @@ func (r *LessonRepository) Update(ctx context.Context, id int64, fields map[stri
 		return r.GetByID(ctx, id)
 	}
 	args = append(args, id)
-	query := "UPDATE lessons SET " + setClauses + " WHERE id = $" + itoa(i) + " RETURNING " + lessonColumns
+	query := "UPDATE lessons SET " + setClauses + " WHERE id = $" + strconv.Itoa(i) + " RETURNING " + lessonColumns
 	return scanLesson(r.pool.QueryRow(ctx, query, args...))
 }
 

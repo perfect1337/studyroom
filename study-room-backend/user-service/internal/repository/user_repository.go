@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"errors"
+	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -118,7 +120,7 @@ func (r *UserRepository) Update(ctx context.Context, id int64, fields map[string
 		if i > 1 {
 			setClauses += ", "
 		}
-		setClauses += col + " = $" + itoa(i)
+		setClauses += col + " = $" + strconv.Itoa(i)
 		args = append(args, val)
 		i++
 	}
@@ -128,7 +130,7 @@ func (r *UserRepository) Update(ctx context.Context, id int64, fields map[string
 	setClauses += ", updated_at = now()"
 	args = append(args, id)
 
-	query := "UPDATE users SET " + setClauses + " WHERE id = $" + itoa(i) + " RETURNING " + userColumns
+	query := "UPDATE users SET " + setClauses + " WHERE id = $" + strconv.Itoa(i) + " RETURNING " + userColumns
 	return scanUser(r.pool.QueryRow(ctx, query, args...))
 }
 
@@ -213,21 +215,21 @@ func (r *UserRepository) List(ctx context.Context, f ListFilter) ([]*models.User
 		for idx, role := range f.Roles {
 			roleStrs[idx] = string(role)
 		}
-		where += " AND users.role = ANY($" + itoa(i) + ")"
+		where += " AND users.role = ANY($" + strconv.Itoa(i) + ")"
 		args = append(args, roleStrs)
 		i++
 	} else if f.Role != nil {
-		where += " AND users.role = $" + itoa(i)
+		where += " AND users.role = $" + strconv.Itoa(i)
 		args = append(args, *f.Role)
 		i++
 	}
 	if f.BranchID != nil {
-		where += " AND users.branch_id = $" + itoa(i)
+		where += " AND users.branch_id = $" + strconv.Itoa(i)
 		args = append(args, *f.BranchID)
 		i++
 	}
 	if f.Search != "" {
-		where += " AND (users.last_name ILIKE $" + itoa(i) + " OR users.first_name ILIKE $" + itoa(i) + ")"
+		where += " AND (users.last_name ILIKE $" + strconv.Itoa(i) + " OR users.first_name ILIKE $" + strconv.Itoa(i) + ")"
 		args = append(args, "%"+f.Search+"%")
 		i++
 	}
@@ -240,7 +242,7 @@ func (r *UserRepository) List(ctx context.Context, f ListFilter) ([]*models.User
 
 	args = append(args, f.PerPage, (f.Page-1)*f.PerPage)
 	query := "SELECT " + profileColumns + " " + fromProfileJoins + where +
-		" ORDER BY users.id LIMIT $" + itoa(i) + " OFFSET $" + itoa(i+1)
+		" ORDER BY users.id LIMIT $" + strconv.Itoa(i) + " OFFSET $" + strconv.Itoa(i+1)
 
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -267,26 +269,6 @@ func (r *UserRepository) ListAll(ctx context.Context, f ListFilter) ([]*models.U
 	return users, err
 }
 
-func itoa(i int) string {
-	// без fmt.Sprintf ради простоты — чисел мало, не критично
-	digits := "0123456789"
-	if i < 10 {
-		return string(digits[i])
-	}
-	return string(digits[i/10]) + string(digits[i%10])
-}
-
 func isPgUniqueViolation(err error) bool {
-	return err != nil && (contains(err.Error(), "duplicate key value") || contains(err.Error(), "unique constraint"))
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (func() bool {
-		for i := 0; i+len(substr) <= len(s); i++ {
-			if s[i:i+len(substr)] == substr {
-				return true
-			}
-		}
-		return false
-	})()
+	return err != nil && (strings.Contains(err.Error(), "duplicate key value") || strings.Contains(err.Error(), "unique constraint"))
 }

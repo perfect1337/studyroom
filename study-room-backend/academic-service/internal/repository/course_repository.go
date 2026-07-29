@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -90,24 +91,24 @@ func (r *CourseRepository) List(ctx context.Context, f CourseFilter) ([]*models.
 	args := []any{}
 	i := 1
 	if f.BranchID != nil {
-		where += " AND c.branch_id = $" + itoa(i)
+		where += " AND c.branch_id = $" + strconv.Itoa(i)
 		args = append(args, *f.BranchID)
 		i++
 	}
 	if f.Subject != "" {
-		where += " AND c.subject ILIKE $" + itoa(i)
+		where += " AND c.subject ILIKE $" + strconv.Itoa(i)
 		args = append(args, "%"+f.Subject+"%")
 		i++
 	}
 	if f.TutorID != nil {
-		where += " AND c.id IN (SELECT course_id FROM course_tutors WHERE tutor_id = $" + itoa(i) + ")"
+		where += " AND c.id IN (SELECT course_id FROM course_tutors WHERE tutor_id = $" + strconv.Itoa(i) + ")"
 		args = append(args, *f.TutorID)
 		i++
 	}
 	if len(f.IDs) > 0 {
-    	where += " AND c.id = ANY($" + itoa(i) + ")"
-    	args = append(args, f.IDs)
-    	i++
+		where += " AND c.id = ANY($" + strconv.Itoa(i) + ")"
+		args = append(args, f.IDs)
+		i++
 	}
 	query += where + " GROUP BY c.id ORDER BY c.id"
 
@@ -145,7 +146,7 @@ func (r *CourseRepository) Update(ctx context.Context, id int64, fields map[stri
 		if i > 1 {
 			setClauses += ", "
 		}
-		setClauses += col + " = $" + itoa(i)
+		setClauses += col + " = $" + strconv.Itoa(i)
 		args = append(args, val)
 		i++
 	}
@@ -153,7 +154,7 @@ func (r *CourseRepository) Update(ctx context.Context, id int64, fields map[stri
 		return r.GetByID(ctx, id)
 	}
 	args = append(args, id)
-	query := "UPDATE courses SET " + setClauses + " WHERE id = $" + itoa(i) + " RETURNING " + courseInsertColumns
+	query := "UPDATE courses SET " + setClauses + " WHERE id = $" + strconv.Itoa(i) + " RETURNING " + courseInsertColumns
 	if _, err := scanCourseNoTutors(r.pool.QueryRow(ctx, query, args...)); err != nil {
 		return nil, err
 	}
@@ -312,12 +313,4 @@ func (r *CourseRepository) exists(ctx context.Context, courseID int64) (bool, er
 	var exists bool
 	err := r.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM courses WHERE id = $1)`, courseID).Scan(&exists)
 	return exists, err
-}
-
-func itoa(i int) string {
-	digits := "0123456789"
-	if i < 10 {
-		return string(digits[i])
-	}
-	return string(digits[i/10]) + string(digits[i%10])
 }

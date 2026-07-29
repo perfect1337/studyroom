@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -62,16 +63,16 @@ func (r *TestRepository) List(ctx context.Context, f TestFilter) ([]*models.Test
 	args := []any{}
 	i := 1
 	if len(f.StudentIDs) > 0 {
-		where += " AND t.student_id = ANY($" + itoa(i) + ")"
+		where += " AND t.student_id = ANY($" + strconv.Itoa(i) + ")"
 		args = append(args, f.StudentIDs)
 		i++
 	} else if f.StudentID != nil {
-		where += " AND t.student_id = $" + itoa(i)
+		where += " AND t.student_id = $" + strconv.Itoa(i)
 		args = append(args, *f.StudentID)
 		i++
 	}
 	if f.CreatedBy != nil {
-		where += " AND t.created_by = $" + itoa(i)
+		where += " AND t.created_by = $" + strconv.Itoa(i)
 		args = append(args, *f.CreatedBy)
 		i++
 	}

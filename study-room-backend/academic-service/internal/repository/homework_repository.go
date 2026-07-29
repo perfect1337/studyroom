@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -57,16 +58,16 @@ func (r *HomeworkRepository) List(ctx context.Context, f HomeworkFilter) ([]*mod
 	args := []any{}
 	i := 1
 	if len(f.StudentIDs) > 0 {
-		where += " AND student_id = ANY($" + itoa(i) + ")"
+		where += " AND student_id = ANY($" + strconv.Itoa(i) + ")"
 		args = append(args, f.StudentIDs)
 		i++
 	} else if f.StudentID != nil {
-		where += " AND student_id = $" + itoa(i)
+		where += " AND student_id = $" + strconv.Itoa(i)
 		args = append(args, *f.StudentID)
 		i++
 	}
 	if f.CreatedBy != nil {
-		where += " AND created_by = $" + itoa(i)
+		where += " AND created_by = $" + strconv.Itoa(i)
 		args = append(args, *f.CreatedBy)
 		i++
 	}
