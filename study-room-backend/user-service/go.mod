@@ -12,12 +12,15 @@ replace golang.org/x/net => github.com/golang/net v0.25.0
 
 replace golang.org/x/sync => github.com/golang/sync v0.7.0
 
+replace golang.org/x/time => github.com/golang/time v0.5.0
+
 require (
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/jackc/pgx/v5 v5.6.0
 	github.com/nats-io/nats.go v1.36.0
 	golang.org/x/crypto v0.18.0
+	golang.org/x/time v0.5.0
 )
 
 require (
