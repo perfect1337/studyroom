@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import * as authApi from "../api/auth.js";
 import { clearSession, getStoredUser, setStoredUser, setTokens } from "../api/http.js";
+import { clearQueryCache } from "../api/queryCache.js";
 
 const AuthContext = createContext(null);
 
@@ -36,6 +37,7 @@ export function AuthProvider({ children }) {
       } catch {
         if (!cancelled) {
           clearSession();
+          clearQueryCache();
           setUser(null);
         }
       } finally {
@@ -49,6 +51,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = useCallback(async (loginValue, password) => {
+    clearQueryCache();
     const data = await authApi.login({ login: loginValue, password });
     setTokens(data);
     // POST /auth/login возвращает урезанный объект user (только id/role/first_name/
@@ -80,6 +83,7 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(() => {
     clearSession();
+    clearQueryCache();
     setUser(null);
   }, []);
 

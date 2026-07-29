@@ -1,4 +1,5 @@
 import { contractsApi } from "./http.js";
+import { cachedQuery, invalidateQuery } from "./queryCache.js";
 
 // База API.contracts уже равна .../api/v1/contracts (см. config.js),
 // поэтому здесь пути НЕ повторяют "/contracts" — иначе получится
@@ -7,14 +8,22 @@ import { contractsApi } from "./http.js";
 
 // 3.1 Создать договор (owner)
 export function createContract(payload) {
-  return contractsApi("", { method: "POST", body: payload });
+  return contractsApi("", { method: "POST", body: payload }).then((res) => {
+    invalidateQuery(["contracts"]);
+    invalidateQuery(["myContracts"]);
+    return res;
+  });
 }
 
 // 3.2 Список договоров: owner (полные данные с суммой/оплатой, любой филиал);
 // branch_owner (только свой филиал — сервер сам подставляет branch_id из JWT,
 // в ответе нет amount/payment_status, зато есть status/start_date/end_date).
 export function fetchContracts({ branch_id, student_id, status } = {}) {
-  return contractsApi("", { params: { branch_id, student_id, status } });
+  return cachedQuery(
+    ["contracts", { branch_id, student_id, status }],
+    () => contractsApi("", { params: { branch_id, student_id, status } }),
+    { staleTime: 10_000 }
+  );
 }
 
 // 3.3 Договор по id (owner only)
@@ -29,25 +38,43 @@ export function fetchContractExpiry(id) {
 
 // Список своих договоров (parent only — договоры всех своих детей).
 export function fetchMyContracts({ status } = {}) {
-  return contractsApi("/mine", { params: { status } });
+  return cachedQuery(["myContracts", { status }], () => contractsApi("/mine", { params: { status } }), {
+    staleTime: 10_000,
+  });
 }
 
 // 3.4 Изменить договор
 export function updateContract(id, patch) {
-  return contractsApi(`/${id}`, { method: "PATCH", body: patch });
+  return contractsApi(`/${id}`, { method: "PATCH", body: patch }).then((res) => {
+    invalidateQuery(["contracts"]);
+    invalidateQuery(["myContracts"]);
+    return res;
+  });
 }
 
 // 3.5 Изменить статус договора
 export function setContractStatus(id, status) {
-  return contractsApi(`/${id}/status`, { method: "PATCH", body: { status } });
+  return contractsApi(`/${id}/status`, { method: "PATCH", body: { status } }).then((res) => {
+    invalidateQuery(["contracts"]);
+    invalidateQuery(["myContracts"]);
+    return res;
+  });
 }
 
 // 3.6 Отметить оплату вручную
 export function setContractPaymentStatus(id, payment_status) {
-  return contractsApi(`/${id}/payment-status`, { method: "PATCH", body: { payment_status } });
+  return contractsApi(`/${id}/payment-status`, { method: "PATCH", body: { payment_status } }).then((res) => {
+    invalidateQuery(["contracts"]);
+    invalidateQuery(["myContracts"]);
+    return res;
+  });
 }
 
 // 3.7 Удалить договор
 export function deleteContract(id) {
-  return contractsApi(`/${id}`, { method: "DELETE" });
+  return contractsApi(`/${id}`, { method: "DELETE" }).then((res) => {
+    invalidateQuery(["contracts"]);
+    invalidateQuery(["myContracts"]);
+    return res;
+  });
 }
