@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -89,14 +88,9 @@ func logJSON(entry map[string]any) {
 	log.Println(string(data))
 }
 
+// remoteIP — обёртка над clientIP (см. clientip.go) для обратной
+// совместимости с существующими вызовами в этом пакете (логирование,
+// rate limit). Логика доверия X-Forwarded-For вынесена в clientip.go.
 func remoteIP(r *http.Request) string {
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff != "" {
-		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[0])
-	}
-	if idx := strings.LastIndex(r.RemoteAddr, ":"); idx != -1 {
-		return r.RemoteAddr[:idx]
-	}
-	return r.RemoteAddr
+	return clientIP(r)
 }

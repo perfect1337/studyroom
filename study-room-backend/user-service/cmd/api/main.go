@@ -14,6 +14,7 @@ import (
 	"studyroom/user-service/internal/config"
 	"studyroom/user-service/internal/db"
 	"studyroom/user-service/internal/events"
+	"studyroom/user-service/internal/middleware"
 	"studyroom/user-service/internal/migrate"
 )
 
@@ -23,6 +24,15 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config error: %v", err)
+	}
+
+	trustedProxies, err := middleware.ParseTrustedProxies(cfg.TrustedProxies)
+	if err != nil {
+		log.Fatalf("config error: %v", err)
+	}
+	middleware.SetTrustedProxies(trustedProxies)
+	if cfg.TrustedProxies == "" {
+		log.Println("TRUSTED_PROXIES not set: X-Forwarded-For is ignored, rate limit/logs use raw TCP peer IP")
 	}
 
 	pool, err := db.NewPool(ctx, cfg.DatabaseURL)

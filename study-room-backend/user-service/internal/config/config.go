@@ -15,6 +15,15 @@ type Config struct {
 	AccessTokenTTL  int    // минут
 	RefreshTokenTTL int    // дней
 	AuthRateLimit   int    // запросов/минуту на IP к /auth/* (по умолчанию 200)
+
+	// TrustedProxies — список CIDR/IP реверс-прокси (через запятую), которым
+	// разрешено доверять заголовку X-Forwarded-For при определении реального
+	// IP клиента (используется в rate limit на /auth/* и в аудит-логах).
+	// По умолчанию пусто — значит X-Forwarded-For игнорируется полностью и
+	// используется реальный TCP-адрес пира. Если сервис стоит за nginx/ingress,
+	// сюда нужно явно передать его адрес (например "10.0.0.0/8"), иначе
+	// клиент, слав произвольный X-Forwarded-For, обходит rate limit.
+	TrustedProxies string
 }
 
 func Load() (*Config, error) {
@@ -27,6 +36,7 @@ func Load() (*Config, error) {
 		AccessTokenTTL:  15,
 		RefreshTokenTTL: 30,
 		AuthRateLimit:   getEnvInt("AUTH_RATE_LIMIT_PER_MIN", 200),
+		TrustedProxies:  getEnv("TRUSTED_PROXIES", ""),
 	}
 
 	if cfg.DatabaseURL == "" {
