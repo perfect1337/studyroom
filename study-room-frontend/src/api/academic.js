@@ -102,8 +102,8 @@ export function openHomeworkUrl(id) {
 // оценку (1..5). Область видимости списка сужается на бэкенде по роли
 // (см. test_handler.go: tutor — свои выданные, student — свои, parent —
 // детей, branch_owner — свой филиал, owner — всё/по фильтру).
-export function assignTest({ student_id, title, link_url }) {
-  return academicApi("/tests", { method: "POST", body: { student_id, title, link_url } });
+export function assignTest({ student_id, title, link_url, course_id }) {
+  return academicApi("/tests", { method: "POST", body: { student_id, title, link_url, course_id } });
 }
 export function fetchTests({ student_id, status } = {}) {
   return academicApi("/tests", { params: { student_id, status } });

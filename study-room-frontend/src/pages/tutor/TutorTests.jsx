@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { assignTest, fetchTests, gradeTest } from "../../api/academic.js";
+import { assignTest, fetchCourses, fetchTests, gradeTest } from "../../api/academic.js";
 import { fetchMyPeople } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+import CourseTag from "../../components/ui/CourseTag.jsx";
 
 const STATUS_LABEL = {
   assigned: "Не сдан",
@@ -32,10 +33,11 @@ export default function TutorTests() {
   const [tests, setTests] = useState([]);
   const [studentsById, setStudentsById] = useState({});
   const [students, setStudents] = useState([]);
+  const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const [form, setForm] = useState({ student_id: "", title: "", link_url: "" });
+  const [form, setForm] = useState({ student_id: "", title: "", link_url: "", course_id: "" });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [gradingId, setGradingId] = useState(null);
@@ -44,13 +46,15 @@ export default function TutorTests() {
     setLoading(true);
     setError("");
     try {
-      const [testsRes, peopleRes] = await Promise.all([fetchTests(), fetchMyPeople()]);
+      const [testsRes, peopleRes, coursesRes] = await Promise.all([fetchTests(), fetchMyPeople(), fetchCourses({ tutor_id: user.id })]);
       setTests(testsRes?.items ?? []);
       const list = peopleRes?.students ?? [];
       setStudents(list);
       const byId = {};
       list.forEach((s) => (byId[s.id] = s));
       setStudentsById(byId);
+      const courseList = coursesRes?.items ?? [];
+      setCourses(courseList);
     } catch (e) {
       setError(e.message || "Не удалось загрузить данные");
     } finally {
@@ -82,8 +86,9 @@ export default function TutorTests() {
         student_id: Number(form.student_id),
         title: form.title.trim(),
         link_url: form.link_url.trim(),
+        course_id: form.course_id ? Number(form.course_id) : undefined,
       });
-      setForm({ student_id: "", title: "", link_url: "" });
+      setForm({ student_id: "", title: "", link_url: "", course_id: "" });
       await load();
     } catch (e) {
       setSubmitError(e.message || "Не удалось выдать тест");
@@ -123,7 +128,7 @@ export default function TutorTests() {
 
         <section className="bg-surface-container-lowest rounded-xl p-stack-md shadow-sm border border-outline-variant">
           <h3 className="font-headline-sm text-headline-sm text-on-background mb-stack-md">Выдать новый тест</h3>
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1.4fr_auto] gap-stack-md items-end">
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_1.2fr_auto] gap-stack-md items-end">
             <div className="space-y-stack-sm">
               <label className="font-label-md text-on-surface-variant ml-1">Ученик</label>
               <select
@@ -135,6 +140,21 @@ export default function TutorTests() {
                 {students.map((s) => (
                   <option key={s.id} value={s.id}>
                     {fullName(s)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-stack-sm">
+              <label className="font-label-md text-on-surface-variant ml-1">Курс / предмет</label>
+              <select
+                value={form.course_id}
+                onChange={(e) => setForm((f) => ({ ...f, course_id: e.target.value }))}
+                className="w-full bg-surface border border-outline-variant rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20"
+              >
+                <option value="">Без привязки к курсу</option>
+                {courses.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.title} · {c.subject}
                   </option>
                 ))}
               </select>
@@ -186,6 +206,7 @@ export default function TutorTests() {
                 <tr>
                   <th className="px-6 py-4">Ученик</th>
                   <th className="px-6 py-4">Тест</th>
+                  <th className="px-6 py-4">Курс / предмет</th>
                   <th className="px-6 py-4">Статус</th>
                   <th className="px-6 py-4">Оценка</th>
                 </tr>
@@ -210,6 +231,9 @@ export default function TutorTests() {
                           {t.link_url}
                         </a>
                         <p className="text-xs text-on-surface-variant mt-1">Выдан {formatDate(t.created_at)}</p>
+                      </td>
+                      <td className="px-6 py-5">
+                        <CourseTag title={t.course_title} subject={t.course_subject} />
                       </td>
                       <td className="px-6 py-5">
                         <span

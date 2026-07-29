@@ -3,6 +3,7 @@ import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchTests, submitTest } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+import CourseTag from "../../components/ui/CourseTag.jsx";
 
 const FILTERS = ["Все", "Сдан", "Не сдан"];
 
@@ -97,6 +98,7 @@ export default function StudentTests() {
             <thead className="bg-surface-container text-on-surface-variant text-label-md font-bold uppercase tracking-wider">
               <tr>
                 <th className="px-6 py-4">Тест</th>
+                <th className="px-6 py-4">Курс / предмет</th>
                 <th className="px-6 py-4">Статус</th>
                 <th className="px-6 py-4">Оценка</th>
                 <th className="px-6 py-4">Выдан</th>
@@ -106,7 +108,7 @@ export default function StudentTests() {
             <tbody className="divide-y divide-outline-variant/30">
               {loading && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-on-surface-variant">
+                  <td colSpan={6} className="px-6 py-10 text-center text-on-surface-variant">
                     Загрузка…
                   </td>
                 </tr>
@@ -133,6 +135,9 @@ export default function StudentTests() {
                             </a>
                           </div>
                         </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <CourseTag title={t.course_title} subject={t.course_subject} />
                       </td>
                       <td className="px-6 py-5">
                         <span className={`flex items-center gap-1.5 font-bold text-[13px] ${isSubmitted ? "text-primary" : "text-secondary"}`}>
@@ -164,7 +169,7 @@ export default function StudentTests() {
                 })}
               {!loading && items.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-on-surface-variant">
+                  <td colSpan={6} className="px-6 py-10 text-center text-on-surface-variant">
                     Нет тестов с таким статусом.
                   </td>
                 </tr>

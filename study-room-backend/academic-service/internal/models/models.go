@@ -173,15 +173,23 @@ const (
 // тест (Status = submitted). Grade — 1..5, nil пока не выставлена.
 // Средняя оценка по всем тестам ученика ("успеваемость") считается на
 // лету в TestRepository.AverageGrade, отдельно не хранится.
+// CourseID/CourseTitle/CourseSubject — необязательная привязка теста к
+// курсу (см. миграцию 0004_tests_course). Title/Subject подтягиваются
+// LEFT JOIN'ом в TestRepository и не хранятся в таблице tests, поэтому
+// omitempty: тест, выданный без курса или после его удаления, отдаёт их
+// как null.
 type Test struct {
-	ID          int64      `json:"id"`
-	StudentID   int64      `json:"student_id"`
-	CreatedBy   int64      `json:"created_by"`
-	Title       string     `json:"title"`
-	LinkURL     string     `json:"link_url"`
-	Status      TestStatus `json:"status"`
-	Grade       *int       `json:"grade"`
-	SubmittedAt *time.Time `json:"submitted_at"`
-	GradedAt    *time.Time `json:"graded_at"`
-	CreatedAt   time.Time  `json:"created_at"`
+	ID            int64      `json:"id"`
+	StudentID     int64      `json:"student_id"`
+	CreatedBy     int64      `json:"created_by"`
+	Title         string     `json:"title"`
+	LinkURL       string     `json:"link_url"`
+	Status        TestStatus `json:"status"`
+	Grade         *int       `json:"grade"`
+	SubmittedAt   *time.Time `json:"submitted_at"`
+	GradedAt      *time.Time `json:"graded_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	CourseID      *int64     `json:"course_id,omitempty"`
+	CourseTitle   *string    `json:"course_title,omitempty"`
+	CourseSubject *string    `json:"course_subject,omitempty"`
 }

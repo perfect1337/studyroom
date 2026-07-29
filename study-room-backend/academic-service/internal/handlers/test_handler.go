@@ -25,6 +25,11 @@ type createTestRequest struct {
 	StudentID int64  `json:"student_id"`
 	Title     string `json:"title"`
 	LinkURL   string `json:"link_url"`
+	// CourseID — необязательная привязка к курсу/предмету, по которому
+	// выдан тест (см. models.Test и 0004_tests_course.up.sql). Нужна,
+	// чтобы ученик/родитель/админ видели не только название теста, но и
+	// курс с предметом в списке (StudentTests/ParentOverview/...).
+	CourseID *int64 `json:"course_id"`
 }
 
 // Create — POST /tests, tutor only. Как и homework, тест — это ссылка на
@@ -43,7 +48,7 @@ func (h *TestHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := h.repo.Create(r.Context(), req.StudentID, claims.UserID, req.Title, req.LinkURL)
+	t, err := h.repo.Create(r.Context(), req.StudentID, claims.UserID, req.Title, req.LinkURL, req.CourseID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to create test")
 		return

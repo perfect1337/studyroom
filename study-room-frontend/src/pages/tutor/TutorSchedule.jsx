@@ -310,6 +310,27 @@ export default function TutorSchedule() {
                       </div>
 
                       <div className="space-y-4">
+                        {/* Карточка преподавателя занятия — по аналогии с карточкой
+                            репетитора в StudentSchedule/ParentSchedule. У курса может
+                            быть несколько преподавателей (course_tutors), а у
+                            конкретного занятия всегда один — lesson.tutor_id; здесь
+                            наглядно показываем, кто именно ведёт выбранное занятие. */}
+                        <div className="flex items-center gap-3 p-3 bg-surface-container rounded-lg">
+                          <div className="w-10 h-10 rounded-full overflow-hidden bg-primary-fixed flex items-center justify-center font-bold text-primary shrink-0">
+                            {user?.avatar_url ? (
+                              <img src={user.avatar_url} alt={fullName(user)} className="w-full h-full object-cover" />
+                            ) : (
+                              initials(user)
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-label-md font-bold text-on-surface truncate">
+                              {lesson.tutor_id === user?.id ? fullName(user) : `Преподаватель #${lesson.tutor_id}`}
+                            </p>
+                            <p className="text-[12px] text-on-surface-variant">Преподаватель занятия</p>
+                          </div>
+                        </div>
+
                         {/* Ученик(и) занятия — вместо карточки преподавателя (как у ученика/родителя),
                             здесь репетитор видит, кто записан на курс этого занятия. */}
                         <div>
