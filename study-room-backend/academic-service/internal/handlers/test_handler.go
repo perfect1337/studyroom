@@ -121,17 +121,33 @@ func (h *TestHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": nonNilTests(items)})
 }
 
+// filterByOwnBranch — фильтрует тесты по филиалу их студентов.
+//
+// Раньше здесь был вызов h.userRefs.BranchOf в цикле — то есть один SQL-запрос
+// на каждый элемент списка (N+1). Теперь id студентов собираются один раз и
+// филиалы для всех подгружаются одним запросом через BranchesOf — см. тот же
+// фикс и комментарий в HomeworkHandler.filterByOwnBranch.
 func (h *TestHandler) filterByOwnBranch(r *http.Request, branchID *int64, items []*models.Test) ([]*models.Test, error) {
 	if branchID == nil {
 		return []*models.Test{}, nil
 	}
+	if len(items) == 0 {
+		return []*models.Test{}, nil
+	}
+
+	studentIDs := make([]int64, 0, len(items))
+	for _, t := range items {
+		studentIDs = append(studentIDs, t.StudentID)
+	}
+
+	branches, err := h.userRefs.BranchesOf(r.Context(), studentIDs)
+	if err != nil {
+		return nil, err
+	}
+
 	out := make([]*models.Test, 0, len(items))
 	for _, t := range items {
-		studentBranch, err := h.userRefs.BranchOf(r.Context(), t.StudentID)
-		if err != nil {
-			return nil, err
-		}
-		if studentBranch != nil && *studentBranch == *branchID {
+		if studentBranch := branches[t.StudentID]; studentBranch != nil && *studentBranch == *branchID {
 			out = append(out, t)
 		}
 	}

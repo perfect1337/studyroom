@@ -121,17 +121,34 @@ func (h *HomeworkHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": nonNilHomework(items)})
 }
 
+// filterByOwnBranch — фильтрует домашки по филиалу их студентов.
+//
+// Раньше здесь был вызов h.userRefs.BranchOf в цикле — то есть один SQL-запрос
+// на каждый элемент списка (N+1). При больших списках (много домашки в
+// системе) это N лишних round-trip'ов к БД на один HTTP-запрос. Теперь id
+// студентов собираются один раз и филиалы для всех подгружаются одним
+// запросом через BranchesOf — фильтрация происходит по уже загруженной map.
 func (h *HomeworkHandler) filterByOwnBranch(r *http.Request, branchID *int64, items []*models.Homework) ([]*models.Homework, error) {
 	if branchID == nil {
 		return []*models.Homework{}, nil
 	}
+	if len(items) == 0 {
+		return []*models.Homework{}, nil
+	}
+
+	studentIDs := make([]int64, 0, len(items))
+	for _, hw := range items {
+		studentIDs = append(studentIDs, hw.StudentID)
+	}
+
+	branches, err := h.userRefs.BranchesOf(r.Context(), studentIDs)
+	if err != nil {
+		return nil, err
+	}
+
 	out := make([]*models.Homework, 0, len(items))
 	for _, hw := range items {
-		studentBranch, err := h.userRefs.BranchOf(r.Context(), hw.StudentID)
-		if err != nil {
-			return nil, err
-		}
-		if studentBranch != nil && *studentBranch == *branchID {
+		if studentBranch := branches[hw.StudentID]; studentBranch != nil && *studentBranch == *branchID {
 			out = append(out, hw)
 		}
 	}

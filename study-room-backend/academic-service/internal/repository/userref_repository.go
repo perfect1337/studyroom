@@ -54,6 +54,9 @@ func (r *UserRefRepository) GetByID(ctx context.Context, id int64) (*models.User
 // BranchOf — удобный хелпер: филиал пользователя из локального кэша, либо
 // nil, если пользователя ещё нет в user_refs (например, событие user.created
 // от User Service ещё не дошло — best-effort доставка, см. events/subscriber.go).
+//
+// Для одного пользователя это ок, но НЕ используйте в цикле по списку (N+1
+// запросов) — для этого случая есть BranchesOf ниже.
 func (r *UserRefRepository) BranchOf(ctx context.Context, userID int64) (*int64, error) {
 	ref, err := r.GetByID(ctx, userID)
 	if err != nil {
@@ -63,4 +66,54 @@ func (r *UserRefRepository) BranchOf(ctx context.Context, userID int64) (*int64,
 		return nil, err
 	}
 	return ref.BranchID, nil
+}
+
+// BranchesOf — пакетная версия BranchOf: один запрос вместо одного на
+// каждого userID. Используется там, где нужно отфильтровать список записей
+// (homework/tests) по филиалу их студентов — раньше это делалось построчным
+// вызовом BranchOf в цикле (N+1 запросов к БД на один HTTP-запрос), см.
+// HomeworkHandler.filterByOwnBranch / TestHandler.filterByOwnBranch.
+//
+// Возвращает map[user_id]*branch_id. Пользователи, которых ещё нет в
+// user_refs (событие user.created ещё не дошло), в map просто отсутствуют —
+// вызывающий код должен трактовать отсутствие ключа так же, как nil от
+// BranchOf (т.е. "филиал неизвестен").
+func (r *UserRefRepository) BranchesOf(ctx context.Context, userIDs []int64) (map[int64]*int64, error) {
+	result := make(map[int64]*int64, len(userIDs))
+	if len(userIDs) == 0 {
+		return result, nil
+	}
+
+	// Дедуп: один и тот же student_id может встречаться в списке много раз
+	// (несколько домашек/тестов одного ученика) — не гонять лишние байты в
+	// запросе, хотя ANY($1) и так корректно обработал бы дубликаты.
+	seen := make(map[int64]struct{}, len(userIDs))
+	unique := make([]int64, 0, len(userIDs))
+	for _, id := range userIDs {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+
+	rows, err := r.pool.Query(ctx,
+		`SELECT user_id, branch_id FROM user_refs WHERE user_id = ANY($1)`, unique)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var userID int64
+		var branchID *int64
+		if err := rows.Scan(&userID, &branchID); err != nil {
+			return nil, err
+		}
+		result[userID] = branchID
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
