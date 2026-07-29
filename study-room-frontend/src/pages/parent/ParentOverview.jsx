@@ -270,9 +270,22 @@ export default function ParentOverview() {
                           </Link>
                         </div>
                         {(child.class_info || child.school) && (
-                          <p className="text-sm text-on-surface-variant mb-1">
-                            {[child.class_info, child.school].filter(Boolean).join(" · ")}
-                          </p>
+                          <div className="flex flex-wrap gap-2 mb-2">
+                            {child.class_info && (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-container text-xs font-label-md">
+                                <span className="material-symbols-outlined text-[14px] text-primary">groups</span>
+                                <span className="text-on-surface-variant">Класс:</span>
+                                <span className="text-on-surface font-bold">{child.class_info}</span>
+                              </span>
+                            )}
+                            {child.school && (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-container text-xs font-label-md">
+                                <span className="material-symbols-outlined text-[14px] text-primary">location_city</span>
+                                <span className="text-on-surface-variant">Школа:</span>
+                                <span className="text-on-surface font-bold">{child.school}</span>
+                              </span>
+                            )}
+                          </div>
                         )}
                         {(avgGradeFor(child) != null || child.attendance_pct != null) && (
                           <div className="flex flex-wrap gap-3 mb-2 text-[12px] text-on-surface-variant">

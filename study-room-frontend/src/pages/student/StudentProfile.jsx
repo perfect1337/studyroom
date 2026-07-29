@@ -67,61 +67,44 @@ export default function StudentProfile() {
       avatarUrl={user?.avatar_url}
     >
       <div className="max-w-[760px] mx-auto py-stack-lg space-y-stack-lg">
-        {/* Карточка профиля: градиентная "обложка" сверху + аватар внахлёст,
-            вместо плоского серого блока — заметнее выделяет профиль на странице. */}
-        <section className="bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant overflow-hidden">
-          <div
-            className="h-28 sm:h-32 relative"
-            style={{ background: "linear-gradient(120deg, #004ac6 0%, #2563eb 55%, #5b8dff 100%)" }}
-          >
-            <div className="absolute inset-0 opacity-20" style={{
-              backgroundImage: "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.5) 0, transparent 35%), radial-gradient(circle at 85% 75%, rgba(255,255,255,0.35) 0, transparent 30%)",
-            }} />
+        {/* Карточка профиля: плоская, без градиентной "обложки" — аватар и
+            имя в ряд, кнопка редактирования справа. */}
+        <section className="bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant p-6 sm:p-8">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-6">
+            <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full overflow-hidden border-4 border-surface-container-highest shadow-sm bg-primary-fixed flex items-center justify-center text-primary font-bold text-4xl shrink-0 mx-auto sm:mx-0">
+              {user?.avatar_url ? (
+                <img src={user.avatar_url} alt={fullName(user)} className="w-full h-full object-cover" />
+              ) : (
+                initials(user)
+              )}
+            </div>
+            <div className="flex-1 min-w-0 text-center sm:text-left">
+              <h2 className="font-headline-md text-headline-md text-on-background truncate">{fullName(user)}</h2>
+              <div className="flex items-center justify-center sm:justify-start gap-2 mt-1">
+                <span className="inline-flex items-center gap-1 text-on-surface-variant font-label-md text-label-md">
+                  <span className="material-symbols-outlined text-[16px]">school</span>
+                  Ученик
+                </span>
+                <span
+                  className={`inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${
+                    isActive ? "bg-primary/10 text-primary" : "bg-error-container text-on-error-container"
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-primary" : "bg-error"}`} />
+                  {isActive ? "Активен" : "Деактивирован"}
+                </span>
+              </div>
+            </div>
             <Link
               to="/student/settings"
-              className="hidden sm:inline-flex absolute top-4 right-4 items-center gap-2 bg-white/15 backdrop-blur text-white px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-white/25 active:scale-95 transition-all"
+              className="inline-flex items-center justify-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label-md shadow-sm hover:translate-y-[-1px] active:scale-95 transition-all shrink-0 mx-auto sm:mx-0"
             >
               <span className="material-symbols-outlined text-[18px]">edit</span>
               Редактировать
             </Link>
           </div>
 
-          <div className="px-6 sm:px-8 pb-6 sm:pb-8">
-            <div className="flex flex-col sm:flex-row sm:items-end gap-5 -mt-14 sm:-mt-16">
-              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full overflow-hidden border-4 border-surface-container-lowest shadow-lg bg-primary-fixed flex items-center justify-center text-primary font-bold text-4xl shrink-0">
-                {user?.avatar_url ? (
-                  <img src={user.avatar_url} alt={fullName(user)} className="w-full h-full object-cover" />
-                ) : (
-                  initials(user)
-                )}
-              </div>
-              <div className="flex-1 min-w-0 pb-1 text-center sm:text-left">
-                <h2 className="font-headline-md text-headline-md text-on-background truncate">{fullName(user)}</h2>
-                <div className="flex items-center justify-center sm:justify-start gap-2 mt-1">
-                  <span className="inline-flex items-center gap-1 text-on-surface-variant font-label-md text-label-md">
-                    <span className="material-symbols-outlined text-[16px]">school</span>
-                    Ученик
-                  </span>
-                  <span
-                    className={`inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${
-                      isActive ? "bg-primary/10 text-primary" : "bg-error-container text-on-error-container"
-                    }`}
-                  >
-                    <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-primary" : "bg-error"}`} />
-                    {isActive ? "Активен" : "Деактивирован"}
-                  </span>
-                </div>
-              </div>
-              <Link
-                to="/student/settings"
-                className="sm:hidden inline-flex items-center justify-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label-md shadow-sm active:scale-95 transition-all"
-              >
-                <span className="material-symbols-outlined text-[18px]">edit</span>
-                Редактировать
-              </Link>
-            </div>
-
-            {showAcademicStats && (
+          {showAcademicStats && (
               <div className="flex flex-wrap justify-center sm:justify-start gap-3 mt-6">
                 {avgGrade != null && (
                   <Link
@@ -157,7 +140,6 @@ export default function StudentProfile() {
                 )}
               </div>
             )}
-          </div>
         </section>
 
         <section className="bg-surface-container-lowest rounded-2xl p-stack-md sm:p-6 shadow-sm border border-outline-variant">

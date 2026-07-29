@@ -283,8 +283,28 @@ func canViewUser(r *http.Request, h *UserHandler, claims *auth.Claims, target *m
 		return target.BranchID != nil && claims.BranchID != nil && *target.BranchID == *claims.BranchID
 	}
 	if claims.Role == models.RoleParent {
-		isParent, err := h.parentChild.IsParentOf(r.Context(), claims.UserID, target.ID)
-		return err == nil && isParent
+		if target.Role == models.RoleStudent {
+			isParent, err := h.parentChild.IsParentOf(r.Context(), claims.UserID, target.ID)
+			return err == nil && isParent
+		}
+		// Родителю также нужно уметь посмотреть карточку репетитора своего
+		// ребёнка (см. GET /users/{id} из ParentSchedule.jsx — там подтягивают
+		// имя преподавателя по lesson.tutor_id). Прямой связи parent->tutor
+		// нет, поэтому разрешаем по тому же принципу, что и student/tutor
+		// ниже: репетитор виден, если он работает в одном филиале хотя бы с
+		// одним из детей этого родителя.
+		if target.Role == models.RoleTutor {
+			children, err := h.parentChild.ListChildren(r.Context(), claims.UserID, "")
+			if err != nil {
+				return false
+			}
+			for _, c := range children {
+				if c.BranchID != nil && target.BranchID != nil && *c.BranchID == *target.BranchID {
+					return true
+				}
+			}
+		}
+		return false
 	}
 	if claims.Role == models.RoleTutor && target.Role == models.RoleStudent {
 		return target.BranchID != nil && claims.BranchID != nil && *target.BranchID == *claims.BranchID
