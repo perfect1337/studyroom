@@ -34,9 +34,13 @@ type Deps struct {
 	// Настраивается через ENV AUTH_RATE_LIMIT_PER_MIN (см. internal/config),
 	// прод-поведение по умолчанию не меняется.
 	AuthRateLimit int
+
+	// CookieOptions — параметры httpOnly cookie для refresh-токена
+	// (COOKIE_SECURE/COOKIE_SAMESITE/COOKIE_DOMAIN, см. internal/config).
+	CookieOptions handlers.CookieOptions
 }
 
-func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, pub events.Publisher, appPublicURL string, authRateLimit int) *Deps {
+func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, pub events.Publisher, appPublicURL string, authRateLimit int, cookieOpts handlers.CookieOptions) *Deps {
 	if pub == nil {
 		pub = events.NoopPublisher{}
 	}
@@ -51,12 +55,13 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, pub events.Publisher, ap
 		Events:        pub,
 		AppPublicURL:  appPublicURL,
 		AuthRateLimit: authRateLimit,
+		CookieOptions: cookieOpts,
 	}
 }
 
 // NewRouter собирает HTTP-роутер user-service (общий для main и тестов).
 func NewRouter(d *Deps) http.Handler {
-	authHandler := handlers.NewAuthHandler(d.Users, d.Auth, d.TM, d.Events, d.AppPublicURL)
+	authHandler := handlers.NewAuthHandler(d.Users, d.Auth, d.TM, d.Events, d.AppPublicURL, d.CookieOptions)
 	userHandler := handlers.NewUserHandler(d.Users, d.Branches, d.ParentChild, d.Auth, d.TutorProfiles, d.Events)
 	tutorHandler := handlers.NewTutorHandler(d.TutorProfiles, d.Users)
 
@@ -83,6 +88,7 @@ func NewRouter(d *Deps) http.Handler {
 			r.Post("/auth/refresh", authHandler.Refresh)
 			r.Post("/auth/forgot-password", authHandler.ForgotPassword)
 			r.Post("/auth/reset-password", authHandler.ResetPassword)
+			r.Post("/auth/logout", authHandler.Logout)
 		})
 
 		r.Group(func(r chi.Router) {

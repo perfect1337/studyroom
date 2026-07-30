@@ -92,15 +92,13 @@ func fail(t *testing.T, msg string) {
 }
 
 type registerResponse struct {
-	UserID       int64  `json:"user_id"`
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	UserID      int64  `json:"user_id"`
+	AccessToken string `json:"access_token"`
 }
 
 type loginResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	User         struct {
+	AccessToken string `json:"access_token"`
+	User        struct {
 		ID        int64  `json:"id"`
 		Role      string `json:"role"`
 		FirstName string `json:"first_name"`
@@ -458,14 +456,22 @@ func testHealthzAndDocs(t *testing.T, cfg config, client *http.Client) {
 func testUserAuthenticationAndDirectory(t *testing.T, cfg config, client *http.Client, resources workflowResources) {
 	t.Helper()
 
-	loginResp := loginParent(t, client, cfg.UserBase, resources.ParentEmail, resources.ParentPassword)
+	loginResp, refreshCookie := loginParent(t, client, cfg.UserBase, resources.ParentEmail, resources.ParentPassword)
 	if loginResp.User.ID != resources.ParentID {
 		failf(t, "logged-in user id=%d does not match created parent id=%d", loginResp.User.ID, resources.ParentID)
 	}
 	reportLog("parent login success for user %d", loginResp.User.ID)
 
-	refreshResp := refreshToken(t, client, cfg.UserBase, loginResp.RefreshToken)
+	refreshResp, rotatedCookie := refreshToken(t, client, cfg.UserBase, refreshCookie)
 	reportLog("refresh token returned new access token")
+
+	// Старая (уже отозванная ротацией) cookie больше не должна работать.
+	replayStatus, _, _, _, err := doJSONRequestCookie(client, "POST", cfg.UserBase+"/api/v1/auth/refresh", "", nil, refreshCookie)
+	if err != nil {
+		failf(t, "replaying rotated-out refresh cookie failed: %v", err)
+	}
+	expectStatus(t, replayStatus, http.StatusUnauthorized, "reusing a refresh token after it rotated")
+	reportLog("confirmed a rotated-out refresh token is rejected")
 
 	respStatus, meBody, _, err := doJSONRequest(client, "GET", cfg.UserBase+"/api/v1/users/me", refreshResp.AccessToken, nil)
 	if err != nil {
@@ -519,6 +525,37 @@ func testUserAuthenticationAndDirectory(t *testing.T, cfg config, client *http.C
 		fail(t, "expected at least one child for parent")
 	}
 	reportLog("parent has %d child(ren)", len(children))
+
+	// POST /auth/logout: отзывает refresh-токен и чистит cookie на клиенте.
+	logoutStatus, _, _, logoutCookies, err := doJSONRequestCookie(client, "POST", cfg.UserBase+"/api/v1/auth/logout", "", nil, rotatedCookie)
+	if err != nil {
+		failf(t, "logout failed: %v", err)
+	}
+	if logoutStatus != http.StatusOK {
+		failf(t, "logout expected 200, got %d", logoutStatus)
+	}
+	if cleared := refreshCookieFrom(logoutCookies); cleared == nil || cleared.MaxAge >= 0 {
+		failf(t, "logout expected to clear sr_refresh_token cookie (MaxAge < 0), got %+v", cleared)
+	}
+	reportLog("logout cleared the refresh cookie")
+
+	// Отозванный logout-ом refresh-токен больше не должен работать.
+	afterLogoutStatus, _, _, _, err := doJSONRequestCookie(client, "POST", cfg.UserBase+"/api/v1/auth/refresh", "", nil, rotatedCookie)
+	if err != nil {
+		failf(t, "refresh after logout failed: %v", err)
+	}
+	expectStatus(t, afterLogoutStatus, http.StatusUnauthorized, "refreshing with a token revoked by logout")
+	reportLog("confirmed refresh token is invalid after logout")
+
+	// Logout идемпотентен: без cookie вообще — тоже 200, а не 500.
+	idempotentStatus, _, _, _, err := doJSONRequestCookie(client, "POST", cfg.UserBase+"/api/v1/auth/logout", "", nil, nil)
+	if err != nil {
+		failf(t, "logout without cookie failed: %v", err)
+	}
+	if idempotentStatus != http.StatusOK {
+		failf(t, "logout without cookie expected 200, got %d", idempotentStatus)
+	}
+	reportLog("confirmed logout without a cookie is idempotent (200)")
 }
 
 // testAuthNegativeCases exercises user-service auth error paths that the
@@ -582,9 +619,8 @@ func testAuthNegativeCases(t *testing.T, cfg config, client *http.Client) {
 	expectStatus(t, respStatus, http.StatusUnauthorized, "logging in with an unknown login")
 	reportLog("confirmed login rejects an unknown identity")
 
-	respStatus, _, _, err = doJSONRequest(client, "POST", cfg.UserBase+"/api/v1/auth/refresh", "", map[string]any{
-		"refresh_token": "not-a-real-refresh-token",
-	})
+	respStatus, _, _, _, err = doJSONRequestCookie(client, "POST", cfg.UserBase+"/api/v1/auth/refresh", "", nil,
+		&http.Cookie{Name: "sr_refresh_token", Value: "not-a-real-refresh-token"})
 	if err != nil {
 		failf(t, "invalid refresh token request failed: %v", err)
 	}
@@ -826,7 +862,7 @@ func testUserProfileAndDirectory(t *testing.T, cfg config, client *http.Client, 
 	expectStatus(t, respStatus, http.StatusUnauthorized, "logging in with the password from before a change-password call")
 	reportLog("confirmed the old password no longer works after change-password")
 
-	loginResp := loginParent(t, client, cfg.UserBase, changeParentEmail, newPassword)
+	loginResp, _ := loginParent(t, client, cfg.UserBase, changeParentEmail, newPassword)
 	if loginResp.User.ID != changeParent.UserID {
 		failf(t, "login with new password returned unexpected user id %d", loginResp.User.ID)
 	}
@@ -2124,10 +2160,10 @@ func testCRMValidationAndAccessControl(t *testing.T, cfg config, client *http.Cl
 	reportLog("confirmed deleting a nonexistent CRM application returns 404")
 }
 
-func loginParent(t *testing.T, client *http.Client, baseURL, email, password string) loginResponse {
+func loginParent(t *testing.T, client *http.Client, baseURL, email, password string) (loginResponse, *http.Cookie) {
 	t.Helper()
 
-	respStatus, body, _, err := doJSONRequest(client, "POST", baseURL+"/api/v1/auth/login", "", map[string]any{"login": email, "password": password})
+	respStatus, body, _, cookies, err := doJSONRequestCookie(client, "POST", baseURL+"/api/v1/auth/login", "", map[string]any{"login": email, "password": password}, nil)
 	if err != nil {
 		failf(t, "login failed: %v", err)
 	}
@@ -2136,13 +2172,21 @@ func loginParent(t *testing.T, client *http.Client, baseURL, email, password str
 	}
 	var result loginResponse
 	decodeJSONMap(body, &result, t)
-	return result
+	rc := refreshCookieFrom(cookies)
+	if rc == nil {
+		failf(t, "login response is missing the sr_refresh_token cookie")
+	}
+	return result, rc
 }
 
-func refreshToken(t *testing.T, client *http.Client, baseURL, refreshToken string) loginResponse {
+// refreshToken обновляет access-токен, отправляя refresh-cookie, полученную
+// от loginParent (или от предыдущего вызова refreshToken — токен
+// ротируется при каждом обновлении). Возвращает новую cookie для следующей
+// ротации.
+func refreshToken(t *testing.T, client *http.Client, baseURL string, cookie *http.Cookie) (loginResponse, *http.Cookie) {
 	t.Helper()
 
-	respStatus, body, _, err := doJSONRequest(client, "POST", baseURL+"/api/v1/auth/refresh", "", map[string]any{"refresh_token": refreshToken})
+	respStatus, body, _, cookies, err := doJSONRequestCookie(client, "POST", baseURL+"/api/v1/auth/refresh", "", nil, cookie)
 	if err != nil {
 		failf(t, "token refresh failed: %v", err)
 	}
@@ -2151,7 +2195,11 @@ func refreshToken(t *testing.T, client *http.Client, baseURL, refreshToken strin
 	}
 	var result loginResponse
 	decodeJSONMap(body, &result, t)
-	return result
+	rc := refreshCookieFrom(cookies)
+	if rc == nil {
+		failf(t, "refresh response is missing the rotated sr_refresh_token cookie")
+	}
+	return result, rc
 }
 
 func setupUserWorkflow(t *testing.T, cfg config, client *http.Client, parentEmail, parentPassword string) workflowResources {
@@ -2431,7 +2479,7 @@ func registerParent(t *testing.T, client *http.Client, baseURL, email, password 
 	}
 	var resultObj registerResponse
 	decodeJSONMap(result, &resultObj, t)
-	if resultObj.UserID == 0 || resultObj.AccessToken == "" || resultObj.RefreshToken == "" {
+	if resultObj.UserID == 0 || resultObj.AccessToken == "" {
 		failf(t, "unexpected register response: %+v", resultObj)
 	}
 	return resultObj
@@ -2458,6 +2506,21 @@ func makeToken(t *testing.T, secret string, userID int64, role string, branchID 
 }
 
 func doJSONRequest(client *http.Client, method, url, token string, body any) (status int, out any, raw []byte, err error) {
+	status, out, raw, _, err = doJSONRequestCookie(client, method, url, token, body, nil)
+	return
+}
+
+// doJSONRequestCookie — то же самое, что doJSONRequest, но дополнительно
+// умеет отправить cookie в запросе и возвращает Set-Cookie из ответа.
+// Нужен специально для /auth/refresh и /auth/logout: после перехода на
+// httpOnly cookie для refresh-токена (см. user-service/internal/handlers/
+// cookies.go) он больше не передаётся в JSON-теле. Клиент в этом файле
+// намеренно БЕЗ cookiejar на http.Client — сценарии этого файла массово
+// логинят разных пользователей на одном общем client конкурентно, и общий
+// jar перезаписывал бы cookie одного пользователя другим. Поэтому cookie
+// каждого симулированного пользователя явно прокидывается через параметры
+// этой функции, а не через встроенный jar.
+func doJSONRequestCookie(client *http.Client, method, url, token string, body any, cookie *http.Cookie) (status int, out any, raw []byte, cookies []*http.Cookie, err error) {
 	start := time.Now()
 	defer func() {
 		elapsed := time.Since(start).Round(time.Millisecond)
@@ -2490,6 +2553,9 @@ func doJSONRequest(client *http.Client, method, url, token string, body any) (st
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
 
 	resp, doErr := client.Do(req)
 	if doErr != nil {
@@ -2498,6 +2564,7 @@ func doJSONRequest(client *http.Client, method, url, token string, body any) (st
 	}
 	defer resp.Body.Close()
 	status = resp.StatusCode
+	cookies = resp.Cookies()
 
 	respRaw, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
@@ -2523,6 +2590,17 @@ func doJSONRequest(client *http.Client, method, url, token string, body any) (st
 		out = string(raw)
 	}
 	return
+}
+
+// refreshCookieFrom ищет cookie с refresh-токеном (sr_refresh_token) среди
+// Set-Cookie заголовков ответа /auth/login или /auth/refresh.
+func refreshCookieFrom(cookies []*http.Cookie) *http.Cookie {
+	for _, c := range cookies {
+		if c.Name == "sr_refresh_token" {
+			return c
+		}
+	}
+	return nil
 }
 
 // shortURL trims a full request URL down to path+query so log lines in

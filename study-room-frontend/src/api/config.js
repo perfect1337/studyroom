@@ -16,6 +16,8 @@ export const API = {
   notifications: import.meta.env.VITE_NOTIFICATIONS_API ?? "http://localhost:8085/api/v1/notifications",
 };
 
-export const ACCESS_TOKEN_KEY = "sr_access_token";
-export const REFRESH_TOKEN_KEY = "sr_refresh_token";
+// USER_KEY — в localStorage кэшируется только не-секретная информация о
+// пользователе (id/роль/имя) для мгновенного отображения UI до ответа
+// сервера. Сами токены здесь больше не хранятся: access-токен живёт в
+// памяти вкладки, refresh-токен — в httpOnly cookie на бэкенде (см. http.js).
 export const USER_KEY = "sr_user";

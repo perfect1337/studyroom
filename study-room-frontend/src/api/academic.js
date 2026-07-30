@@ -1,6 +1,5 @@
-import { academicApi } from "./http.js";
+import { academicApi, getCurrentAccessToken } from "./http.js";
 import { API } from "./config.js";
-import { ACCESS_TOKEN_KEY } from "./config.js";
 import { cachedQuery, invalidateQuery } from "./queryCache.js";
 
 // 2.1 Список курсов. tutor_id — доп.фильтр "курсы, которые ведёт этот
@@ -145,7 +144,7 @@ export function fetchHomework({ student_id, status } = {}) {
 // поэтому открываем его сами через window.open, а этот вызов используем только
 // ради побочного эффекта (assigned -> viewed) и не ждём/не парсим ответ как JSON.
 export function markHomeworkOpened(id) {
-  const token = localStorage.getItem(ACCESS_TOKEN_KEY);
+  const token = getCurrentAccessToken();
   invalidateQuery(["homework"]);
   return fetch(`${API.academic}/homework/${id}/open`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},

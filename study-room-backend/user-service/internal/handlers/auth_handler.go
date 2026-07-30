@@ -19,6 +19,15 @@ type AuthHandler struct {
 	tm           *auth.TokenManager
 	events       events.Publisher
 	appPublicURL string
+	cookies      cookieSettings
+}
+
+// CookieOptions — параметры httpOnly cookie для refresh-токена, приходят из
+// config.Config (COOKIE_SECURE/COOKIE_SAMESITE/COOKIE_DOMAIN).
+type CookieOptions struct {
+	Secure   bool
+	SameSite string
+	Domain   string
 }
 
 func NewAuthHandler(
@@ -27,11 +36,19 @@ func NewAuthHandler(
 	tm *auth.TokenManager,
 	pub events.Publisher,
 	appPublicURL string,
+	cookieOpts CookieOptions,
 ) *AuthHandler {
 	if pub == nil {
 		pub = events.NoopPublisher{}
 	}
-	return &AuthHandler{users: users, authRepo: authRepo, tm: tm, events: pub, appPublicURL: appPublicURL}
+	return &AuthHandler{
+		users: users, authRepo: authRepo, tm: tm, events: pub, appPublicURL: appPublicURL,
+		cookies: cookieSettings{
+			secure:   cookieOpts.Secure,
+			sameSite: parseSameSite(cookieOpts.SameSite),
+			domain:   cookieOpts.Domain,
+		},
+	}
 }
 
 // --- 1.1. POST /auth/register ---
@@ -84,8 +101,9 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
 		return
 	}
+	h.setRefreshCookie(w, refresh, h.tm.RefreshTokenExpiry())
 	writeJSON(w, http.StatusOK, map[string]any{
-		"user_id": created.ID, "access_token": access, "refresh_token": refresh,
+		"user_id": created.ID, "access_token": access,
 	})
 }
 
@@ -121,8 +139,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
 		return
 	}
+	h.setRefreshCookie(w, refresh, h.tm.RefreshTokenExpiry())
 	writeJSON(w, http.StatusOK, map[string]any{
-		"access_token": access, "refresh_token": refresh,
+		"access_token": access,
 		"user": map[string]any{
 			"id": u.ID, "role": u.Role, "first_name": u.FirstName, "last_name": u.LastName,
 		},
@@ -130,31 +149,32 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- 1.3. POST /auth/refresh ---
-type refreshRequest struct {
-	RefreshToken string `json:"refresh_token"`
-}
-
+// Refresh-токен читается из httpOnly cookie (см. cookies.go), а не из тела
+// запроса — сам JSON-body теперь не нужен и не поддерживается.
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
-	var req refreshRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid body")
+	plain := readRefreshCookie(r)
+	if plain == "" {
+		writeError(w, http.StatusUnauthorized, "INVALID_TOKEN", "refresh token cookie is missing")
 		return
 	}
 
-	hash := auth.HashToken(req.RefreshToken)
+	hash := auth.HashToken(plain)
 	userID, err := h.authRepo.FindUserIDByRefreshToken(r.Context(), hash)
 	if err != nil {
+		h.clearRefreshCookie(w)
 		writeError(w, http.StatusUnauthorized, "INVALID_TOKEN", "refresh token invalid or expired")
 		return
 	}
 
 	u, err := h.users.GetByID(r.Context(), userID)
 	if err != nil {
+		h.clearRefreshCookie(w)
 		writeError(w, http.StatusUnauthorized, "INVALID_TOKEN", "user not found")
 		return
 	}
 	if !u.IsActive {
 		_ = h.authRepo.RevokeAllRefreshTokens(r.Context(), u.ID)
+		h.clearRefreshCookie(w)
 		writeError(w, http.StatusForbidden, "ACCOUNT_DISABLED", "account is deactivated")
 		return
 	}
@@ -165,9 +185,22 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
 		return
 	}
+	h.setRefreshCookie(w, refresh, h.tm.RefreshTokenExpiry())
 	writeJSON(w, http.StatusOK, map[string]any{
-		"access_token": access, "refresh_token": refresh,
+		"access_token": access,
 	})
+}
+
+// --- POST /auth/logout ---
+// Отзывает текущий refresh-токен (если он есть и валиден) и в любом случае
+// очищает cookie на клиенте. Идемпотентно и не требует активного access-
+// токена — иначе разлогин при уже истёкшем access-токене был бы невозможен.
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	if plain := readRefreshCookie(r); plain != "" {
+		_ = h.authRepo.RevokeRefreshToken(r.Context(), auth.HashToken(plain))
+	}
+	h.clearRefreshCookie(w)
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *AuthHandler) createTokenPair(r *http.Request, u *models.User) (access, refresh string, err error) {
@@ -251,6 +284,7 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = h.authRepo.RevokeAllRefreshTokens(r.Context(), userID)
+	h.clearRefreshCookie(w)
 
 	w.WriteHeader(http.StatusOK)
 }

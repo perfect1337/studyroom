@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { fetchCourses } from "../../api/academic.js";
+import { useAuth } from "../../context/AuthContext.jsx";
 
 // Пункты меню для каждой роли. `end: true` — пункт активен только на точном совпадении пути
 // (иначе, например, "/admin" подсвечивался бы активным на "/admin/finance").
@@ -74,11 +75,24 @@ function NavList({ role, onNavigate }) {
 
 function FooterLinks({ showSwitchAccount = true }) {
   const navigate = useNavigate();
+  const { logout } = useAuth();
+
+  // Раньше кнопка просто делала navigate("/login"), не вызывая реальный
+  // logout — сессия (refresh-токен) оставалась действительной на сервере.
+  // Теперь дожидаемся отзыва токена и только потом уходим на /login.
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } finally {
+      navigate("/login");
+    }
+  };
+
   return (
     <div className="mt-auto pt-4 border-t border-outline-variant flex flex-col gap-1">
       {showSwitchAccount && (
         <button
-          onClick={() => navigate("/login")}
+          onClick={handleLogout}
           className="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-high rounded-lg transition-all text-left font-label-md text-label-md"
         >
           <span className="material-symbols-outlined">swap_horiz</span>
@@ -86,7 +100,7 @@ function FooterLinks({ showSwitchAccount = true }) {
         </button>
       )}
       <button
-        onClick={() => navigate("/login")}
+        onClick={handleLogout}
         className="flex items-center gap-3 px-4 py-3 text-error hover:bg-error-container hover:text-on-error-container rounded-lg transition-all text-left font-label-md text-label-md"
       >
         <span className="material-symbols-outlined">logout</span>

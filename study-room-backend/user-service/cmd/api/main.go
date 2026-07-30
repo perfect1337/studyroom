@@ -14,6 +14,7 @@ import (
 	"studyroom/user-service/internal/config"
 	"studyroom/user-service/internal/db"
 	"studyroom/user-service/internal/events"
+	"studyroom/user-service/internal/handlers"
 	"studyroom/user-service/internal/middleware"
 	"studyroom/user-service/internal/migrate"
 )
@@ -62,7 +63,12 @@ func main() {
 	}
 
 	tm := auth.NewTokenManager(cfg.JWTSecret, cfg.AccessTokenTTL, cfg.RefreshTokenTTL)
-	deps := app.NewDeps(pool, tm, pub, cfg.AppPublicURL, cfg.AuthRateLimit)
+	cookieOpts := handlers.CookieOptions{
+		Secure:   cfg.CookieSecure,
+		SameSite: cfg.CookieSameSite,
+		Domain:   cfg.CookieDomain,
+	}
+	deps := app.NewDeps(pool, tm, pub, cfg.AppPublicURL, cfg.AuthRateLimit, cookieOpts)
 	handler := app.NewRouter(deps)
 
 	srv := &http.Server{

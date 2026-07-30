@@ -1,4 +1,4 @@
-import { API, ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY, USER_KEY } from "./config.js";
+import { API, USER_KEY } from "./config.js";
 
 // Общий формат ошибок бэкенда: { error: { code, message } } (см. api-contracts.md).
 export class ApiError extends Error {
@@ -10,17 +10,42 @@ export class ApiError extends Error {
   }
 }
 
+// Access-токен живёт ТОЛЬКО в памяти вкладки (обычная JS-переменная модуля),
+// а не в localStorage/sessionStorage. Refresh-токен фронту вообще не виден —
+// бэкенд кладёт его в httpOnly cookie (см. study-room-backend/user-service/
+// internal/handlers/cookies.go), которую браузер сам прикладывает к запросам
+// на /auth/refresh и /auth/logout через credentials: "include".
+//
+// Почему это важно: раньше оба токена лежали в localStorage, и любая XSS
+// (dangerouslySetInnerHTML, уязвимый сторонний виджет и т.п.) давала
+// атакующему не только текущую сессию, а долгоживущий refresh-токен — то
+// есть постоянный захват аккаунта. localStorage читается любым JS на
+// странице; httpOnly cookie — не читается вообще никаким JS, даже при XSS.
+// Access-токен в памяти по той же причине безопаснее localStorage: он не
+// переживает перезагрузку вкладки (это ожидаемо — при перезагрузке первый
+// же запрос словит 401 и молча обновится через cookie, см. ниже), зато его
+// не может утащить синхронный script, читающий Storage.
+let accessToken = null;
+
 function getAccessToken() {
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
+  return accessToken;
 }
 
-function getRefreshToken() {
-  return localStorage.getItem(REFRESH_TOKEN_KEY);
+// getCurrentAccessToken — то же самое, но публично, для редких мест в коде,
+// которые вызывают fetch() напрямую в обход request()/usersApi()/... (см.
+// markHomeworkOpened в api/academic.js) и раньше читали токен из
+// localStorage. Токен теперь только в памяти — им и делимся, ничего в
+// Storage больше не пишем и не читаем.
+export function getCurrentAccessToken() {
+  return accessToken;
 }
 
-export function setTokens({ access_token, refresh_token }) {
-  if (access_token) localStorage.setItem(ACCESS_TOKEN_KEY, access_token);
-  if (refresh_token) localStorage.setItem(REFRESH_TOKEN_KEY, refresh_token);
+// data — тело ответа /auth/login, /auth/register или /auth/refresh.
+// refresh_token в нём больше нет (это осознанно, см. комментарий выше) —
+// параметр здесь принимается только на случай устаревшего/иного бэкенда и
+// просто игнорируется, чтобы не хранить его нигде на фронте.
+export function setTokens({ access_token }) {
+  if (access_token) accessToken = access_token;
 }
 
 export function setStoredUser(user) {
@@ -36,25 +61,45 @@ export function getStoredUser() {
   }
 }
 
-export function clearSession() {
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
+// clearLocalSession — только локальная очистка (память + кэш профиля).
+// НЕ отзывает refresh-токен на сервере — для этого есть logout() ниже.
+// Используется, когда серверный логаут либо уже не нужен (refresh
+// провалился — токен и так недействителен), либо не имеет смысла ждать.
+function clearLocalSession() {
+  accessToken = null;
   localStorage.removeItem(USER_KEY);
 }
+
+// logout — отзывает refresh-токен на бэкенде (DELETE записи в БД + очистка
+// cookie) и затем чистит локальное состояние. Обёрнуто в try/catch: даже
+// если сеть недоступна, пользователь всё равно выходит из аккаунта локально.
+export async function logout() {
+  try {
+    await fetch(`${API.users}/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    });
+  } catch {
+    // Сеть недоступна — не блокируем локальный выход.
+  } finally {
+    clearLocalSession();
+  }
+}
+
+// Экспортируем под старым именем тоже, чтобы не переписывать все места,
+// где раньше был "просто локальный" clearSession (истёкшая сессия и т.п.,
+// где отдельный вызов /auth/logout не нужен — refresh-токен и так протух).
+export const clearSession = clearLocalSession;
 
 // Чтобы параллельные запросы, упавшие с 401 одновременно, не дёргали /auth/refresh
 // каждый по отдельности — держим один общий promise на все.
 let refreshPromise = null;
 
 async function refreshAccessToken() {
-  const refresh_token = getRefreshToken();
-  if (!refresh_token) throw new ApiError("Сессия истекла, войдите заново", { status: 401 });
-
   if (!refreshPromise) {
     refreshPromise = fetch(`${API.users}/auth/refresh`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token }),
+      credentials: "include", // прикладывает httpOnly cookie с refresh-токеном
     })
       .then(async (res) => {
         if (!res.ok) throw new ApiError("Сессия истекла, войдите заново", { status: res.status });
@@ -102,6 +147,12 @@ export async function request(baseUrl, path, options = {}) {
     res = await fetch(url, {
       method,
       headers,
+      // credentials: "include" нужен здесь только для запросов к user-service
+      // (чтобы браузер прислал httpOnly refresh-cookie при 401 → retry ниже
+      // фактически идёт через refreshAccessToken(), а не через этот fetch,
+      // но включаем везде для единообразия — на другие origin'ы эта cookie
+      // всё равно не отправится, т.к. она выставлена доменом user-service).
+      credentials: "include",
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch (networkErr) {
@@ -111,13 +162,15 @@ export async function request(baseUrl, path, options = {}) {
     });
   }
 
-  // Access-токен истёк — пробуем обновить один раз и повторить запрос.
+  // Access-токен истёк (или его вообще нет в памяти — например, после
+  // перезагрузки страницы) — пробуем обновить через refresh-cookie один раз
+  // и повторить запрос.
   if (res.status === 401 && auth && retry) {
     try {
       await refreshAccessToken();
       return request(baseUrl, path, { ...options, retry: false });
     } catch (e) {
-      clearSession();
+      clearLocalSession();
       throw e;
     }
   }

@@ -27,6 +27,13 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       NATS_URL: nats://nats:4222
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:3000}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      # Локальный docker-compose работает по http://localhost, поэтому по
+      # умолчанию Secure=false (иначе браузер может не сохранить cookie
+      # без HTTPS вне localhost). В проде это ДОЛЖНО быть true.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-Lax}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
     ports:
       - "8081:8081"
     depends_on:

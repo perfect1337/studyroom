@@ -81,8 +81,11 @@ export function AuthProvider({ children }) {
     return me;
   }, []);
 
-  const logout = useCallback(() => {
-    clearSession();
+  const logout = useCallback(async () => {
+    // authApi.logout() сам ловит сетевые ошибки и в любом случае чистит
+    // локальное состояние (память + кэш профиля) — здесь просто ждём его,
+    // чтобы не выйти "визуально" раньше, чем отзовётся токен на сервере.
+    await authApi.logout();
     clearQueryCache();
     setUser(null);
   }, []);

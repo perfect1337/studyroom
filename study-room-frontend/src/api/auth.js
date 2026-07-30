@@ -1,4 +1,4 @@
-import { usersApi } from "./http.js";
+import { usersApi, logout as httpLogout } from "./http.js";
 
 // 1.2 Вход — POST /auth/login
 export function login({ login, password }) {
@@ -12,6 +12,13 @@ export function registerParent({ email, phone, password, last_name, first_name, 
     auth: false,
     body: { email, phone, password, last_name, first_name, patronymic },
   });
+}
+
+// Выход — POST /auth/logout. Отзывает refresh-токен на сервере (по
+// httpOnly cookie, тело запроса не нужно) и чистит локальное состояние
+// (память + кэш профиля). См. api/http.js.
+export function logout() {
+  return httpLogout();
 }
 
 // 1.4 Запрос на восстановление пароля

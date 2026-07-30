@@ -17,6 +17,7 @@ import (
 
 	"studyroom/user-service/internal/app"
 	"studyroom/user-service/internal/auth"
+	"studyroom/user-service/internal/handlers"
 	"studyroom/user-service/internal/migrate"
 	"studyroom/user-service/internal/models"
 
@@ -112,7 +113,8 @@ func getEnv(t *testing.T) *env {
 		}
 
 		tm := auth.NewTokenManager("test-jwt-secret-for-contracts", 60, 30)
-		deps := app.NewDeps(pool, tm, nil, "http://localhost:3000", 0)
+		cookieOpts := handlers.CookieOptions{Secure: false, SameSite: "Lax"}
+		deps := app.NewDeps(pool, tm, nil, "http://localhost:3000", 0, cookieOpts)
 		shared = &env{
 			pool:   pool,
 			deps:   deps,
@@ -240,12 +242,20 @@ func (e *env) saveResetToken(userID int64) string {
 }
 
 type apiResult struct {
-	Status int
-	Body   map[string]any
-	Raw    []byte
+	Status  int
+	Body    map[string]any
+	Raw     []byte
+	Cookies []*http.Cookie
 }
 
 func (e *env) do(method, path string, body any, token string) apiResult {
+	return e.doCookie(method, path, body, token, nil)
+}
+
+// doCookie — как do, но дополнительно отправляет cookie в запросе (нужно
+// для /auth/refresh и /auth/logout, которые теперь читают refresh-токен
+// из httpOnly cookie, а не из JSON body).
+func (e *env) doCookie(method, path string, body any, token string, cookie *http.Cookie) apiResult {
 	e.t.Helper()
 
 	var rawBody []byte
@@ -280,11 +290,14 @@ func (e *env) do(method, path string, body any, token string) apiResult {
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
 	rr := httptest.NewRecorder()
 	e.router.ServeHTTP(rr, req)
 
 	raw := rr.Body.Bytes()
-	out := apiResult{Status: rr.Code, Raw: raw, Body: map[string]any{}}
+	out := apiResult{Status: rr.Code, Raw: raw, Body: map[string]any{}, Cookies: rr.Result().Cookies()}
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &out.Body)
 	}
@@ -308,6 +321,15 @@ func (e *env) mustOK(res apiResult, want int) {
 		e.t.Fatalf("%s", msg)
 	}
 	e.logf("  ✓ expect status %d — ok", want)
+}
+
+func (res apiResult) findCookie(name string) *http.Cookie {
+	for _, c := range res.Cookies {
+		if c.Name == name {
+			return c
+		}
+	}
+	return nil
 }
 
 func truncate(s string, n int) string {
