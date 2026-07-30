@@ -202,6 +202,20 @@ func (r *LessonRepository) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
+// DeleteByTutor — полностью удаляет из БД все занятия уволенного репетитора
+// (lessons.tutor_id = tutorID), а не просто снимает его с расписания.
+// lessons удаляются вместе с lesson_participants и attendance каскадно (см.
+// ON DELETE CASCADE в 0001_init.up.sql), поэтому явно чистить эти таблицы
+// отдельно не нужно. Используется при увольнении — см. events/subscriber.go,
+// detachTutor.
+func (r *LessonRepository) DeleteByTutor(ctx context.Context, tutorID int64) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM lessons WHERE tutor_id = $1`, tutorID)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 // CourseBranchID — филиал курса занятия, для проверки прав branch_owner.
 func (r *LessonRepository) CourseBranchID(ctx context.Context, lessonID int64) (int64, error) {
 	var branchID int64

@@ -299,6 +299,18 @@ func (h *CourseHandler) AssignTutor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Курс мог "осиротеть" (остаться без единого преподавателя) после
+	// увольнения — тогда его active enrollments поставили на паузу (см.
+	// events/subscriber.go: detachTutor -> PauseOrphanedForCourses). Теперь,
+	// когда курсу назначили преподавателя (в том числе того же самого,
+	// восстановленного в штате), возвращаем эти записи в активное состояние
+	// и явно закрепляем их за новым tutor'ом — см.
+	// EnrollmentRepository.ResumeOrphanedForCourse.
+	if err := h.enrollRepo.ResumeOrphanedForCourse(r.Context(), id, req.TutorID); err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to resume paused enrollments")
+		return
+	}
+
 	updated, err := h.repo.GetByID(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course")

@@ -243,8 +243,11 @@ func (r *EnrollmentRepository) UnassignTutorEverywhere(ctx context.Context, tuto
 // ученик. Пауза не удаляет и не прячет запись — она остаётся видна и
 // администратору, и новому tutor'у, но явно помечена как неактивная, вместо
 // того чтобы молча выглядеть как полноценное текущее закрепление. Дальше
-// её нужно осознанно снять с паузы (UpdateProgress status='active') или
-// переназначить (AssignTutor) — тихого автоматического наследования нет.
+// её нужно осознанно снять с паузы (UpdateProgress status='active') —
+// либо она снимается автоматически, когда курсу назначают преподавателя
+// (CourseHandler.AssignTutor вызывает парную операцию
+// ResumeOrphanedForCourse ниже; в том числе для того же самого
+// преподавателя, восстановленного в штате после увольнения).
 func (r *EnrollmentRepository) PauseOrphanedForCourses(ctx context.Context, courseIDs []int64) error {
 	if len(courseIDs) == 0 {
 		return nil
@@ -253,6 +256,28 @@ func (r *EnrollmentRepository) PauseOrphanedForCourses(ctx context.Context, cour
 		`UPDATE enrollments SET status = 'paused'
 		 WHERE course_id = ANY($1) AND status = 'active' AND tutor_id IS NULL`,
 		courseIDs)
+	return err
+}
+
+// ResumeOrphanedForCourse — обратная операция к PauseOrphanedForCourses:
+// когда курсу назначают преподавателя (CourseHandler.AssignTutor), снимает
+// с паузы записи, которые были поставлены на паузу именно из-за "осиротения"
+// курса (status='paused' И tutor_id IS NULL — ручная пауза по другой причине
+// тут невозможна: во всей кодовой базе status='paused' выставляется только
+// в PauseOrphanedForCourses, см. её комментарий). Заодно проставляет
+// tutor_id = tutorID, чтобы ученик сразу был явно закреплён за новым
+// преподавателем, а не просто "активен без хозяина".
+//
+// Без этого шага после увольнения и восстановления/переназначения
+// преподавателя на курс его ученики оставались бы в enrollments.status=
+// 'paused' навсегда — сам препод по-прежнему видел бы их в "Мои ученики"
+// (тот список не фильтрует по status), но не смог бы завести им занятие
+// в TutorNewLesson.jsx, где фильтр на активные enrollments есть явно.
+func (r *EnrollmentRepository) ResumeOrphanedForCourse(ctx context.Context, courseID, tutorID int64) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE enrollments SET status = 'active', tutor_id = $1
+		 WHERE course_id = $2 AND status = 'paused' AND tutor_id IS NULL`,
+		tutorID, courseID)
 	return err
 }
 

@@ -172,6 +172,13 @@ export default function TeachersDirectory({ role }) {
     return map;
   }, [branches]);
 
+  // Уволенные (is_active=false) остаются в таблице, но со статусом "Уволен"
+  // (см. рендер ниже: badge + скрытый выпадающий список смены tutor_status —
+  // менять статус уволенному нечего, сначала нужно восстановить в штат на
+  // его карточке). Обычный фильтр по tutor_status продолжает работать поверх
+  // этого: у уволенных tutor_status тоже переводится в inactive на бэкенде
+  // (см. user-service SetStatus), так что под фильтром "Неактивен" они тоже
+  // видны — это ожидаемо, там же показываются и "просто" деактивированные.
   const visibleTutors = useMemo(() => {
     if (statusFilter === "all") return tutors;
     return tutors.filter((t) => (t.tutor_status ?? "active") === statusFilter);
@@ -381,6 +388,7 @@ export default function TeachersDirectory({ role }) {
               {pagedTutors.map((t) => {
                 const studentCount = activeStudentsByTutor[t.id]?.size ?? 0;
                 const status = t.tutor_status ?? "active";
+                const isFired = t.is_active === false;
                 return (
                   <tr
                     key={t.id}
@@ -410,21 +418,29 @@ export default function TeachersDirectory({ role }) {
                     )}
                     <td className="px-6 py-4 font-bold text-on-surface">{studentCount}</td>
                     <td className="px-6 py-4 min-w-[220px]" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center gap-2 flex-nowrap">
-                        <StatusBadge status={TUTOR_STATUS_LABEL[status] ?? status} />
-                        <select
-                          value={status}
-                          disabled={rowUpdating === t.id}
-                          onChange={(e) => handleStatusChange(t.id, e.target.value)}
-                          className="shrink-0 text-[12px] border border-outline-variant rounded-md px-2 py-1 bg-surface-container-lowest disabled:opacity-50"
-                        >
-                          {statusOptions.map((s) => (
-                            <option key={s} value={s}>
-                              {TUTOR_STATUS_LABEL[s]}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      {isFired ? (
+                        // Уволенный: менять tutor_status смысла нет (заблокирован
+                        // вход, все занятия уже удалены каскадом на бэкенде) —
+                        // вместо выпадающего списка просто бейдж, "Восстановить
+                        // в штат" доступно на карточке преподавателя.
+                        <StatusBadge status="Уволен" color="red" />
+                      ) : (
+                        <div className="flex items-center gap-2 flex-nowrap">
+                          <StatusBadge status={TUTOR_STATUS_LABEL[status] ?? status} />
+                          <select
+                            value={status}
+                            disabled={rowUpdating === t.id}
+                            onChange={(e) => handleStatusChange(t.id, e.target.value)}
+                            className="shrink-0 text-[12px] border border-outline-variant rounded-md px-2 py-1 bg-surface-container-lowest disabled:opacity-50"
+                          >
+                            {statusOptions.map((s) => (
+                              <option key={s} value={s}>
+                                {TUTOR_STATUS_LABEL[s]}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );

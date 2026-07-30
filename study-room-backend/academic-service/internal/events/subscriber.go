@@ -70,10 +70,11 @@ type Subscriber struct {
 	userRefRepo *repository.UserRefRepository
 	enrollRepo  *repository.EnrollmentRepository
 	courseRepo  *repository.CourseRepository
+	lessonRepo  *repository.LessonRepository
 }
 
-func NewSubscriber(nc *nats.Conn, userRefRepo *repository.UserRefRepository, enrollRepo *repository.EnrollmentRepository, courseRepo *repository.CourseRepository) *Subscriber {
-	return &Subscriber{nc: nc, userRefRepo: userRefRepo, enrollRepo: enrollRepo, courseRepo: courseRepo}
+func NewSubscriber(nc *nats.Conn, userRefRepo *repository.UserRefRepository, enrollRepo *repository.EnrollmentRepository, courseRepo *repository.CourseRepository, lessonRepo *repository.LessonRepository) *Subscriber {
+	return &Subscriber{nc: nc, userRefRepo: userRefRepo, enrollRepo: enrollRepo, courseRepo: courseRepo, lessonRepo: lessonRepo}
 }
 
 // Start подписывается на нужные субъекты. Подписки живут вместе с процессом
@@ -104,10 +105,19 @@ func (s *Subscriber) upsertUserRef(ctx context.Context, ev UserEvent) {
 	}
 }
 
-// detachTutor — отвязывает репетитора от всех course_tutors/enrollments в
-// этой БД. Общая часть для двух разных сценариев (см. вызовы ниже):
-// увольнение существующего репетитора и зачистка "унаследованных"
-// назначений у только что созданного.
+// detachTutor — полная каскадная зачистка репетитора из Academic Service:
+// отвязка от всех course_tutors/enrollments И физическое удаление всех его
+// lessons (вместе с lesson_participants/attendance — каскадом по FK, см.
+// LessonRepository.DeleteByTutor). Общая часть для двух разных сценариев
+// (см. вызовы ниже): увольнение существующего репетитора и зачистка
+// "унаследованных" назначений у только что созданного.
+//
+// Занятия удаляются, а не просто снимаются с расписания — по требованию:
+// после увольнения преподаватель должен пропасть отовсюду, включая базу
+// данных занятий, а не просто получить статус "уволен". История
+// посещаемости/участников удалённых занятий при этом безвозвратно теряется —
+// это осознанный компромисс, специфичный для увольнения (обычное удаление
+// курса такой цепочки не запускает).
 //
 // Дополнительно: курсы, которые после отвязки остались вообще БЕЗ
 // преподавателя, переводят свои active enrollments в paused (см.
@@ -133,6 +143,17 @@ func (s *Subscriber) detachTutor(ctx context.Context, tutorID int64, reason stri
 	}
 	if err := s.enrollRepo.UnassignTutorEverywhere(ctx, tutorID); err != nil {
 		log.Printf("[events] %s: detach tutor %d from enrollments error: %v", reason, tutorID, err)
+	}
+	// Полное каскадное удаление: занятия репетитора физически удаляются из
+	// БД (не просто снимаются с расписания), lesson_participants/attendance
+	// уходят вместе с ними каскадом по FK (ON DELETE CASCADE, см.
+	// 0001_init.up.sql) — см. LessonRepository.DeleteByTutor.
+	if s.lessonRepo != nil {
+		if n, err := s.lessonRepo.DeleteByTutor(ctx, tutorID); err != nil {
+			log.Printf("[events] %s: delete lessons for tutor %d error: %v", reason, tutorID, err)
+		} else if n > 0 {
+			log.Printf("[events] %s: deleted %d lesson(s) for tutor %d", reason, n, tutorID)
+		}
 	}
 
 	if len(taughtCourseIDs) == 0 {
@@ -182,10 +203,13 @@ func (s *Subscriber) handleUserCreated(ctx context.Context) nats.MsgHandler {
 }
 
 // handleUserUpdated — обновляет user_ref и, если User Service прислал
-// увольнение репетитора (is_active=false), отвязывает его от всех курсов и
-// учеников. Сами enrollments/lessons/homework не удаляются — это
-// исторические записи, они остаются, просто теряют закреплённого
-// репетитора. Best-effort: ошибка логируется, подписчика не валит.
+// увольнение репетитора (is_active=false), каскадно зачищает его из
+// Academic Service: отвязывает от всех курсов/учеников (course_tutors,
+// enrollments.tutor_id) и физически удаляет все его lessons — см.
+// detachTutor. enrollments как записи о зачислении студентов при этом не
+// удаляются (это данные студента, а не репетитора), только теряют
+// закреплённого репетитора. Best-effort: ошибка логируется, подписчика не
+// валит.
 func (s *Subscriber) handleUserUpdated(ctx context.Context) nats.MsgHandler {
 	return func(msg *nats.Msg) {
 		var ev UserEvent

@@ -315,10 +315,13 @@ export default function TeacherDetail({ role = "owner" }) {
     try {
       await setUserActive(teacherId, false);
       // Увольнение на бэкенде (см. user-service SetStatus) дополнительно
-      // переводит tutor_status в inactive и асинхронно отвязывает ученика
-      // от курсов/enrollments (Academic Service, событие user.updated).
+      // переводит tutor_status в inactive и асинхронно каскадно зачищает
+      // преподавателя в Academic Service (событие user.updated): снимает
+      // привязку к курсам/enrollments И физически удаляет все его lessons
+      // (со всеми участниками/посещаемостью) — см.
+      // academic-service/internal/events/subscriber.go, detachTutor.
       // Перезагружаем карточку целиком, чтобы не показывать устаревший
-      // статус и список учеников, которые уже отвязаны на бэкенде.
+      // статус и список учеников/занятий, которых уже нет на бэкенде.
       await load();
       setFireStatus("done");
     } catch (e) {
@@ -756,7 +759,8 @@ export default function TeacherDetail({ role = "owner" }) {
             {fireStatus === "done" ? (
               <div className="space-y-4">
                 <div className="p-4 rounded-lg bg-green-100 text-green-800 font-label-md text-label-md">
-                  {fullName(teacher)} уволен(а). Доступ к личному кабинету заблокирован, все активные сессии отозваны.
+                  {fullName(teacher)} уволен(а). Доступ к личному кабинету заблокирован, все активные сессии
+                  отозваны, все его занятия и привязки к курсам удалены из системы безвозвратно.
                 </div>
                 <button
                   onClick={() => setShowFireModal(false)}
@@ -769,8 +773,13 @@ export default function TeacherDetail({ role = "owner" }) {
               <div className="space-y-4">
                 <p className="text-label-md text-on-surface-variant">
                   Аккаунт {fullName(teacher)} будет деактивирован: вход в систему станет невозможен, все текущие
-                  сессии отзываются. Записи на курсы и история занятий сохранятся — это действие можно отменить
-                  кнопкой «Восстановить в штат».
+                  сессии отзываются, привязка к курсам снимается.
+                </p>
+                <p className="text-label-md font-bold text-error">
+                  Все его занятия (в том числе будущие) будут безвозвратно удалены из базы данных и пропадут из
+                  расписаний — вместе со списками участников и посещаемостью по этим занятиям. Это действие
+                  необратимо: восстановление в штат вернёт доступ к аккаунту, но удалённые занятия не
+                  восстановятся.
                 </p>
                 {fireStatus && fireStatus !== "saving" && (
                   <p className="text-sm text-error">{fireStatus}</p>

@@ -8,7 +8,7 @@ import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
 const FORMAT_LABEL = { individual: "Индивидуально", group: "Группа" };
 
-const EMPTY_FORM = { title: "", subject: "", format: "individual", description: "", branch_id: "" };
+const EMPTY_FORM = { title: "", subject: "", format: "individual", description: "" };
 
 /**
  * Раздел "Курсы" — только у owner (см. /admin/*). Список курсов по всей сети
@@ -19,6 +19,15 @@ const EMPTY_FORM = { title: "", subject: "", format: "individual", description: 
  * Важно: у enrollments/lessons внешний ключ на courses настроен
  * ON DELETE CASCADE — удаление курса удалит и связанные записи на курс, и
  * занятия по нему. Поэтому удаление защищено явным предупреждением-подтверждением.
+ *
+ * Создание курса: у courses в БД branch_id обязателен (один курс = один
+ * филиал, см. миграцию 0001_init), поэтому "курс для всех филиалов" на
+ * уровне данных — это несколько записей courses с одинаковыми
+ * title/subject/format/description, но разными branch_id (по одной на
+ * каждый филиал сети). Раньше owner выбирал филиал вручную в форме; теперь
+ * при создании курс сразу заводится для ВСЕХ филиалов сети без выбора —
+ * см. handleAddCourse ниже, который делает по одному POST /courses на
+ * каждый филиал из уже загруженного списка branches.
  */
 export default function AdminCourses() {
   const { user } = useAuth();
@@ -68,27 +77,55 @@ export default function AdminCourses() {
   }, [branches]);
 
   function openAddModal() {
-    setAddForm({ ...EMPTY_FORM, branch_id: selectedBranch || "" });
+    setAddForm(EMPTY_FORM);
     setAddStatus("");
     setShowAddModal(true);
   }
 
+  // Курс всегда создаётся сразу для всех филиалов сети — выбор конкретного
+  // филиала убран из формы. На уровне БД branch_id у courses обязателен
+  // (один курс = один филиал), поэтому "курс на всю сеть" реализован как
+  // по одному POST /courses на каждый филиал из уже загруженного списка
+  // branches, с одинаковыми title/subject/format/description.
   async function handleAddCourse(e) {
     e.preventDefault();
-    if (!addForm.title || !addForm.subject || !addForm.branch_id) return;
+    if (!addForm.title || !addForm.subject) return;
+    if (branches.length === 0) {
+      setAddStatus("Список филиалов пуст — сначала добавьте хотя бы один филиал");
+      return;
+    }
     setAddStatus("saving");
     try {
-      const created = await createCourse({
+      const payload = {
         title: addForm.title,
         subject: addForm.subject,
         format: addForm.format,
         description: addForm.description || undefined,
-        branch_id: Number(addForm.branch_id),
-      });
-      // Показываем новый курс сразу, если он попадает в текущий фильтр по филиалу.
-      if (!selectedBranch || Number(selectedBranch) === Number(addForm.branch_id)) {
-        setCourses((list) => [created, ...list]);
+      };
+      const results = await Promise.allSettled(
+        branches.map((b) => createCourse({ ...payload, branch_id: Number(b.id) }))
+      );
+
+      const created = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
+      const failed = results.filter((r) => r.status === "rejected");
+
+      if (created.length > 0) {
+        // Показываем сразу те из созданных курсов, что попадают в текущий фильтр.
+        const toShow = selectedBranch
+          ? created.filter((c) => Number(c.branch_id) === Number(selectedBranch))
+          : created;
+        if (toShow.length > 0) {
+          setCourses((list) => [...toShow, ...list]);
+        }
       }
+
+      if (failed.length > 0) {
+        setAddStatus(
+          `Курс создан для ${created.length} из ${branches.length} филиалов. Не удалось создать для ${failed.length} филиал(ов) — попробуйте ещё раз.`
+        );
+        return;
+      }
+
       setShowAddModal(false);
     } catch (err) {
       setAddStatus(err.message || "Не удалось создать курс");
@@ -265,21 +302,12 @@ export default function AdminCourses() {
                   </select>
                 </div>
               </div>
-              <div>
-                <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Филиал *</label>
-                <select
-                  required
-                  value={addForm.branch_id}
-                  onChange={(e) => setAddForm((f) => ({ ...f, branch_id: e.target.value }))}
-                  className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-                >
-                  <option value="">Выберите филиал</option>
-                  {branches.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name || b.city}
-                    </option>
-                  ))}
-                </select>
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-primary-fixed/40 text-on-surface-variant">
+                <span className="material-symbols-outlined text-[18px] text-primary">info</span>
+                <p className="text-[12px] font-label-md text-label-md">
+                  Курс будет создан сразу для всех филиалов сети ({branches.length}
+                  {branches.length === 1 ? " филиал" : " филиалов"}) — выбирать филиал не нужно.
+                </p>
               </div>
               <div>
                 <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Описание</label>

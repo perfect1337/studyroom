@@ -87,6 +87,17 @@ export default function StudentDetail({ role = "parent" }) {
   const [tests, setTests] = useState([]);
   const [lessons, setLessons] = useState([]);
   const [tutors, setTutors] = useState([]); // для отображения имени преподавателя в мини-календаре
+  // extraTutors — тьюторы, которых не было в fetchMyPeople(), но которые
+  // ведут занятия ребёнка (tutor_id из lessons). Нужно для роли parent:
+  // GET /users (1.9) для parent отдаёт только children, tutors там всегда
+  // пустой массив (см. user-service UserHandler.List, case RoleParent) — в
+  // отличие от owner/branch_owner/tutor, где tutors в этом ответе есть.
+  // Без этого фолбэка в календаре ребёнка вместо ФИО репетитора показывался
+  // "Преподаватель #<id>". Подгружаются точечно через GET /users/{id}
+  // (1.10) — родителю доступ к карточке репетитора своего ребёнка разрешён
+  // отдельным правилом на бэкенде (см. canViewUser), тот же приём уже
+  // используется в ParentSchedule.jsx.
+  const [extraTutors, setExtraTutors] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedDay, setSelectedDay] = useState(null);
@@ -163,9 +174,31 @@ export default function StudentDetail({ role = "parent" }) {
         setEnrollments((enrollRes?.items ?? []).filter((e) => e.student_id === childIdNum));
         setCourses(coursesRes?.items ?? []);
         setHomework(homeworkRes?.items ?? []);
-        setLessons(lessonsRes?.items ?? []);
-        setTutors(peopleRes?.tutors ?? []);
+        const lessonItems = lessonsRes?.items ?? [];
+        setLessons(lessonItems);
+        const myPeopleTutors = peopleRes?.tutors ?? [];
+        setTutors(myPeopleTutors);
         setTests(testsRes?.items ?? []);
+
+        // Подтягиваем ФИО для tutor_id, которых не было в fetchMyPeople()
+        // (см. комментарий у extraTutors выше) — актуально прежде всего для
+        // parent, но фолбэк безопасен и для остальных ролей.
+        const knownTutorIds = new Set(myPeopleTutors.map((t) => t.id));
+        const missingTutorIds = [...new Set(lessonItems.map((l) => l.tutor_id).filter(Boolean))].filter(
+          (id) => !knownTutorIds.has(id)
+        );
+        if (missingTutorIds.length) {
+          const fetched = await Promise.all(missingTutorIds.map((id) => fetchUserById(id).catch(() => null)));
+          if (!cancelled) {
+            setExtraTutors((prev) => {
+              const next = { ...prev };
+              fetched.forEach((t, i) => {
+                if (t) next[missingTutorIds[i]] = t;
+              });
+              return next;
+            });
+          }
+        }
       } catch (e) {
         if (!cancelled) setError(e.message || "Не удалось загрузить данные ребёнка");
       } finally {
@@ -189,8 +222,14 @@ export default function StudentDetail({ role = "parent" }) {
   const tutorsById = useMemo(() => {
     const map = {};
     tutors.forEach((t) => (map[t.id] = t));
+    // extraTutors — фолбэк для parent (см. объявление extraTutors выше);
+    // не должны перетирать более полные записи из fetchMyPeople(), если id
+    // почему-то пересечётся.
+    Object.entries(extraTutors).forEach(([id, t]) => {
+      if (!map[id]) map[id] = t;
+    });
     return map;
-  }, [tutors]);
+  }, [tutors, extraTutors]);
 
   const lessonsByDay = useMemo(() => {
     const map = {};
