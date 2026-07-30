@@ -8,6 +8,7 @@ import { fetchMyContracts } from "../../api/contracts.js";
 import { createInternalApplication } from "../../api/crm.js";
 import { fetchNotificationSettings, updateNotificationSettings } from "../../api/notifications.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+import { sanitizePhoneInput, isValidPhone } from "../../utils/phone.js";
 
 const SUBJECT_OPTIONS = ["Математика", "Физика", "Английский язык", "Информатика", "Русский язык", "История"];
 
@@ -190,6 +191,10 @@ export default function ParentOverview() {
   async function handleApply(e) {
     e.preventDefault();
     if (!applyChildId) return;
+    if (!isValidPhone(applyPhone)) {
+      setApplyStatus("Введите телефон в формате из 10-15 цифр (можно с +)");
+      return;
+    }
     setApplyStatus("saving");
     try {
       await createInternalApplication({
@@ -513,8 +518,12 @@ export default function ParentOverview() {
                   <input
                     type="tel"
                     value={applyPhone}
-                    onChange={(e) => setApplyPhone(e.target.value)}
+                    onChange={(e) => setApplyPhone(sanitizePhoneInput(e.target.value))}
                     placeholder="Телефон для связи"
+                    inputMode="tel"
+                    pattern="^\+?\d{10,15}$"
+                    title="10-15 цифр, можно с ведущим +"
+                    maxLength={16}
                     className="w-full rounded-lg border-outline-variant bg-surface-container-lowest text-on-surface focus:ring-primary"
                   />
                 </div>

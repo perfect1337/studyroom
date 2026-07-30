@@ -128,7 +128,8 @@ export default function RegisterPage() {
                 onChange={updatePhone}
                 inputMode="tel"
                 pattern="^\+?\d{10,15}$"
-                title="Только цифры, можно с ведущим +"
+                title="10-15 цифр, можно с ведущим +"
+                maxLength={16}
               />
 
               <div className="flex flex-col gap-stack-sm">
@@ -221,7 +222,7 @@ export default function RegisterPage() {
   );
 }
 
-function Field({ id, label, icon, type, placeholder, value, onChange, required = true, inputMode, pattern, title }) {
+function Field({ id, label, icon, type, placeholder, value, onChange, required = true, inputMode, pattern, title, maxLength }) {
   return (
     <div className="flex flex-col gap-stack-sm">
       <label className="font-label-md text-label-md text-on-surface" htmlFor={id}>
@@ -242,6 +243,7 @@ function Field({ id, label, icon, type, placeholder, value, onChange, required =
           inputMode={inputMode}
           pattern={pattern}
           title={title}
+          maxLength={maxLength}
           className="w-full pl-10 pr-4 py-3 bg-surface-container-lowest border border-outline-variant rounded-lg font-body-md text-body-md text-on-surface placeholder-outline-variant focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all shadow-sm"
         />
       </div>

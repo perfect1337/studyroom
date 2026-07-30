@@ -98,6 +98,10 @@ export default function AdminBranches() {
   async function handleAddBranch(e) {
     e.preventDefault();
     if (!addForm.name || !addForm.city) return;
+    if (!isValidPhone(addForm.phone)) {
+      setAddStatus("Введите телефон в формате из 10-15 цифр (можно с +)");
+      return;
+    }
     setAddStatus("saving");
     try {
       const created = await createBranch({
@@ -405,8 +409,13 @@ export default function AdminBranches() {
                 <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Телефон</label>
                 <input
                   value={addForm.phone}
-                  onChange={(e) => setAddForm((f) => ({ ...f, phone: e.target.value }))}
+                  onChange={(e) => setAddForm((f) => ({ ...f, phone: sanitizePhoneInput(e.target.value) }))}
                   placeholder="+7..."
+                  inputMode="tel"
+                  type="tel"
+                  pattern="^\+?\d{10,15}$"
+                  title="10-15 цифр, можно с ведущим +"
+                  maxLength={16}
                   className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
                 />
               </div>
@@ -503,7 +512,8 @@ export default function AdminBranches() {
                       inputMode="tel"
                       type="tel"
                       pattern="^\+?\d{10,15}$"
-                      title="Только цифры, можно с ведущим +"
+                      title="10-15 цифр, можно с ведущим +"
+                      maxLength={16}
                       className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
                     />
                   </div>

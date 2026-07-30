@@ -539,7 +539,8 @@ export default function TeachersDirectory({ role }) {
                       inputMode="tel"
                       type="tel"
                       pattern="^\+?\d{10,15}$"
-                      title="Только цифры, можно с ведущим +"
+                      title="10-15 цифр, можно с ведущим +"
+                      maxLength={16}
                       className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
                     />
                   </div>
