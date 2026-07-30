@@ -15,12 +15,13 @@ import (
 )
 
 type UserHandler struct {
-	users         *repository.UserRepository
-	branches      *repository.BranchRepository
-	parentChild   *repository.ParentChildRepository
-	authRepo      *repository.AuthRepository
-	tutorProfiles *repository.TutorProfileRepository
-	events        events.Publisher
+	users           *repository.UserRepository
+	branches        *repository.BranchRepository
+	parentChild     *repository.ParentChildRepository
+	authRepo        *repository.AuthRepository
+	tutorProfiles   *repository.TutorProfileRepository
+	studentProfiles *repository.StudentProfileRepository
+	events          events.Publisher
 }
 
 func NewUserHandler(
@@ -29,6 +30,7 @@ func NewUserHandler(
 	pc *repository.ParentChildRepository,
 	authRepo *repository.AuthRepository,
 	tutorProfiles *repository.TutorProfileRepository,
+	studentProfiles *repository.StudentProfileRepository,
 	pub events.Publisher,
 ) *UserHandler {
 	if pub == nil {
@@ -36,7 +38,7 @@ func NewUserHandler(
 	}
 	return &UserHandler{
 		users: users, branches: branches, parentChild: pc,
-		authRepo: authRepo, tutorProfiles: tutorProfiles, events: pub,
+		authRepo: authRepo, tutorProfiles: tutorProfiles, studentProfiles: studentProfiles, events: pub,
 	}
 }
 
@@ -59,11 +61,23 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		LastName   *string `json:"last_name"`
 		Patronymic *string `json:"patronymic"`
 		AvatarURL  *string `json:"avatar_url"`
+		// ClassInfo/School — «Класс» и «Школа» из student_profiles. Хранятся
+		// отдельно от users (см. schema), поэтому обновляются через
+		// StudentProfileRepository, а не через h.users.Update. Разрешено
+		// редактировать только самому ученику — у остальных ролей такого
+		// профиля нет.
+		ClassInfo *string `json:"class_info"`
+		School    *string `json:"school"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid body")
 		return
 	}
+	if (body.ClassInfo != nil || body.School != nil) && claims.Role != models.RoleStudent {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only a student can edit class/school")
+		return
+	}
+
 	fields := map[string]any{}
 	if body.FirstName != nil {
 		fields["first_name"] = *body.FirstName
@@ -77,7 +91,36 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	if body.AvatarURL != nil {
 		fields["avatar_url"] = *body.AvatarURL
 	}
-	updated, err := h.users.Update(r.Context(), claims.UserID, fields)
+	if len(fields) > 0 {
+		if _, err := h.users.Update(r.Context(), claims.UserID, fields); err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
+			return
+		}
+	}
+
+	if body.ClassInfo != nil || body.School != nil {
+		// Upsert перезаписывает оба поля разом, поэтому подставляем текущее
+		// значение для того из них, что не пришло в запросе, — иначе оно
+		// затёрлось бы в NULL.
+		current, err := h.users.GetByID(r.Context(), claims.UserID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
+			return
+		}
+		classInfo, school := current.ClassInfo, current.School
+		if body.ClassInfo != nil {
+			classInfo = body.ClassInfo
+		}
+		if body.School != nil {
+			school = body.School
+		}
+		if err := h.studentProfiles.Upsert(r.Context(), claims.UserID, classInfo, school); err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
+			return
+		}
+	}
+
+	updated, err := h.users.GetByID(r.Context(), claims.UserID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
 		return

@@ -20,13 +20,14 @@ type Deps struct {
 	Pool *pgxpool.Pool
 	TM   *auth.TokenManager
 
-	Users         *repository.UserRepository
-	Branches      *repository.BranchRepository
-	Auth          *repository.AuthRepository
-	ParentChild   *repository.ParentChildRepository
-	TutorProfiles *repository.TutorProfileRepository
-	Events        events.Publisher
-	AppPublicURL  string
+	Users           *repository.UserRepository
+	Branches        *repository.BranchRepository
+	Auth            *repository.AuthRepository
+	ParentChild     *repository.ParentChildRepository
+	TutorProfiles   *repository.TutorProfileRepository
+	StudentProfiles *repository.StudentProfileRepository
+	Events          events.Publisher
+	AppPublicURL    string
 
 	// AuthRateLimit — сколько запросов в минуту на IP разрешено к /auth/*
 	// (register/login/refresh/forgot-password/reset-password). 0 или
@@ -45,24 +46,25 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, pub events.Publisher, ap
 		pub = events.NoopPublisher{}
 	}
 	return &Deps{
-		Pool:          pool,
-		TM:            tm,
-		Users:         repository.NewUserRepository(pool),
-		Branches:      repository.NewBranchRepository(pool),
-		Auth:          repository.NewAuthRepository(pool),
-		ParentChild:   repository.NewParentChildRepository(pool),
-		TutorProfiles: repository.NewTutorProfileRepository(pool),
-		Events:        pub,
-		AppPublicURL:  appPublicURL,
-		AuthRateLimit: authRateLimit,
-		CookieOptions: cookieOpts,
+		Pool:            pool,
+		TM:              tm,
+		Users:           repository.NewUserRepository(pool),
+		Branches:        repository.NewBranchRepository(pool),
+		Auth:            repository.NewAuthRepository(pool),
+		ParentChild:     repository.NewParentChildRepository(pool),
+		TutorProfiles:   repository.NewTutorProfileRepository(pool),
+		StudentProfiles: repository.NewStudentProfileRepository(pool),
+		Events:          pub,
+		AppPublicURL:    appPublicURL,
+		AuthRateLimit:   authRateLimit,
+		CookieOptions:   cookieOpts,
 	}
 }
 
 // NewRouter собирает HTTP-роутер user-service (общий для main и тестов).
 func NewRouter(d *Deps) http.Handler {
 	authHandler := handlers.NewAuthHandler(d.Users, d.Auth, d.TM, d.Events, d.AppPublicURL, d.CookieOptions)
-	userHandler := handlers.NewUserHandler(d.Users, d.Branches, d.ParentChild, d.Auth, d.TutorProfiles, d.Events)
+	userHandler := handlers.NewUserHandler(d.Users, d.Branches, d.ParentChild, d.Auth, d.TutorProfiles, d.StudentProfiles, d.Events)
 	tutorHandler := handlers.NewTutorHandler(d.TutorProfiles, d.Users)
 
 	r := chi.NewRouter()

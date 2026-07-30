@@ -36,7 +36,7 @@ export function fetchMe() {
   return usersApi("/users/me");
 }
 
-// 1.7 Обновить свой профиль (имя/фамилия/отчество/аватар)
+// 1.7 Обновить свой профиль (имя/фамилия/отчество/аватар; class_info/school — только для ученика)
 export function updateMe(patch) {
   return usersApi("/users/me", { method: "PATCH", body: patch });
 }

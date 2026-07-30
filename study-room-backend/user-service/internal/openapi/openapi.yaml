@@ -505,6 +505,12 @@ components:
           type: string
         avatar_url:
           type: string
+        class_info:
+          type: string
+          description: Только для role=student — редактирует сам ученик. 403 для остальных ролей.
+        school:
+          type: string
+          description: Только для role=student — редактирует сам ученик. 403 для остальных ролей.
     ChangePasswordRequest:
       type: object
       properties:

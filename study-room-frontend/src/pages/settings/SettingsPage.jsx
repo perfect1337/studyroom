@@ -76,11 +76,14 @@ function resizeImageFile(file) {
 export default function SettingsPage({ role }) {
   const { user, updateUser } = useAuth();
 
+  const isStudent = role === "student";
   const [profileForm, setProfileForm] = useState({
     last_name: user?.last_name ?? "",
     first_name: user?.first_name ?? "",
     patronymic: user?.patronymic ?? "",
     avatar_url: user?.avatar_url ?? "",
+    class_info: user?.class_info ?? "",
+    school: user?.school ?? "",
   });
   const [profileStatus, setProfileStatus] = useState("");
   const [profileError, setProfileError] = useState("");
@@ -117,6 +120,14 @@ export default function SettingsPage({ role }) {
         first_name: profileForm.first_name,
         patronymic: profileForm.patronymic || undefined,
         avatar_url: profileForm.avatar_url || undefined,
+        // Класс/школу может менять только сам ученик — бэкенд отклонит эти
+        // поля с 403 для остальных ролей, поэтому не отправляем их вовсе.
+        ...(isStudent
+          ? {
+              class_info: profileForm.class_info || undefined,
+              school: profileForm.school || undefined,
+            }
+          : {}),
       });
       updateUser(updated ?? profileForm);
       setProfileStatus("done");
@@ -250,6 +261,30 @@ export default function SettingsPage({ role }) {
                 type="text"
               />
             </div>
+            {isStudent && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-stack-md">
+                <div className="space-y-stack-sm">
+                  <label className="font-label-md text-on-surface-variant ml-1">Школа</label>
+                  <input
+                    value={profileForm.school}
+                    onChange={(e) => setProfileForm((f) => ({ ...f, school: e.target.value }))}
+                    placeholder="Например, Школа №25"
+                    className="w-full bg-surface border border-outline-variant rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-on-surface"
+                    type="text"
+                  />
+                </div>
+                <div className="space-y-stack-sm">
+                  <label className="font-label-md text-on-surface-variant ml-1">Класс</label>
+                  <input
+                    value={profileForm.class_info}
+                    onChange={(e) => setProfileForm((f) => ({ ...f, class_info: e.target.value }))}
+                    placeholder="Например, 10А"
+                    className="w-full bg-surface border border-outline-variant rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-on-surface"
+                    type="text"
+                  />
+                </div>
+              </div>
+            )}
             <div className="space-y-stack-sm">
               <label className="font-label-md text-on-surface-variant ml-1">Адрес электронной почты</label>
               <div className="relative">
