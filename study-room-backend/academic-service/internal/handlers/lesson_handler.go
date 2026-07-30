@@ -133,6 +133,16 @@ type createLessonRequest struct {
 	LocationType models.LocationType `json:"location_type"`
 	GroupType    models.GroupType    `json:"group_type"`
 	Comment      *string             `json:"comment"`
+	// StudentID — конкретный ученик, для которого тьютор создаёт занятие
+	// (см. TutorNewLesson.jsx, где выбор ученика обязателен ещё до курса).
+	// Опционально: если не передан, сохраняется старое поведение —
+	// участники берутся из ВСЕХ активных enrollments курса (актуально
+	// только для по-настоящему группового занятия на весь курс сразу).
+	// Именно отсутствие этого поля раньше приводило к тому, что занятие,
+	// созданное тьютором для одного ученика, тихо утаскивало в участники
+	// заодно и любого другого ученика, которого позже записали на тот же
+	// курс — см. баг "второй ученик в расписании".
+	StudentID *int64 `json:"student_id"`
 }
 
 // Create — POST /lessons (api-contracts.md 2.8). created_by берётся из JWT,
@@ -188,10 +198,34 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course enrollments")
 		return
 	}
-	participantIDs := make([]int64, 0, len(enrollments))
-	for _, e := range enrollments {
-		if e.Status == models.EnrollmentActive {
-			participantIDs = append(participantIDs, e.StudentID)
+
+	var participantIDs []int64
+	if req.StudentID != nil {
+		// Тьютор явно выбрал ученика — занятие только для него, даже если
+		// на курсе активны и другие enrollments (например, ученик, которого
+		// записали на этот же курс уже после того, как расписание для
+		// первого ученика начали вести).
+		found := false
+		for _, e := range enrollments {
+			if e.Status == models.EnrollmentActive && e.StudentID == *req.StudentID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student has no active enrollment on this course")
+			return
+		}
+		participantIDs = []int64{*req.StudentID}
+	} else {
+		// Явного ученика не передали — старое поведение для по-настоящему
+		// группового занятия на весь курс: участники это все активные
+		// enrollments.
+		participantIDs = make([]int64, 0, len(enrollments))
+		for _, e := range enrollments {
+			if e.Status == models.EnrollmentActive {
+				participantIDs = append(participantIDs, e.StudentID)
+			}
 		}
 	}
 

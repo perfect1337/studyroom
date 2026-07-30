@@ -239,6 +239,7 @@ export default function TutorNewLesson() {
           createLesson({
             course_id: course.id,
             tutor_id: user.id,
+            student_id: Number(selectedStudentId),
             topic,
             lesson_date: date,
             start_time: form.startTime,
