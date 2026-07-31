@@ -72,9 +72,17 @@ export default function TeachersDirectory({ role }) {
   const [addFormCourses, setAddFormCourses] = useState([]); // курсы филиала, выбранного в форме добавления
   const [addFormCoursesLoading, setAddFormCoursesLoading] = useState(false);
 
-  // Курсы для формы добавления преподавателя — зависят от выбранного в форме
-  // филиала (курс всегда принадлежит конкретному филиалу, см. api-contracts.md 2.2).
-  // При смене филиала уже выбранные курсы сбрасываем — они относились к другому филиалу.
+  // Курсы для формы добавления преподавателя — только курсы того филиала,
+  // который выбран для преподавателя в форме (branch_id). Это принципиально,
+  // а не просто "потому что курс привязан к филиалу": GET /courses для
+  // tutor'а на бэкенде всегда жёстко фильтруется по его claims.BranchID
+  // (см. course_handler.go: List подставляет branch_id из токена для всех
+  // ролей кроме owner) — если закрепить преподавателя за курсом из ЧУЖОГО
+  // филиала, запись в course_tutors создастся, но сам преподаватель после
+  // входа никогда её не увидит (сервер отфильтрует по branch_id раньше, чем
+  // дойдёт до course_tutors). Поэтому выбор курсов всегда ограничен
+  // филиалом, в который принят преподаватель — весь список курсов ЭТОГО
+  // филиала ("из всех возможных" для него), а не всей сети.
   useEffect(() => {
     if (!isOwner || !showAddModal || !addForm.branch_id) {
       setAddFormCourses([]);
@@ -269,6 +277,15 @@ export default function TeachersDirectory({ role }) {
       // Обновляем список, если новый учитель попадает в текущий фильтр по филиалу.
       if (!isOwner || !selectedBranch || Number(selectedBranch) === Number(addForm.branch_id)) {
         setTutors((list) => [res?.user ?? res, ...list]);
+      }
+      // Перечитываем курсы (assignCourseTutor уже сбросил их кэш через
+      // invalidateQuery(["courses"]), см. api/academic.js) — без этого только
+      // что назначенная привязка курс -> преподаватель не отразится в этой
+      // таблице (специализация/число учеников) до следующей полной перезагрузки.
+      if (newTutorId && addForm.course_ids.length > 0) {
+        fetchCourses(isOwner && selectedBranch ? { branch_id: Number(selectedBranch) } : {})
+          .then((r) => setCourses(r?.items ?? []))
+          .catch(() => {});
       }
     } catch (e) {
       setAddStatus(e.message || "Не удалось создать преподавателя");
@@ -564,7 +581,8 @@ export default function TeachersDirectory({ role }) {
                 <div>
                   <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Курсы *</label>
                   <p className="text-[12px] text-on-surface-variant mb-2">
-                    Преподаватель будет закреплён за выбранными курсами и увидит только тех учеников, которые на них записаны.
+                    Преподаватель будет закреплён сразу за несколькими выбранными курсами этого филиала и увидит
+                    только тех учеников, которые на них записаны.
                   </p>
                   {!addForm.branch_id && (
                     <p className="text-[12px] text-on-surface-variant italic">Сначала выберите филиал.</p>
