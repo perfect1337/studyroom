@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext.jsx";
 import ProtectedRoute from "./components/routing/ProtectedRoute.jsx";
@@ -16,47 +16,49 @@ import PlaceholderPage from "./components/ui/PlaceholderPage.jsx";
 // админ-таблиц, финансовых отчётов и разделов тьютора/родителя, которые ему
 // никогда не понадобятся. Теперь бандл каждой роли подгружается только тогда,
 // когда пользователь реально переходит на соответствующий маршрут.
-
-const StudentOverview = lazy(() => import("./pages/student/StudentOverview.jsx"));
-const StudentHomework = lazy(() => import("./pages/student/StudentHomework.jsx"));
-const StudentTests = lazy(() => import("./pages/student/StudentTests.jsx"));
-const StudentGrades = lazy(() => import("./pages/student/StudentGrades.jsx"));
-const StudentSchedule = lazy(() => import("./pages/student/StudentSchedule.jsx"));
-const StudentCourses = lazy(() => import("./pages/student/StudentCourses.jsx"));
-const StudentProfile = lazy(() => import("./pages/student/StudentProfile.jsx"));
-
-const TutorOverview = lazy(() => import("./pages/tutor/TutorOverview.jsx"));
-const TutorStudents = lazy(() => import("./pages/tutor/TutorStudents.jsx"));
-const TutorStudentDetail = lazy(() => import("./pages/tutor/TutorStudentDetail.jsx"));
-const TutorNewLesson = lazy(() => import("./pages/tutor/TutorNewLesson.jsx"));
-const TutorSchedule = lazy(() => import("./pages/tutor/TutorSchedule.jsx"));
-const TutorHomework = lazy(() => import("./pages/tutor/TutorHomework.jsx"));
-const TutorTests = lazy(() => import("./pages/tutor/TutorTests.jsx"));
-
-const ParentOverview = lazy(() => import("./pages/parent/ParentOverview.jsx"));
-const ParentChildren = lazy(() => import("./pages/parent/ParentChildren.jsx"));
-const ParentChildDetail = lazy(() => import("./pages/parent/ParentChildDetail.jsx"));
-const ParentSchedule = lazy(() => import("./pages/parent/ParentSchedule.jsx"));
-const ParentContracts = lazy(() => import("./pages/parent/ParentContracts.jsx"));
-
-const AdminOverview = lazy(() => import("./pages/admin/AdminOverview.jsx"));
-const AdminStudents = lazy(() => import("./pages/admin/AdminStudents.jsx"));
-const AdminStudentDetail = lazy(() => import("./pages/admin/AdminStudentDetail.jsx"));
-const AdminFinance = lazy(() => import("./pages/admin/AdminFinance.jsx"));
-const AdminTeachers = lazy(() => import("./pages/admin/AdminTeachers.jsx"));
-const AdminTeacherDetail = lazy(() => import("./pages/admin/AdminTeacherDetail.jsx"));
-const AdminSchedule = lazy(() => import("./pages/admin/AdminSchedule.jsx"));
-const BranchOverview = lazy(() => import("./pages/admin/BranchOverview.jsx"));
-const BranchStudents = lazy(() => import("./pages/admin/BranchStudents.jsx"));
-const BranchStudentDetail = lazy(() => import("./pages/admin/BranchStudentDetail.jsx"));
-const BranchTeachers = lazy(() => import("./pages/admin/BranchTeachers.jsx"));
-const BranchTeacherDetail = lazy(() => import("./pages/admin/BranchTeacherDetail.jsx"));
-const BranchSchedule = lazy(() => import("./pages/admin/BranchSchedule.jsx"));
-const BranchCourses = lazy(() => import("./pages/admin/BranchCourses.jsx"));
-const AdminBranches = lazy(() => import("./pages/admin/AdminBranches.jsx"));
-const AdminCourses = lazy(() => import("./pages/admin/AdminCourses.jsx"));
-
-const SettingsPage = lazy(() => import("./pages/settings/SettingsPage.jsx"));
+//
+// Сами lazy()-компоненты вынесены в routes/routeComponents.js (а не объявлены
+// здесь), потому что Sidebar/MobileBottomNav прогревают (preload) те же чанки
+// по наведению/тапу на пункт меню — без общего реестра это был бы дубль-код
+// и два разных Suspense-промиса на один и тот же чанк.
+import {
+  StudentOverview,
+  StudentHomework,
+  StudentTests,
+  StudentGrades,
+  StudentSchedule,
+  StudentCourses,
+  StudentProfile,
+  TutorOverview,
+  TutorStudents,
+  TutorStudentDetail,
+  TutorNewLesson,
+  TutorSchedule,
+  TutorHomework,
+  TutorTests,
+  ParentOverview,
+  ParentChildren,
+  ParentChildDetail,
+  ParentSchedule,
+  ParentContracts,
+  AdminOverview,
+  AdminStudents,
+  AdminStudentDetail,
+  AdminFinance,
+  AdminTeachers,
+  AdminTeacherDetail,
+  AdminSchedule,
+  BranchOverview,
+  BranchStudents,
+  BranchStudentDetail,
+  BranchTeachers,
+  BranchTeacherDetail,
+  BranchSchedule,
+  BranchCourses,
+  AdminBranches,
+  AdminCourses,
+  SettingsPage,
+} from "./routes/routeComponents.js";
 
 export default function App() {
   return (

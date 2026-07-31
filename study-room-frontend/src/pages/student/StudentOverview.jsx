@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
@@ -44,13 +44,19 @@ export default function StudentOverview() {
   const [courseTutorId, setCourseTutorId] = useState({}); // course_id -> tutor_id, из реально созданных занятий
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // true, пока для этого пользователя ещё ни разу не пришли данные. Спиннер
+  // ("Загрузка…") имеет смысл показывать только один раз, на самом первом
+  // заходе — все последующие обновления (тихий автообновление раз в минуту,
+  // повторный вызов после смены курса и т.п.) не должны прятать уже
+  // отрисованные виджеты, иначе это выглядит как перезагрузка страницы.
+  const isFirstLoadRef = useRef(true);
 
   useEffect(() => {
     if (!user?.id) return;
     let cancelled = false;
 
     async function load() {
-      setLoading(true);
+      if (isFirstLoadRef.current) setLoading(true);
       setError("");
       try {
         const [enrollRes, coursesRes, lessonsRes, homeworkRes, allLessonsRes] = await Promise.all([
@@ -97,13 +103,21 @@ export default function StudentOverview() {
       } catch (e) {
         if (!cancelled) setError(e.message || "Не удалось загрузить данные");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          isFirstLoadRef.current = false;
+          setLoading(false);
+        }
       }
     }
 
     load();
+    // Тихое автообновление виджетов раз в минуту: новые записи/расписание/ДЗ
+    // подтянутся сами, без действий пользователя и без перезагрузки страницы —
+    // load() выше уже не включает спиннер после первого захода.
+    const interval = setInterval(load, 60_000);
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
   }, [user?.id]);
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { fetchCourses } from "../../api/academic.js";
 import { useAuth } from "../../context/AuthContext.jsx";
+import { preloadRoute } from "../../routes/routeComponents.js";
 
 // Пункты меню для каждой роли. `end: true` — пункт активен только на точном совпадении пути
 // (иначе, например, "/admin" подсвечивался бы активным на "/admin/finance").
@@ -65,7 +66,16 @@ function NavList({ role, onNavigate }) {
   return (
     <nav className="flex-1 flex flex-col gap-1 overflow-y-auto">
       {items.map((item) => (
-        <NavLink key={item.to} to={item.to} end={item.end} className={linkClasses} onClick={onNavigate}>
+        <NavLink
+          key={item.to}
+          to={item.to}
+          end={item.end}
+          className={linkClasses}
+          onClick={onNavigate}
+          onMouseEnter={() => preloadRoute(item.to)}
+          onFocus={() => preloadRoute(item.to)}
+          onTouchStart={() => preloadRoute(item.to)}
+        >
           <span className="material-symbols-outlined">{item.icon}</span>
           <span>{item.label}</span>
         </NavLink>
