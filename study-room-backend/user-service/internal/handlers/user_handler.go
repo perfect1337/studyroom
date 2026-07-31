@@ -213,6 +213,41 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 			out.Children = children
 		}
 
+		// Родителю нужны и преподаватели — иначе календарь/расписание ребёнка
+		// не может показать ФИО преподавателя и вместо этого показывает
+		// "Преподаватель #id" (см. StudentDetail.jsx). Отдаём преподавателей
+		// филиалов, в которых учатся дети этого родителя.
+		branchIDs := map[int64]struct{}{}
+		for _, c := range children {
+			if c.BranchID != nil {
+				branchIDs[*c.BranchID] = struct{}{}
+			}
+		}
+		if len(branchIDs) > 0 {
+			tutorsSeen := map[int64]struct{}{}
+			var tutors []*models.User
+			for bid := range branchIDs {
+				branchID := bid
+				branchTutors, err := h.users.ListAll(ctx, repository.ListFilter{
+					Role: rolePtr(models.RoleTutor), BranchID: &branchID,
+				})
+				if err != nil {
+					writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
+					return
+				}
+				for _, t := range branchTutors {
+					if _, ok := tutorsSeen[t.ID]; ok {
+						continue
+					}
+					tutorsSeen[t.ID] = struct{}{}
+					tutors = append(tutors, t)
+				}
+			}
+			if tutors != nil {
+				out.Tutors = tutors
+			}
+		}
+
 	case models.RoleTutor:
 		students, err := h.users.ListAll(ctx, repository.ListFilter{
 			Role: rolePtr(models.RoleStudent), BranchID: branchFilter, Search: search,

@@ -52,6 +52,7 @@ const BranchStudentDetail = lazy(() => import("./pages/admin/BranchStudentDetail
 const BranchTeachers = lazy(() => import("./pages/admin/BranchTeachers.jsx"));
 const BranchTeacherDetail = lazy(() => import("./pages/admin/BranchTeacherDetail.jsx"));
 const BranchSchedule = lazy(() => import("./pages/admin/BranchSchedule.jsx"));
+const BranchCourses = lazy(() => import("./pages/admin/BranchCourses.jsx"));
 const AdminBranches = lazy(() => import("./pages/admin/AdminBranches.jsx"));
 const AdminCourses = lazy(() => import("./pages/admin/AdminCourses.jsx"));
 
@@ -116,6 +117,7 @@ export default function App() {
             <Route path="/branch/teachers" element={<ProtectedRoute roles={["branch_owner"]}><BranchTeachers /></ProtectedRoute>} />
             <Route path="/branch/teachers/:teacherId" element={<ProtectedRoute roles={["branch_owner"]}><BranchTeacherDetail /></ProtectedRoute>} />
             <Route path="/branch/schedule" element={<ProtectedRoute roles={["branch_owner"]}><BranchSchedule /></ProtectedRoute>} />
+            <Route path="/branch/courses" element={<ProtectedRoute roles={["branch_owner"]}><BranchCourses /></ProtectedRoute>} />
             <Route path="/branch/settings" element={<ProtectedRoute roles={["branch_owner"]}><SettingsPage role="branch_owner" /></ProtectedRoute>} />
 
             {/* 404 */}
