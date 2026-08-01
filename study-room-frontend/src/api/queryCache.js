@@ -23,8 +23,17 @@ function getEntry(key) {
   return entry;
 }
 
-function notify(key) {
-  cache.get(key)?.listeners.forEach((listener) => listener());
+// reason передаётся подписчикам (см. useQuery.js), чтобы отличить два разных
+// повода дёрнуть listener:
+//  - "data"/"error"  — cachedQuery сам сходил в сеть (успешно или нет),
+//                      подписчику достаточно синхронизировать своё состояние,
+//                      новый запрос запускать не нужно (иначе на persistent
+//                      ошибке получился бы бесконечный retry-луп);
+//  - "invalidate"    — где-то в другом месте вызвали invalidateQuery(...)
+//                      после мутации; подписчик (useQuery) должен тихо
+//                      перезапросить данные в фоне (см. load() ниже).
+function notify(key, reason = "data") {
+  cache.get(key)?.listeners.forEach((listener) => listener(reason));
 }
 
 /**
@@ -64,7 +73,7 @@ export function cachedQuery(key, fetcher, { staleTime = 30_000, force = false } 
     .catch((err) => {
       entry.error = err;
       entry.promise = null;
-      notify(k);
+      notify(k, "error");
       throw err;
     });
 
@@ -72,10 +81,36 @@ export function cachedQuery(key, fetcher, { staleTime = 30_000, force = false } 
   return promise;
 }
 
+// Помечает запись устаревшей и уведомляет подписчиков — но НЕ удаляет сам
+// объект entry из Map и НЕ стирает entry.data. Раньше (до этого фикса)
+// invalidateQuery делал `cache.delete(k)`, из-за чего:
+//  1) ничего не уведомлялось — cache.delete(...) не вызывал notify(), так
+//     что даже потенциальный подписчик (useQuery) не узнавал об изменении;
+//  2) что ещё хуже — сам объект entry (а вместе с ним Set его listeners)
+//     уничтожался. Любой компонент, ранее вызвавший subscribeQuery(key, cb),
+//     держит cb "приклеенным" к конкретному объекту entry; после удаления
+//     записи из Map следующий cachedQuery(key, ...) создаёт СОВЕРШЕННО НОВЫЙ
+//     entry с пустым listeners — старая подписка навсегда осиротевала и
+//     переставала на что-либо реагировать. Из-за этого обновление виджета
+//     после мутации работало только через полную перезагрузку страницы
+//     (пересоздание всех компонентов и подписок с нуля).
+// Теперь: timestamp = 0 (следующий cachedQuery гарантированно уйдёт в сеть,
+// см. isFresh в cachedQuery), promise = null (не переиспользовать уже
+// улетевший запрос), entry.data НЕ трогаем — уже показанные на экране
+// данные остаются видимыми, пока в фоне не придёт свежий ответ (это и даёт
+// "невидимое" обновление без мигания, см. isRefetching в useQuery.js).
+function staleAndNotify(key) {
+  const entry = cache.get(key);
+  if (!entry) return; // никто ещё не запрашивал этот ключ — нечего инвалидировать
+  entry.timestamp = 0;
+  entry.promise = null;
+  notify(key, "invalidate");
+}
+
 /**
- * invalidateQuery(keyOrPrefix) — сбросить кэш после мутации.
- * - Точный ключ ("branches" или ["courses", {...}]) — удаляет только его.
- * - Префикс-массив без последнего сегмента, например ["courses"] — удаляет ВСЕ
+ * invalidateQuery(keyOrPrefix) — пометить кэш устаревшим после мутации.
+ * - Точный ключ ("branches" или ["courses", {...}]) — только он.
+ * - Префикс-массив без последнего сегмента, например ["courses"] — ВСЕ
  *   закэшированные варианты courses-запроса независимо от фильтров (branch_id/subject/tutor_id),
  *   так как после создания/удаления курса неизвестно, под какими фильтрами он "прятался".
  */
@@ -83,11 +118,11 @@ export function invalidateQuery(keyOrPrefix) {
   if (Array.isArray(keyOrPrefix) && keyOrPrefix.length === 1 && typeof keyOrPrefix[0] === "string") {
     const prefix = `["${keyOrPrefix[0]}"`;
     for (const k of cache.keys()) {
-      if (k.startsWith(prefix)) cache.delete(k);
+      if (k.startsWith(prefix)) staleAndNotify(k);
     }
     return;
   }
-  cache.delete(normalizeKey(keyOrPrefix));
+  staleAndNotify(normalizeKey(keyOrPrefix));
 }
 
 /** Подписка на изменения конкретного ключа — для useQuery (см. src/hooks/useQuery.js). */

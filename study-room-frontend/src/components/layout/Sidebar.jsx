@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { fetchCourses } from "../../api/academic.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { preloadRoute } from "../../routes/routeComponents.js";
+import { useQuery } from "../../hooks/useQuery.js";
 
 // Пункты меню для каждой роли. `end: true` — пункт активен только на точном совпадении пути
 // (иначе, например, "/admin" подсвечивался бы активным на "/admin/finance").
@@ -124,25 +124,23 @@ function FooterLinks({ showSwitchAccount = true }) {
 
 // Курсы, которые реально ведёт репетитор (через course_tutors, см. 2.1
 // api-contracts.md) — для мини-карточки профиля в сайдбаре, под аватаркой.
+//
+// Раньше здесь был голый fetch в useEffect с локальным useState: Sidebar —
+// часть общего layout'а (DashboardShell) и НЕ размонтируется при переходах
+// между страницами, поэтому если список курсов тьютора менялся где-то ещё
+// (например, admin/branch_owner переназначил курс на другого репетитора),
+// эта карточка не знала об этом вообще никогда за всю сессию — не помогала
+// даже смена страницы, только полная перезагрузка (F5), которая заново
+// монтирует Sidebar с нуля. useQuery подписан на кэш ["courses", ...] и
+// тихо перезапрашивает данные, как только где-либо вызывается
+// invalidateQuery(["courses"]) (см. api/academic.js — это происходит при
+// любой мутации курса), без мигания и без явной перезагрузки.
 function useTutorCourses(tutorId) {
-  const [courses, setCourses] = useState([]);
-
-  useEffect(() => {
-    if (!tutorId) return;
-    let cancelled = false;
-    fetchCourses({ tutor_id: tutorId })
-      .then((res) => {
-        if (!cancelled) setCourses(res?.items ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setCourses([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tutorId]);
-
-  return courses;
+  const { data } = useQuery(
+    tutorId ? ["courses", { tutor_id: tutorId }] : null,
+    () => fetchCourses({ tutor_id: tutorId }),
+  );
+  return data?.items ?? [];
 }
 
 function TutorProfileCard({ user }) {

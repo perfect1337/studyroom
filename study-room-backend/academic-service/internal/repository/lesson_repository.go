@@ -191,8 +191,25 @@ func (r *LessonRepository) Update(ctx context.Context, id int64, fields map[stri
 	return scanLesson(r.pool.QueryRow(ctx, query, args...))
 }
 
-func (r *LessonRepository) Delete(ctx context.Context, id int64) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM lessons WHERE id = $1`, id)
+// Cancel — это и есть "DELETE /lessons/{id}" из контракта (2.9), которое по
+// смыслу является отменой занятия, а не удалением его из истории: занятие
+// помечается status = 'cancelled' и остаётся в базе, поэтому оно продолжает
+// возвращаться из List(...) (тот не фильтрует по status) — тьютор, owner/
+// branch_owner и сам ученик/родитель видят его в расписании со статусом
+// "Отменено" (см. StatusBadge.jsx на фронте), вместо того чтобы занятие
+// молча исчезало из выборки только после следующего фактического запроса.
+//
+// Раньше здесь был настоящий `DELETE FROM lessons`, из-за чего:
+//   - в текущей сессии (без перезагрузки страницы) фронт красиво помечал
+//     занятие как "Отменено" локально (EditLessonModal -> onCancelled),
+//     но это никак не отражало реальное состояние в БД;
+//   - при следующей загрузке расписания (например, после F5) занятие
+//     полностью пропадало из ответа /lessons, поскольку строка была
+//     физически удалена — то есть создавалось впечатление, что "отмена
+//     работает только после обновления страницы".
+func (r *LessonRepository) Cancel(ctx context.Context, id int64) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE lessons SET status = $1 WHERE id = $2`, models.LessonCancelled, id)
 	if err != nil {
 		return err
 	}

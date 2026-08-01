@@ -355,7 +355,10 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, lesson)
 }
 
-// Delete — DELETE /lessons/{id}, фактически отмена занятия.
+// Delete — DELETE /lessons/{id}, фактически отмена занятия: помечает
+// lessons.status = 'cancelled' (см. LessonRepository.Cancel), не удаляя
+// строку — занятие остаётся в расписании у всех ролей со статусом
+// "Отменено" вместо того, чтобы бесследно пропадать из истории.
 func (h *LessonHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
@@ -365,12 +368,12 @@ func (h *LessonHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.checkLessonAccess(w, r, id); !ok {
 		return
 	}
-	if err := h.lessons.Delete(r.Context(), id); err != nil {
+	if err := h.lessons.Cancel(r.Context(), id); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "lesson not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to delete lesson")
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to cancel lesson")
 		return
 	}
 	w.WriteHeader(http.StatusOK)

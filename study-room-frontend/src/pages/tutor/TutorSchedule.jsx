@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import EditLessonModal from "../../components/lessons/EditLessonModal.jsx";
@@ -6,6 +6,7 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchLessons, fetchCourses, fetchEnrollments, fetchAttendance } from "../../api/academic.js";
 import { fetchMyPeople } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+import { subscribeQuery } from "../../api/queryCache.js";
 
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 const MONTH_NAMES = [
@@ -73,12 +74,19 @@ export default function TutorSchedule() {
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstWeekday = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7; // 0 = Monday
 
-  useEffect(() => {
-    if (!user?.id) return;
-    let cancelled = false;
+  // requestIdRef защищает от гонки ответов: если пользователь быстро
+  // переключает месяцы (или сработал silent-перезапрос из-за инвалидации
+  // кэша, пока уже летит обычная загрузка), более старый по времени запуска
+  // ответ не должен перезаписать данные более свежим запросом, даже если
+  // сеть вернула его позже (аналог предыдущего локального флага `cancelled`,
+  // но переживающего вынос load() в переиспользуемый useCallback).
+  const requestIdRef = useRef(0);
 
-    async function load() {
-      setLoading(true);
+  const load = useCallback(
+    async ({ silent = false } = {}) => {
+      if (!user?.id) return;
+      const requestId = ++requestIdRef.current;
+      if (!silent) setLoading(true);
       setError("");
       try {
         const date_from = toISODate(viewYear, viewMonth, 1);
@@ -90,7 +98,7 @@ export default function TutorSchedule() {
           fetchEnrollments({ tutor_id: user.id }),
           fetchMyPeople(),
         ]);
-        if (cancelled) return;
+        if (requestId !== requestIdRef.current) return;
 
         const lessonItems = lessonsRes?.items ?? [];
         setLessons(lessonItems);
@@ -109,27 +117,48 @@ export default function TutorSchedule() {
         );
         if (pastLessons.length) {
           const results = await Promise.all(pastLessons.map((l) => fetchAttendance(l.id).catch(() => null)));
-          if (!cancelled) {
-            const map = {};
-            pastLessons.forEach((l, i) => {
-              if (results[i]) map[l.id] = results[i]?.items ?? [];
-            });
-            setAttendanceByLesson(map);
-          }
+          if (requestId !== requestIdRef.current) return;
+          const map = {};
+          pastLessons.forEach((l, i) => {
+            if (results[i]) map[l.id] = results[i]?.items ?? [];
+          });
+          setAttendanceByLesson(map);
         }
       } catch (e) {
-        if (!cancelled) setError(e.message || "Не удалось загрузить расписание");
+        if (requestId === requestIdRef.current) setError(e.message || "Не удалось загрузить расписание");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (requestId === requestIdRef.current && !silent) setLoading(false);
       }
-    }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, viewYear, viewMonth]);
+    [user?.id, viewYear, viewMonth, daysInMonth]
+  );
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Раньше единственным способом узнать, что занятие изменилось (отменено
+  // тьютором на другой вкладке, изменено администратором и т.п.) была
+  // перезагрузка страницы: список lessons жил только в локальном useState
+  // этой страницы и ничего не знал о мутациях, произошедших в другом месте.
+  // Теперь подписываемся на тот же кэш-ключ, которым fetchLessons(...) выше
+  // пользуется внутри cachedQuery: как только где-либо вызывается
+  // invalidateQuery(["lessons"]) (создание/изменение/отмена занятия — см.
+  // api/academic.js), эта подписка получает reason="invalidate" и тихо
+  // перезапрашивает актуальные данные (silent: true — без setLoading(true),
+  // без мигания "Загрузка занятий…", старые данные остаются на экране до
+  // прихода свежих).
+  useEffect(() => {
+    if (!user?.id) return;
+    const date_from = toISODate(viewYear, viewMonth, 1);
+    const date_to = toISODate(viewYear, viewMonth, daysInMonth);
+    const key = ["lessons", { tutor_id: user.id, student_id: undefined, branch_id: undefined, date_from, date_to }];
+    const unsubscribe = subscribeQuery(key, (reason) => {
+      if (reason === "invalidate") load({ silent: true });
+    });
+    return unsubscribe;
+  }, [user?.id, viewYear, viewMonth, daysInMonth, load]);
 
   const coursesById = useMemo(() => {
     const map = {};

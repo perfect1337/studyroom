@@ -74,7 +74,25 @@ export function useQuery(key, fetcher, { staleTime, enabled = true, refetchInter
 
   useEffect(() => {
     if (!active) return;
-    const unsubscribe = subscribeQuery(key, () => setData(getQueryData(key)));
+    const unsubscribe = subscribeQuery(key, (reason) => {
+      if (reason === "invalidate") {
+        // Где-то в другом месте (другой виджет, другая страница, любая
+        // мутация в api/*.js) вызвали invalidateQuery для этого ключа —
+        // тихо перезапрашиваем в фоне. load() сам решит, показывать ли
+        // loading или isRefetching (см. hasData внутри load): если этот
+        // компонент уже что-то показывал, пользователь не увидит ни
+        // мигания, ни спиннера — просто в какой-то момент данные станут
+        // актуальными. Именно это раньше не работало и требовало полной
+        // перезагрузки страницы.
+        load();
+      } else {
+        // reason "data"/"error" — cachedQuery уже сходил в сеть сам
+        // (например, другой компонент, подписанный на тот же ключ,
+        // инициировал загрузку) — просто синхронизируем локальный state,
+        // повторный запрос не нужен.
+        setData(getQueryData(key));
+      }
+    });
     load();
     return unsubscribe;
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
@@ -7,6 +7,7 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchLessons, fetchCourses } from "../../api/academic.js";
 import { fetchMyPeople, fetchBranches, fetchUserById } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+import { subscribeQuery } from "../../api/queryCache.js";
 
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 const MONTH_NAMES = [
@@ -143,12 +144,22 @@ export default function ScheduleDirectory({ role }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOwner, branchFilter]);
 
-  // Загружаем расписание за текущий месяц с учётом активных фильтров.
-  useEffect(() => {
-    let cancelled = false;
+  // requestIdRef — защита от гонки ответов (аналог прежнего локального
+  // флага `cancelled`, но переживающего вынос load() в переиспользуемый
+  // useCallback, который дёргается и из обычного эффекта, и из подписки
+  // на инвалидацию кэша).
+  const requestIdRef = useRef(0);
 
-    async function load() {
-      setLoading(true);
+  // Загружаем расписание за текущий месяц с учётом активных фильтров.
+  //
+  // silent=true используется при фоновом перезапросе из-за invalidateQuery
+  // (см. подписку ниже) — тогда НЕ трогаем loading/selectedDay/detailPage,
+  // чтобы не сбрасывать уже открытую пользователем панель дня и не мигать
+  // спиннером поверх уже показанных данных.
+  const load = useCallback(
+    async ({ silent = false } = {}) => {
+      const requestId = ++requestIdRef.current;
+      if (!silent) setLoading(true);
       setError("");
       try {
         const date_from = toISODate(viewYear, viewMonth, 1);
@@ -164,13 +175,15 @@ export default function ScheduleDirectory({ role }) {
           }),
           fetchCourses(),
         ]);
-        if (cancelled) return;
+        if (requestId !== requestIdRef.current) return;
 
         const lessonItems = lessonsRes?.items ?? [];
         setLessons(lessonItems);
         setCourses(coursesRes?.items ?? []);
-        setSelectedDay(null);
-        setDetailPage(0);
+        if (!silent) {
+          setSelectedDay(null);
+          setDetailPage(0);
+        }
 
         // Подтягиваем имена репетиторов — сперва из уже загруженного списка людей,
         // недостающих (например, если фильтр по филиалу не совпадает) — по одному.
@@ -196,32 +209,57 @@ export default function ScheduleDirectory({ role }) {
           Promise.all(missingTutorIds.map((id) => fetchUserById(id).catch(() => null))),
           Promise.all(missingStudentIds.map((id) => fetchUserById(id).catch(() => null))),
         ]);
-        if (!cancelled) {
-          const tutorMap = { ...knownTutorsById };
-          fetchedTutors.forEach((t, i) => {
-            if (t) tutorMap[missingTutorIds[i]] = t;
-          });
-          setTutorsById(tutorMap);
+        if (requestId !== requestIdRef.current) return;
+        const tutorMap = { ...knownTutorsById };
+        fetchedTutors.forEach((t, i) => {
+          if (t) tutorMap[missingTutorIds[i]] = t;
+        });
+        setTutorsById(tutorMap);
 
-          const studentMap = {};
-          fetchedStudents.forEach((s, i) => {
-            if (s) studentMap[missingStudentIds[i]] = s;
-          });
-          setExtraStudentsById(studentMap);
-        }
+        const studentMap = {};
+        fetchedStudents.forEach((s, i) => {
+          if (s) studentMap[missingStudentIds[i]] = s;
+        });
+        setExtraStudentsById(studentMap);
       } catch (e) {
-        if (!cancelled) setError(e.message || "Не удалось загрузить расписание");
+        if (requestId === requestIdRef.current) setError(e.message || "Не удалось загрузить расписание");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (requestId === requestIdRef.current && !silent) setLoading(false);
       }
-    }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewYear, viewMonth, tutorFilter, studentFilter, branchFilter, isOwner]);
+    [viewYear, viewMonth, daysInMonth, tutorFilter, studentFilter, branchFilter, isOwner]
+  );
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load]);
+
+  // Раньше отмена/изменение занятия отражались в этом списке только через
+  // ручные локальные патчи (handleLessonSaved/handleLessonCancelled ниже) —
+  // если занятие менялось откуда-то ещё (например, тьютор отменил его на
+  // своей странице расписания в соседней вкладке), здесь это не было видно
+  // без F5. Теперь подписываемся на тот же кэш-ключ, которым fetchLessons(...)
+  // пользуется внутри cachedQuery, и тихо перезапрашиваем при invalidateQuery(["lessons"]).
+  useEffect(() => {
+    const date_from = toISODate(viewYear, viewMonth, 1);
+    const date_to = toISODate(viewYear, viewMonth, daysInMonth);
+    const key = [
+      "lessons",
+      {
+        tutor_id: tutorFilter ? Number(tutorFilter) : undefined,
+        student_id: studentFilter ? Number(studentFilter) : undefined,
+        branch_id: isOwner && branchFilter ? Number(branchFilter) : undefined,
+        date_from,
+        date_to,
+      },
+    ];
+    const unsubscribe = subscribeQuery(key, (reason) => {
+      if (reason === "invalidate") load({ silent: true });
+    });
+    return unsubscribe;
+  }, [viewYear, viewMonth, daysInMonth, tutorFilter, studentFilter, branchFilter, isOwner, load]);
 
   const coursesById = useMemo(() => {
     const map = {};
