@@ -55,6 +55,7 @@ import {
   BranchTeacherDetail,
   BranchSchedule,
   BranchCourses,
+  BranchFinance,
   AdminBranches,
   AdminCourses,
   SettingsPage,
@@ -120,6 +121,7 @@ export default function App() {
             <Route path="/branch/teachers/:teacherId" element={<ProtectedRoute roles={["branch_owner"]}><BranchTeacherDetail /></ProtectedRoute>} />
             <Route path="/branch/schedule" element={<ProtectedRoute roles={["branch_owner"]}><BranchSchedule /></ProtectedRoute>} />
             <Route path="/branch/courses" element={<ProtectedRoute roles={["branch_owner"]}><BranchCourses /></ProtectedRoute>} />
+            <Route path="/branch/finance" element={<ProtectedRoute roles={["branch_owner"]}><BranchFinance /></ProtectedRoute>} />
             <Route path="/branch/settings" element={<ProtectedRoute roles={["branch_owner"]}><SettingsPage role="branch_owner" /></ProtectedRoute>} />
 
             {/* 404 */}

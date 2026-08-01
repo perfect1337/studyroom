@@ -65,9 +65,9 @@ export default function AdminBranches() {
     }
   }
 
-  // Владельцы филиалов — берём из общего справочника "мои люди" (см.
+  // Руководители филиалов — берём из общего справочника "мои люди" (см.
   // user-service handlers/user_handler.go:List): для owner без фильтра
-  // branch_id приходят владельцы всех филиалов сети. Деактивированных
+  // branch_id приходят руководители всех филиалов сети. Деактивированных
   // (is_active=false) в таблице не показываем — с точки зрения этого экрана
   // они уже "удалены" (см. handleConfirmDeleteOwner).
   async function loadOwners() {
@@ -78,7 +78,7 @@ export default function AdminBranches() {
       const list = (res?.branch_owners ?? []).filter((o) => o.is_active !== false);
       setBranchOwners(list);
     } catch (e) {
-      setOwnersError(e.message || "Не удалось загрузить список владельцев филиалов");
+      setOwnersError(e.message || "Не удалось загрузить список руководителей филиалов");
     } finally {
       setOwnersLoading(false);
     }
@@ -150,7 +150,7 @@ export default function AdminBranches() {
         setBranchOwners((list) => [...list, createdUser]);
       }
     } catch (err) {
-      setOwnerStatus(err.message || "Не удалось создать владельца филиала");
+      setOwnerStatus(err.message || "Не удалось создать руководителя филиала");
     }
   }
 
@@ -169,7 +169,7 @@ export default function AdminBranches() {
     }
   }
 
-  // "Удаление" владельца филиала — деактивация аккаунта (is_active=false).
+  // "Удаление" руководителя филиала — деактивация аккаунта (is_active=false).
   // Сам пользователь при этом не стирается из базы (история договоров,
   // авторства курсов и т.д. остаётся консистентной), но: 1) все его
   // refresh-токены отзываются на бэкенде (см. SetStatus в user_handler.go),
@@ -185,7 +185,7 @@ export default function AdminBranches() {
       setBranchOwners((list) => list.filter((o) => o.id !== ownerToDelete.id));
       setOwnerToDelete(null);
     } catch (err) {
-      setOwnerDeleteError(err.message || "Не удалось удалить владельца филиала");
+      setOwnerDeleteError(err.message || "Не удалось удалить руководителя филиала");
     } finally {
       setOwnerDeleteBusy(false);
     }
@@ -217,7 +217,7 @@ export default function AdminBranches() {
               className="bg-surface-container-lowest border border-outline-variant text-primary px-6 py-2.5 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:bg-surface-container-low transition-all active:scale-95 shadow-sm"
             >
               <span className="material-symbols-outlined">person_add</span>
-              Добавить владельца филиала
+              Добавить руководителя филиала
             </button>
             <button
               onClick={openAddModal}
@@ -291,9 +291,9 @@ export default function AdminBranches() {
         </div>
 
         <div>
-          <h2 className="font-headline-md text-headline-md text-primary mb-1">Владельцы филиалов</h2>
+          <h2 className="font-headline-md text-headline-md text-primary mb-1">Руководители филиалов</h2>
           <p className="font-body-md text-body-md text-on-surface-variant mb-4">
-            Учётные записи с ролью «владелец филиала» по всей сети
+            Учётные записи с ролью «руководитель филиала» по всей сети
           </p>
 
           {ownersError && (
@@ -318,7 +318,7 @@ export default function AdminBranches() {
                   {!ownersLoading && branchOwners.length === 0 && (
                     <tr>
                       <td colSpan={5} className="px-6 py-10 text-center text-on-surface-variant">
-                        Владельцев филиалов пока нет
+                        Руководителей филиалов пока нет
                       </td>
                     </tr>
                   )}
@@ -434,7 +434,7 @@ export default function AdminBranches() {
         </div>
       )}
 
-      {/* Модалка добавления владельца филиала */}
+      {/* Модалка добавления руководителя филиала */}
       {showOwnerModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setShowOwnerModal(false)}>
           <div
@@ -442,7 +442,7 @@ export default function AdminBranches() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex justify-between items-center">
-              <h3 className="font-headline-sm text-headline-sm text-on-surface">Добавить владельца филиала</h3>
+              <h3 className="font-headline-sm text-headline-sm text-on-surface">Добавить руководителя филиала</h3>
               <button onClick={() => setShowOwnerModal(false)} className="p-1 hover:bg-surface-container-high rounded-full">
                 <span className="material-symbols-outlined">close</span>
               </button>
@@ -451,7 +451,7 @@ export default function AdminBranches() {
             {ownerSuccess ? (
               <div className="space-y-4">
                 <div className="p-3 rounded-lg bg-primary-container text-on-primary-container font-label-md text-label-md">
-                  Владелец филиала создан. Логин ({ownerSuccess.email}) и временный пароль отправлены на указанную почту.
+                  Руководитель филиала создан. Логин ({ownerSuccess.email}) и временный пароль отправлены на указанную почту.
                 </div>
                 <button
                   onClick={() => setShowOwnerModal(false)}
@@ -547,7 +547,7 @@ export default function AdminBranches() {
                   disabled={ownerStatus === "saving"}
                   className="w-full bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60"
                 >
-                  {ownerStatus === "saving" ? "Создание..." : "Создать владельца филиала"}
+                  {ownerStatus === "saving" ? "Создание..." : "Создать руководителя филиала"}
                 </button>
               </form>
             )}
@@ -567,14 +567,14 @@ export default function AdminBranches() {
         onConfirm={handleConfirmDelete}
       />
 
-      {/* Удаление владельца филиала — по факту деактивация аккаунта:
+      {/* Удаление руководителя филиала — по факту деактивация аккаунта:
           логин/пароль перестают работать, активные сессии обрываются
           (см. handleConfirmDeleteOwner). Двойное подтверждение — та же
           защита, что и для филиалов, т.к. действие тоже затрагивает доступ
           живого человека к системе. */}
       <ConfirmDeleteModal
         open={!!ownerToDelete}
-        title="Удалить владельца филиала?"
+        title="Удалить руководителя филиала?"
         itemLabel={ownerToDelete ? fullName(ownerToDelete) : ""}
         description="Учётная запись будет деактивирована: логин и пароль перестанут работать, все активные сессии этого пользователя будут завершены."
         busy={ownerDeleteBusy}

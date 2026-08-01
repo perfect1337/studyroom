@@ -44,9 +44,11 @@ const EMPTY_FORM = {
 /**
  * Общий раздел "Преподаватели" для двух ролей:
  * - owner (раздел /admin): видит всех учителей сети, может выбрать филиал для просмотра
- *   и добавить нового учителя (создание учителей — право только owner, см. п.1.11 контракта).
+ *   и добавить нового учителя в любой филиал сети.
  * - branch_owner (раздел /branch): видит только учителей своего филиала (сервер сам
- *   ограничивает выборку по branch_id из JWT), кнопки добавления учителя нет вообще.
+ *   ограничивает выборку по branch_id из JWT) и может добавлять новых учителей —
+ *   но только в свой собственный филиал (branch_id подставляется автоматически,
+ *   без выбора, и принудительно проверяется на бэкенде, см. UserHandler.CreateTutor).
  */
 export default function TeachersDirectory({ role }) {
   const { user } = useAuth();
@@ -84,7 +86,7 @@ export default function TeachersDirectory({ role }) {
   // филиалом, в который принят преподаватель — весь список курсов ЭТОГО
   // филиала ("из всех возможных" для него), а не всей сети.
   useEffect(() => {
-    if (!isOwner || !showAddModal || !addForm.branch_id) {
+    if (!showAddModal || !addForm.branch_id) {
       setAddFormCourses([]);
       return;
     }
@@ -104,7 +106,7 @@ export default function TeachersDirectory({ role }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOwner, showAddModal, addForm.branch_id]);
+  }, [showAddModal, addForm.branch_id]);
 
   // Список филиалов — нужен только owner, чтобы выбрать, какой филиал смотреть, и в форме добавления.
   useEffect(() => {
@@ -211,7 +213,7 @@ export default function TeachersDirectory({ role }) {
   }
 
   function openAddModal() {
-    setAddForm(EMPTY_FORM);
+    setAddForm(isOwner ? EMPTY_FORM : { ...EMPTY_FORM, branch_id: user?.branch_id ? String(user.branch_id) : "" });
     setAddStatus("");
     setCreatedCreds(null);
     setShowAddModal(true);
@@ -227,10 +229,6 @@ export default function TeachersDirectory({ role }) {
   async function handleAddTeacher(e) {
     e.preventDefault();
     if (!addForm.last_name || !addForm.first_name || !addForm.email || !addForm.branch_id) return;
-    if (addForm.course_ids.length === 0) {
-      setAddStatus("Выберите хотя бы один курс — по нему преподавателю будут показаны его ученики");
-      return;
-    }
     if (!isValidPhone(addForm.phone)) {
       setAddStatus("Введите телефон в формате из 10-15 цифр (можно с +)");
       return;
@@ -311,16 +309,15 @@ export default function TeachersDirectory({ role }) {
             </p>
           </div>
 
-          {/* Кнопка добавления учителя — только у owner. branch_owner создавать учителей не может (см. 1.11). */}
-          {isOwner && (
-            <button
-              onClick={openAddModal}
-              className="bg-primary text-on-primary px-6 py-2.5 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:brightness-110 transition-all active:scale-95 shadow-sm"
-            >
-              <span className="material-symbols-outlined">person_add</span>
-              Добавить преподавателя
-            </button>
-          )}
+          {/* Кнопка добавления учителя доступна и owner (в любой филиал сети),
+              и branch_owner (только в свой собственный филиал). */}
+          <button
+            onClick={openAddModal}
+            className="bg-primary text-on-primary px-6 py-2.5 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:brightness-110 transition-all active:scale-95 shadow-sm"
+          >
+            <span className="material-symbols-outlined">person_add</span>
+            Добавить преподавателя
+          </button>
         </div>
 
         {error && (
@@ -469,8 +466,8 @@ export default function TeachersDirectory({ role }) {
         </div>
       </div>
 
-      {/* Модалка добавления преподавателя — доступна только owner */}
-      {isOwner && showAddModal && (
+      {/* Модалка добавления преподавателя — доступна и owner, и branch_owner */}
+      {showAddModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setShowAddModal(false)}>
           <div
             className="bg-surface-container-lowest rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-5 max-h-[90vh] overflow-y-auto"
@@ -564,25 +561,31 @@ export default function TeachersDirectory({ role }) {
                 </div>
                 <div>
                   <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Филиал *</label>
-                  <select
-                    required
-                    value={addForm.branch_id}
-                    onChange={(e) => setAddForm((f) => ({ ...f, branch_id: e.target.value, course_ids: [] }))}
-                    className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-                  >
-                    <option value="">Выберите филиал</option>
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name || b.city}
-                      </option>
-                    ))}
-                  </select>
+                  {isOwner ? (
+                    <select
+                      required
+                      value={addForm.branch_id}
+                      onChange={(e) => setAddForm((f) => ({ ...f, branch_id: e.target.value, course_ids: [] }))}
+                      className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    >
+                      <option value="">Выберите филиал</option>
+                      {branches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name || b.city}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-label-md text-on-surface-variant">
+                      {user?.branch_name || `Филиал #${user?.branch_id}`}
+                    </div>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Курсы *</label>
+                  <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Курсы</label>
                   <p className="text-[12px] text-on-surface-variant mb-2">
                     Преподаватель будет закреплён сразу за несколькими выбранными курсами этого филиала и увидит
-                    только тех учеников, которые на них записаны.
+                    только тех учеников, которые на них записаны. Курсы можно закрепить и позже, со страницы курса.
                   </p>
                   {!addForm.branch_id && (
                     <p className="text-[12px] text-on-surface-variant italic">Сначала выберите филиал.</p>
@@ -592,7 +595,8 @@ export default function TeachersDirectory({ role }) {
                   )}
                   {addForm.branch_id && !addFormCoursesLoading && addFormCourses.length === 0 && (
                     <p className="text-[12px] text-on-surface-variant italic">
-                      В этом филиале пока нет курсов — сначала создайте курс в разделе «Курсы».
+                      В этом филиале пока нет курсов — преподавателя можно создать уже сейчас, а курсы закрепить за
+                      ним позже, когда они появятся.
                     </p>
                   )}
                   {addFormCourses.length > 0 && (

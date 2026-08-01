@@ -126,13 +126,27 @@ type createCourseRequest struct {
 	BranchID    int64              `json:"branch_id"`
 }
 
-// Create — POST /courses, owner only (RequireRoles в роутере).
+// Create — POST /courses, roles: owner (любой филиал), branch_owner (только
+// свой — branch_id из запроса игнорируется и принудительно подставляется
+// из claims, чтобы руководитель филиала не мог завести курс в чужом
+// филиале, просто передав другой branch_id).
 func (h *CourseHandler) Create(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+
 	var req createCourseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
 		return
 	}
+
+	if claims.Role == models.RoleBranchOwner {
+		if claims.BranchID == nil {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "branch_owner has no branch")
+			return
+		}
+		req.BranchID = *claims.BranchID
+	}
+
 	if req.Title == "" || req.Subject == "" || req.BranchID == 0 {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "title, subject and branch_id are required")
 		return
@@ -160,8 +174,13 @@ type updateCourseRequest struct {
 	BranchID    *int64              `json:"branch_id"`
 }
 
-// Update — PATCH /courses/{id}, owner only.
+// Update — PATCH /courses/{id}, roles: owner (любой курс), branch_owner
+// (только курс своего филиала — проверяется до применения изменений; смена
+// branch_id branch_owner-у запрещена, иначе он мог бы "перевести" курс в
+// чужой филиал).
 func (h *CourseHandler) Update(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid course id")
@@ -172,6 +191,27 @@ func (h *CourseHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
 		return
+	}
+
+	if claims.Role == models.RoleBranchOwner {
+		if claims.BranchID == nil {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "branch_owner has no branch")
+			return
+		}
+		existing, err := h.repo.GetByID(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "NOT_FOUND", "course not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course")
+			return
+		}
+		if existing.BranchID != *claims.BranchID {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "course belongs to another branch")
+			return
+		}
+		req.BranchID = nil // руководителю филиала запрещено переносить курс в другой филиал
 	}
 
 	fields := map[string]any{}
@@ -203,13 +243,37 @@ func (h *CourseHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, course)
 }
 
-// Delete — DELETE /courses/{id}, owner only.
+// Delete — DELETE /courses/{id}, roles: owner (любой курс), branch_owner
+// (только курс своего филиала).
 func (h *CourseHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid course id")
 		return
 	}
+
+	if claims.Role == models.RoleBranchOwner {
+		if claims.BranchID == nil {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "branch_owner has no branch")
+			return
+		}
+		existing, err := h.repo.GetByID(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "NOT_FOUND", "course not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course")
+			return
+		}
+		if existing.BranchID != *claims.BranchID {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "course belongs to another branch")
+			return
+		}
+	}
+
 	if err := h.repo.Delete(r.Context(), id); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "course not found")

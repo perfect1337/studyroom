@@ -69,9 +69,13 @@ func NewRouter(d *Deps) http.Handler {
 				r.Post("/applications", appHandler.CreateInternal)
 			})
 
-			// 4.3-4.5 — список/обновление/удаление заявок, roles: owner.
+			// 4.3-4.5 — список/обновление/удаление заявок. roles: owner (вся
+			// сеть), branch_owner (только заявки своего филиала — руководитель
+			// филиала имеет тот же функционал по заявкам, что и owner, кроме
+			// управления сетью филиалов как таковой). Область видимости
+			// branch_owner сужается внутри хендлеров (см. application_handler.go).
 			r.Group(func(r chi.Router) {
-				r.Use(middleware.RequireRoles(models.RoleOwner))
+				r.Use(middleware.RequireRoles(models.RoleOwner, models.RoleBranchOwner))
 				r.Get("/applications", appHandler.List)
 				r.Patch("/applications/{id}", appHandler.UpdateStatus)
 				r.Delete("/applications/{id}", appHandler.Delete)

@@ -61,7 +61,7 @@ export function createStudent(payload) {
   });
 }
 
-// Создать владельца филиала (owner). На почту уходит логин (email) и
+// Создать руководителя филиала (owner). На почту уходит логин (email) и
 // временный пароль для входа — см. user-service handlers/user_handler.go:CreateBranchOwner.
 export function createBranchOwner(payload) {
   return usersApi("/users/branch-owners", { method: "POST", body: payload }).then((res) => {

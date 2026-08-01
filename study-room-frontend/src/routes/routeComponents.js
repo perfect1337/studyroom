@@ -52,6 +52,7 @@ export const BranchTeachers = lazyPreload(() => import("../pages/admin/BranchTea
 export const BranchTeacherDetail = lazyPreload(() => import("../pages/admin/BranchTeacherDetail.jsx"));
 export const BranchSchedule = lazyPreload(() => import("../pages/admin/BranchSchedule.jsx"));
 export const BranchCourses = lazyPreload(() => import("../pages/admin/BranchCourses.jsx"));
+export const BranchFinance = lazyPreload(() => import("../pages/admin/BranchFinance.jsx"));
 export const AdminBranches = lazyPreload(() => import("../pages/admin/AdminBranches.jsx"));
 export const AdminCourses = lazyPreload(() => import("../pages/admin/AdminCourses.jsx"));
 
@@ -97,6 +98,7 @@ export const ROUTE_COMPONENT_BY_PATH = {
   "/branch/teachers": BranchTeachers,
   "/branch/schedule": BranchSchedule,
   "/branch/courses": BranchCourses,
+  "/branch/finance": BranchFinance,
   "/branch/settings": SettingsPage,
 };
 

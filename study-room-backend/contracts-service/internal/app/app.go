@@ -65,9 +65,14 @@ func NewRouter(d *Deps) http.Handler {
 	r.Route("/api/v1/contracts", func(r chi.Router) {
 		r.Use(middleware.RequireAuth(d.TM))
 
-		// 3.1, 3.3-3.7 — owner-only.
+		// 3.1, 3.3-3.7 — roles: owner (любой филиал), branch_owner (только
+		// свой филиал — руководитель филиала имеет тот же функционал по
+		// договорам, что и owner, кроме управления сетью филиалов как
+		// таковой). Область видимости branch_owner сужается внутри самих
+		// хендлеров — см. ContractHandler.Create/GetByID/UpdateFields/
+		// UpdateStatus/UpdatePaymentStatus/Delete.
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireRoles(models.RoleOwner))
+			r.Use(middleware.RequireRoles(models.RoleOwner, models.RoleBranchOwner))
 			r.Post("/", h.Create)
 			r.Get("/{id}", h.GetByID)
 			r.Patch("/{id}", h.UpdateFields)

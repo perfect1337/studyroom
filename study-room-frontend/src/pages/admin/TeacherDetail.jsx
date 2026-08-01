@@ -44,7 +44,9 @@ function initials(person) {
 // - owner: /admin/teachers/:teacherId — виден любой преподаватель сети,
 //   доступны все статусы и увольнение (is_active=false).
 // - branch_owner: /branch/teachers/:teacherId — только преподаватель своего
-//   филиала (сервер сам ограничивает выборку в GET /users), увольнение недоступно.
+//   филиала (сервер сам ограничивает выборку в GET /users), увольнение
+//   доступно так же, как у owner, но только для преподавателей своего
+//   филиала (проверяется на бэкенде, см. user-service UserHandler.SetStatus).
 const ROLE_CONFIG = {
   owner: {
     sidebarRole: "admin",
@@ -62,7 +64,7 @@ const ROLE_CONFIG = {
     listPath: "/branch/teachers",
     listLabel: "Преподаватели",
     searchPlaceholder: "Поиск преподавателя...",
-    canFire: false,
+    canFire: true,
   },
 };
 

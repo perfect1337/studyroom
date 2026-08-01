@@ -282,6 +282,23 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 			out.Tutors = tutors
 		}
 
+		// Родители не привязаны к филиалу (у одного родителя могут быть дети
+		// в разных филиалах), поэтому фильтровать их по branch_id нельзя —
+		// это ограничило бы branch_owner только семьями, у которых уже ЕСТЬ
+		// ребёнок в его филиале, и он не смог бы оформить договор для
+		// совершенно новой семьи (ровно так же, как это делает owner —
+		// см. ветку RoleOwner ниже, без фильтра по филиалу).
+		parents, err := h.users.ListAll(ctx, repository.ListFilter{
+			Role: rolePtr(models.RoleParent), Search: search,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
+			return
+		}
+		if parents != nil {
+			out.Parents = parents
+		}
+
 	case models.RoleOwner:
 		students, err := h.users.ListAll(ctx, repository.ListFilter{
 			Role: rolePtr(models.RoleStudent), BranchID: branchFilter, Search: search,
@@ -405,6 +422,8 @@ type createTutorRequest struct {
 }
 
 func (h *UserHandler) CreateTutor(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+
 	var req createTutorRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid body")
@@ -414,6 +433,18 @@ func (h *UserHandler) CreateTutor(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "email, last_name, first_name required")
 		return
 	}
+
+	// branch_owner добавляет преподавателя только в свой собственный филиал —
+	// branch_id из запроса игнорируется и принудительно подставляется из
+	// claims, аналогично courses/contracts/students.
+	if claims.Role == models.RoleBranchOwner {
+		if claims.BranchID == nil {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "branch_owner has no branch")
+			return
+		}
+		req.BranchID = claims.BranchID
+	}
+
 	tempPassword, err := auth.GenerateOpaqueToken()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "token generation failed")
@@ -542,6 +573,17 @@ func (h *UserHandler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// branch_owner создаёт ученика (в рамках оформления договора) только для
+	// своего собственного филиала — branch_id из запроса игнорируется и
+	// принудительно подставляется из claims, аналогично courses/contracts.
+	if claims.Role == models.RoleBranchOwner {
+		if claims.BranchID == nil {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "branch_owner has no branch")
+			return
+		}
+		req.BranchID = claims.BranchID
+	}
+
 	tempPassword, err := auth.GenerateOpaqueToken()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "token generation failed")
@@ -646,6 +688,8 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 // --- 1.14. PATCH /users/{id}/status ---
 func (h *UserHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id")
@@ -665,6 +709,16 @@ func (h *UserHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "user not found")
 		return
+	}
+
+	// branch_owner может увольнять/восстанавливать только преподавателей
+	// своего собственного филиала — руководитель другого филиала, owner
+	// или сам branch_owner ему недоступны.
+	if claims.Role == models.RoleBranchOwner {
+		if target.Role != models.RoleTutor || target.BranchID == nil || claims.BranchID == nil || *target.BranchID != *claims.BranchID {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "can only change status of tutors in your own branch")
+			return
+		}
 	}
 
 	updated, err := h.users.Update(r.Context(), id, map[string]any{"is_active": body.IsActive})

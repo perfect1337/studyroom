@@ -94,10 +94,20 @@ func NewRouter(d *Deps) http.Handler {
 
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRoles(models.RoleOwner))
+				r.Post("/enrollments", enrollHandler.Create)
+			})
+
+			// Курсы: owner управляет курсами всей сети (может создавать курс
+			// сразу на все филиалы), branch_owner — только курсами своего
+			// филиала (руководитель филиала имеет весь тот же функционал, что
+			// и owner, кроме управления сетью филиалов как таковой). Хендлеры
+			// сами принудительно подставляют/проверяют branch_id для
+			// branch_owner — см. CourseHandler.Create/Update/Delete.
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireRoles(models.RoleOwner, models.RoleBranchOwner))
 				r.Post("/courses", courseHandler.Create)
 				r.Patch("/courses/{id}", courseHandler.Update)
 				r.Delete("/courses/{id}", courseHandler.Delete)
-				r.Post("/enrollments", enrollHandler.Create)
 			})
 
 			r.Group(func(r chi.Router) {

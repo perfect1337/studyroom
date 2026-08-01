@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"studyroom/contracts-service/internal/auth"
 	"studyroom/contracts-service/internal/events"
 	"studyroom/contracts-service/internal/middleware"
 	"studyroom/contracts-service/internal/models"
@@ -36,18 +38,31 @@ type createContractRequest struct {
 	EndDate   string  `json:"end_date"`
 }
 
-// Create — POST /contracts (api-contracts.md 3.1), roles: owner.
+// Create — POST /contracts (api-contracts.md 3.1), roles: owner (любой
+// филиал), branch_owner (только свой — branch_id из запроса игнорируется и
+// принудительно подставляется из claims).
 //
 // Мягкая валидация student_id/parent_id по user_refs: если запись уже
 // синхронизирована событием user.* и роль не совпадает — 400. Если записи
 // ещё нет (событие не дошло) — не блокируем создание договора, потому что
 // это eventual consistency, а не гарантия (см. README.md).
 func (h *ContractHandler) Create(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+
 	var req createContractRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
 		return
 	}
+
+	if claims.Role == models.RoleBranchOwner {
+		if claims.BranchID == nil {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "branch_owner has no branch")
+			return
+		}
+		req.BranchID = *claims.BranchID
+	}
+
 	if req.StudentID == 0 || req.ParentID == 0 || req.CourseID == 0 || req.BranchID == 0 {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student_id, parent_id, course_id, branch_id are required")
 		return
@@ -161,8 +176,11 @@ func nonNilContracts(c []*models.Contract) []*models.Contract {
 	return c
 }
 
-// GetByID — GET /contracts/{id} (api-contracts.md 3.3), roles: owner.
+// GetByID — GET /contracts/{id} (api-contracts.md 3.3), roles: owner (любой
+// договор), branch_owner (только договор своего филиала).
 func (h *ContractHandler) GetByID(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid contract id")
@@ -175,6 +193,10 @@ func (h *ContractHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to get contract")
+		return
+	}
+	if claims.Role == models.RoleBranchOwner && (claims.BranchID == nil || *claims.BranchID != contract.BranchID) {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "contract belongs to a different branch")
 		return
 	}
 	writeJSON(w, http.StatusOK, contract)
@@ -229,11 +251,18 @@ type updateContractRequest struct {
 	Amount  *float64 `json:"amount"`
 }
 
-// UpdateFields — PATCH /contracts/{id} (api-contracts.md 3.4), roles: owner.
+// UpdateFields — PATCH /contracts/{id} (api-contracts.md 3.4), roles: owner
+// (любой договор), branch_owner (только договор своего филиала).
 func (h *ContractHandler) UpdateFields(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid contract id")
+		return
+	}
+	if err := h.checkBranchOwnerAccess(r.Context(), claims, id); err != nil {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", err.Error())
 		return
 	}
 	var req updateContractRequest
@@ -274,11 +303,18 @@ type updateStatusRequest struct {
 	Status string `json:"status"`
 }
 
-// UpdateStatus — PATCH /contracts/{id}/status (api-contracts.md 3.5), roles: owner.
+// UpdateStatus — PATCH /contracts/{id}/status (api-contracts.md 3.5), roles:
+// owner (любой договор), branch_owner (только договор своего филиала).
 func (h *ContractHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid contract id")
+		return
+	}
+	if err := h.checkBranchOwnerAccess(r.Context(), claims, id); err != nil {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", err.Error())
 		return
 	}
 	var req updateStatusRequest
@@ -310,11 +346,18 @@ type updatePaymentStatusRequest struct {
 	PaymentStatus string `json:"payment_status"`
 }
 
-// UpdatePaymentStatus — PATCH /contracts/{id}/payment-status (api-contracts.md 3.6), roles: owner.
+// UpdatePaymentStatus — PATCH /contracts/{id}/payment-status (api-contracts.md 3.6), roles:
+// owner (любой договор), branch_owner (только договор своего филиала).
 func (h *ContractHandler) UpdatePaymentStatus(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid contract id")
+		return
+	}
+	if err := h.checkBranchOwnerAccess(r.Context(), claims, id); err != nil {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", err.Error())
 		return
 	}
 	var req updatePaymentStatusRequest
@@ -337,11 +380,18 @@ func (h *ContractHandler) UpdatePaymentStatus(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusOK)
 }
 
-// Delete — DELETE /contracts/{id} (api-contracts.md 3.7), roles: owner.
+// Delete — DELETE /contracts/{id} (api-contracts.md 3.7), roles: owner
+// (любой договор), branch_owner (только договор своего филиала).
 func (h *ContractHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid contract id")
+		return
+	}
+	if err := h.checkBranchOwnerAccess(r.Context(), claims, id); err != nil {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", err.Error())
 		return
 	}
 	if err := h.repo.Delete(r.Context(), id); err != nil {
@@ -353,4 +403,28 @@ func (h *ContractHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// checkBranchOwnerAccess — для branch_owner проверяет, что договор id
+// принадлежит его филиалу (для owner всегда nil — без ограничений). Общий
+// хелпер для UpdateFields/UpdateStatus/UpdatePaymentStatus/Delete, чтобы
+// руководитель филиала не мог менять/удалять договоры чужих филиалов.
+func (h *ContractHandler) checkBranchOwnerAccess(ctx context.Context, claims *auth.Claims, contractID int64) error {
+	if claims.Role != models.RoleBranchOwner {
+		return nil
+	}
+	if claims.BranchID == nil {
+		return errors.New("branch_owner has no branch")
+	}
+	contract, err := h.repo.GetByID(ctx, contractID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil // 404 отдаст сам вызывающий хендлер при попытке обновления/удаления
+		}
+		return err
+	}
+	if contract.BranchID != *claims.BranchID {
+		return errors.New("contract belongs to a different branch")
+	}
+	return nil
 }

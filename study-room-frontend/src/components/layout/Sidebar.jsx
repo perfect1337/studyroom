@@ -49,6 +49,7 @@ export const NAV_ITEMS = {
     { to: "/branch/teachers", icon: "school", label: "Учителя" },
     { to: "/branch/courses", icon: "menu_book", label: "Курсы" },
     { to: "/branch/schedule", icon: "calendar_month", label: "Расписание" },
+    { to: "/branch/finance", icon: "payments", label: "Финансы" },
     { to: "/branch/settings", icon: "settings", label: "Настройки" },
   ],
 };

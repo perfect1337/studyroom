@@ -13,6 +13,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"studyroom/crm-service/internal/auth"
 	"studyroom/crm-service/internal/events"
 	"studyroom/crm-service/internal/middleware"
 	"studyroom/crm-service/internal/models"
@@ -160,15 +161,34 @@ func studentPlaceholder(id int64) string {
 	return "Ученик #" + strconv.FormatInt(id, 10)
 }
 
-// List — GET /applications?status= (api-contracts.md 4.3), roles: owner.
+// List — GET /applications?status= (api-contracts.md 4.3), roles: owner
+// (вся сеть), branch_owner (только заявки своего филиала).
 func (h *ApplicationHandler) List(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+
 	status := r.URL.Query().Get("status")
 	apps, err := h.repo.List(r.Context(), status)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list applications")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": nonNilApplications(apps)})
+	apps = nonNilApplications(apps)
+
+	if claims.Role == models.RoleBranchOwner {
+		if claims.BranchID == nil {
+			writeJSON(w, http.StatusOK, map[string]any{"items": []*models.Application{}})
+			return
+		}
+		filtered := make([]*models.Application, 0, len(apps))
+		for _, a := range apps {
+			if a.BranchID != nil && *a.BranchID == *claims.BranchID {
+				filtered = append(filtered, a)
+			}
+		}
+		apps = filtered
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"items": apps})
 }
 
 func nonNilApplications(a []*models.Application) []*models.Application {
@@ -190,8 +210,11 @@ var validStatuses = map[string]bool{
 	string(models.StatusRejected):   true,
 }
 
-// UpdateStatus — PATCH /applications/{id} (api-contracts.md 4.4), roles: owner.
+// UpdateStatus — PATCH /applications/{id} (api-contracts.md 4.4), roles:
+// owner (любая заявка), branch_owner (только заявка своего филиала).
 func (h *ApplicationHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid application id")
@@ -208,6 +231,13 @@ func (h *ApplicationHandler) UpdateStatus(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if claims.Role == models.RoleBranchOwner {
+		if !h.branchOwnerCanAccess(r.Context(), claims, id) {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "application belongs to another branch")
+			return
+		}
+	}
+
 	app, err := h.repo.UpdateStatus(r.Context(), id, req.Status, req.HandledBy)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -220,13 +250,24 @@ func (h *ApplicationHandler) UpdateStatus(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, app)
 }
 
-// Delete — DELETE /applications/{id} (api-contracts.md 4.5), roles: owner.
+// Delete — DELETE /applications/{id} (api-contracts.md 4.5), roles: owner
+// (любая заявка), branch_owner (только заявка своего филиала).
 func (h *ApplicationHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid application id")
 		return
 	}
+
+	if claims.Role == models.RoleBranchOwner {
+		if !h.branchOwnerCanAccess(r.Context(), claims, id) {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "application belongs to another branch")
+			return
+		}
+	}
+
 	if err := h.repo.Delete(r.Context(), id); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "application not found")
@@ -236,6 +277,20 @@ func (h *ApplicationHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// branchOwnerCanAccess — true, если заявка id принадлежит филиалу claims
+// (branch_owner). Используется в UpdateStatus/Delete, чтобы руководитель
+// филиала не мог менять/удалять заявки чужих филиалов.
+func (h *ApplicationHandler) branchOwnerCanAccess(ctx context.Context, claims *auth.Claims, id int64) bool {
+	if claims.BranchID == nil {
+		return false
+	}
+	app, err := h.repo.GetByID(ctx, id)
+	if err != nil {
+		return false
+	}
+	return app.BranchID != nil && *app.BranchID == *claims.BranchID
 }
 
 // notifyReceived — уведомляет владельца сети (owner) о каждой заявке без

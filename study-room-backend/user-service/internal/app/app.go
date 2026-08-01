@@ -114,15 +114,26 @@ func NewRouter(d *Deps) http.Handler {
 
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRoles(models.RoleOwner))
-				r.Post("/users/tutors", userHandler.CreateTutor)
 				r.Post("/users/branch-owners", userHandler.CreateBranchOwner)
-				r.Patch("/users/{id}/status", userHandler.SetStatus)
 				r.Post("/branches", userHandler.CreateBranch)
 				r.Delete("/branches/{id}", userHandler.DeleteBranch)
 			})
 
 			r.Group(func(r chi.Router) {
-				r.Use(middleware.RequireRoles(models.RoleOwner, models.RoleParent))
+				// SetStatus (увольнение/восстановление): owner — кого угодно,
+				// branch_owner — только преподавателей своего собственного
+				// филиала (проверяется внутри UserHandler.SetStatus).
+				r.Use(middleware.RequireRoles(models.RoleOwner, models.RoleBranchOwner))
+				r.Patch("/users/{id}/status", userHandler.SetStatus)
+			})
+
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireRoles(models.RoleOwner, models.RoleBranchOwner))
+				r.Post("/users/tutors", userHandler.CreateTutor)
+			})
+
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireRoles(models.RoleOwner, models.RoleParent, models.RoleBranchOwner))
 				r.Post("/users/students", userHandler.CreateStudent)
 			})
 
