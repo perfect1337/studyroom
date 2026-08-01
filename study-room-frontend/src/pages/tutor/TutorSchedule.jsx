@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
+import EditLessonModal from "../../components/lessons/EditLessonModal.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchLessons, fetchCourses, fetchEnrollments, fetchAttendance } from "../../api/academic.js";
 import { fetchMyPeople } from "../../api/users.js";
@@ -56,6 +57,18 @@ export default function TutorSchedule() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedDay, setSelectedDay] = useState(null); // day number in current month, or null
+
+  // Занятие, которое сейчас редактируется. Список lessons уже отфильтрован
+  // сервером по tutor_id = свой (см. fetchLessons({ tutor_id: user.id, ... })
+  // выше), так что репетитор физически не может открыть чужое занятие.
+  const [editingLesson, setEditingLesson] = useState(null);
+
+  function handleLessonSaved(updated) {
+    setLessons((prev) => prev.map((l) => (l.id === updated.id ? { ...l, ...updated } : l)));
+  }
+  function handleLessonCancelled(lessonId) {
+    setLessons((prev) => prev.map((l) => (l.id === lessonId ? { ...l, status: "cancelled" } : l)));
+  }
 
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstWeekday = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7; // 0 = Monday
@@ -316,7 +329,19 @@ export default function TutorSchedule() {
                             {course?.subject ?? course?.title ?? lesson.topic}
                           </h3>
                         </div>
-                        <StatusBadge status={isCancelled ? "Отменено" : isDone ? "Выполнено" : "Ожидание"} />
+                        <div className="flex flex-col items-end gap-2 shrink-0">
+                          <StatusBadge status={isCancelled ? "Отменено" : isDone ? "Выполнено" : "Ожидание"} />
+                          {!isCancelled && (
+                            <button
+                              type="button"
+                              onClick={() => setEditingLesson(lesson)}
+                              className="flex items-center gap-1 px-3 py-1 rounded-full font-label-md text-[12px] text-primary border border-primary hover:bg-primary-container/20 transition-colors"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">edit</span>
+                              Редактировать
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       <div className="space-y-4">
@@ -417,6 +442,15 @@ export default function TutorSchedule() {
           </div>
         </div>
       </div>
+
+      <EditLessonModal
+        open={!!editingLesson}
+        lesson={editingLesson}
+        canReassignTutor={false}
+        onClose={() => setEditingLesson(null)}
+        onSaved={handleLessonSaved}
+        onCancelled={handleLessonCancelled}
+      />
     </DashboardShell>
   );
 }

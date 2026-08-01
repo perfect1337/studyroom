@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
+import EditLessonModal from "../../components/lessons/EditLessonModal.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchLessons, fetchCourses } from "../../api/academic.js";
 import { fetchMyPeople, fetchBranches, fetchUserById } from "../../api/users.js";
@@ -81,6 +82,20 @@ export default function ScheduleDirectory({ role }) {
   const [selectedDay, setSelectedDay] = useState(null); // day number in current month, or null
   const [detailPage, setDetailPage] = useState(0); // пагинация занятий выбранного дня
   const LESSONS_PAGE_SIZE = 2;
+
+  // Занятие, которое сейчас редактируется (owner — любое, branch_owner — только
+  // своего филиала; но список lessons уже отфильтрован сервером по этой области,
+  // так что доступные для открытия модалки занятия и так ограничены правами).
+  const [editingLesson, setEditingLesson] = useState(null);
+
+  // При PATCH обновляем занятие локально, не дожидаясь перезагрузки месяца —
+  // отзывчивее для пользователя.
+  function handleLessonSaved(updated) {
+    setLessons((prev) => prev.map((l) => (l.id === updated.id ? { ...l, ...updated } : l)));
+  }
+  function handleLessonCancelled(lessonId) {
+    setLessons((prev) => prev.map((l) => (l.id === lessonId ? { ...l, status: "cancelled" } : l)));
+  }
 
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstWeekday = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7; // 0 = Monday
@@ -484,7 +499,19 @@ export default function ScheduleDirectory({ role }) {
                             {course?.subject ?? course?.title ?? lesson.topic}
                           </h3>
                         </div>
-                        <StatusBadge status={isCancelled ? "Отменено" : isDone ? "Выполнено" : "Ожидание"} />
+                        <div className="flex flex-col items-end gap-2 shrink-0">
+                          <StatusBadge status={isCancelled ? "Отменено" : isDone ? "Выполнено" : "Ожидание"} />
+                          {!isCancelled && (
+                            <button
+                              type="button"
+                              onClick={() => setEditingLesson(lesson)}
+                              className="flex items-center gap-1 px-3 py-1 rounded-full font-label-md text-[12px] text-primary border border-primary hover:bg-primary-container/20 transition-colors"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">edit</span>
+                              Редактировать
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       <div className="space-y-4">
@@ -586,6 +613,16 @@ export default function ScheduleDirectory({ role }) {
           </div>
         </div>
       </div>
+
+      <EditLessonModal
+        open={!!editingLesson}
+        lesson={editingLesson}
+        tutors={people.tutors}
+        canReassignTutor
+        onClose={() => setEditingLesson(null)}
+        onSaved={handleLessonSaved}
+        onCancelled={handleLessonCancelled}
+      />
     </DashboardShell>
   );
 }
