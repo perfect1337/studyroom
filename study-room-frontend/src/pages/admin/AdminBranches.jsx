@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import ConfirmDeleteModal from "../../components/ui/ConfirmDeleteModal.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchBranches, createBranch, deleteBranch, createBranchOwner, fetchMyPeople, setUserActive } from "../../api/users.js";
+import { fetchBranches, createBranch, deleteBranch, createBranchOwner, fetchMyPeople, setUserActive, fetchDeletedBranches } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import { sanitizePhoneInput, isValidPhone } from "../../utils/phone.js";
 
@@ -52,6 +53,57 @@ export default function AdminBranches() {
   const [ownerDeleteBusy, setOwnerDeleteBusy] = useState(false);
   const [ownerDeleteError, setOwnerDeleteError] = useState("");
 
+  // Раздел "Удалённые филиалы" — филиалы, помеченные deleted_at на бэкенде
+  // (см. api/users.js:fetchDeletedBranches). Сам филиал не стирается,
+  // поэтому здесь можно развернуть карточку и посмотреть, какие
+  // преподаватели и ученики в нём были (руководители филиала к этому
+  // моменту уже удалены полностью — см. DeleteBranch на бэкенде).
+  const [deletedBranches, setDeletedBranches] = useState([]);
+  const [deletedLoading, setDeletedLoading] = useState(true);
+  const [deletedError, setDeletedError] = useState("");
+  const [expandedDeletedId, setExpandedDeletedId] = useState(null);
+  // members[branchId] = { loading, error, tutors: [], students: [] }
+  const [deletedMembers, setDeletedMembers] = useState({});
+
+  async function loadDeletedBranches() {
+    setDeletedLoading(true);
+    setDeletedError("");
+    try {
+      const res = await fetchDeletedBranches();
+      setDeletedBranches(res?.items ?? []);
+    } catch (e) {
+      setDeletedError(e.message || "Не удалось загрузить удалённые филиалы");
+    } finally {
+      setDeletedLoading(false);
+    }
+  }
+
+  // Преподаватели и ученики удалённого филиала по-прежнему хранят его
+  // branch_id (см. комментарий к deleteBranch), поэтому переиспользуем
+  // тот же справочник "мои люди" с фильтром по этому филиалу.
+  async function toggleDeletedBranch(branchId) {
+    if (expandedDeletedId === branchId) {
+      setExpandedDeletedId(null);
+      return;
+    }
+    setExpandedDeletedId(branchId);
+    if (deletedMembers[branchId]) return;
+
+    setDeletedMembers((m) => ({ ...m, [branchId]: { loading: true, error: "", tutors: [], students: [] } }));
+    try {
+      const res = await fetchMyPeople({ branch_id: branchId });
+      setDeletedMembers((m) => ({
+        ...m,
+        [branchId]: { loading: false, error: "", tutors: res?.tutors ?? [], students: res?.students ?? [] },
+      }));
+    } catch (e) {
+      setDeletedMembers((m) => ({
+        ...m,
+        [branchId]: { loading: false, error: e.message || "Не удалось загрузить список", tutors: [], students: [] },
+      }));
+    }
+  }
+
   async function load() {
     setLoading(true);
     setError("");
@@ -87,6 +139,7 @@ export default function AdminBranches() {
   useEffect(() => {
     load();
     loadOwners();
+    loadDeletedBranches();
   }, []);
 
   function openAddModal() {
@@ -162,6 +215,10 @@ export default function AdminBranches() {
       await deleteBranch(branchToDelete.id);
       setBranches((list) => list.filter((b) => b.id !== branchToDelete.id));
       setBranchToDelete(null);
+      // Руководители удалённого филиала полностью стёрты на бэкенде —
+      // обновляем их таблицу, иначе они "зависнут" в списке до перезагрузки.
+      loadOwners();
+      loadDeletedBranches();
     } catch (err) {
       setDeleteError(err.message || "Не удалось удалить филиал");
     } finally {
@@ -356,6 +413,136 @@ export default function AdminBranches() {
                       </td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h2 className="font-headline-md text-headline-md text-primary mb-1">Удалённые филиалы</h2>
+          <p className="font-body-md text-body-md text-on-surface-variant mb-4">
+            Филиалы, закрытые ранее. Руководители этих филиалов удалены полностью, но здесь можно
+            посмотреть, какие преподаватели и ученики в них были.
+          </p>
+
+          {deletedError && (
+            <div className="p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md mb-4">
+              {deletedError}
+            </div>
+          )}
+
+          <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-surface-container-low text-on-surface-variant border-b border-outline-variant">
+                  <tr>
+                    <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap">Название</th>
+                    <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap">Город</th>
+                    <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap">Удалён</th>
+                    <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap text-right">Действия</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outline-variant">
+                  {!deletedLoading && deletedBranches.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-10 text-center text-on-surface-variant">
+                        Удалённых филиалов нет
+                      </td>
+                    </tr>
+                  )}
+                  {deletedLoading && (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-10 text-center text-on-surface-variant">
+                        Загрузка...
+                      </td>
+                    </tr>
+                  )}
+                  {deletedBranches.map((b) => {
+                    const isOpen = expandedDeletedId === b.id;
+                    const members = deletedMembers[b.id];
+                    return (
+                      <Fragment key={b.id}>
+                        <tr className="hover:bg-surface-container-low transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="font-label-md text-label-md font-bold text-on-surface">{b.name}</div>
+                            <div className="text-[12px] text-outline">ID: {b.id}</div>
+                          </td>
+                          <td className="px-6 py-4 text-label-md font-label-md">{b.city}</td>
+                          <td className="px-6 py-4 text-label-md font-label-md text-on-surface-variant whitespace-nowrap">
+                            {b.deleted_at ? new Date(b.deleted_at).toLocaleDateString() : "—"}
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <button
+                              onClick={() => toggleDeletedBranch(b.id)}
+                              className="inline-flex items-center gap-1 text-primary font-bold text-label-md hover:underline"
+                            >
+                              <span className="material-symbols-outlined text-[18px]">
+                                {isOpen ? "expand_less" : "expand_more"}
+                              </span>
+                              {isOpen ? "Свернуть" : "Посмотреть учителей и учеников"}
+                            </button>
+                          </td>
+                        </tr>
+                        {isOpen && (
+                          <tr>
+                            <td colSpan={4} className="px-6 pb-6 pt-0 bg-surface-container-low">
+                              {members?.loading && (
+                                <p className="text-label-md font-label-md text-on-surface-variant py-3">Загрузка...</p>
+                              )}
+                              {members?.error && <p className="text-label-md font-label-md text-error py-3">{members.error}</p>}
+                              {members && !members.loading && !members.error && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3">
+                                  <div>
+                                    <h4 className="font-label-md text-label-md font-bold text-on-surface mb-2">
+                                      Преподаватели ({members.tutors.length})
+                                    </h4>
+                                    {members.tutors.length === 0 ? (
+                                      <p className="text-[13px] text-on-surface-variant">Преподавателей не было</p>
+                                    ) : (
+                                      <ul className="space-y-1">
+                                        {members.tutors.map((t) => (
+                                          <li key={t.id}>
+                                            <Link
+                                              to={`/admin/teachers/${t.id}`}
+                                              className="text-[13px] text-primary hover:underline"
+                                            >
+                                              {fullName(t)} <span className="text-outline">— {t.email}</span>
+                                            </Link>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <h4 className="font-label-md text-label-md font-bold text-on-surface mb-2">
+                                      Ученики ({members.students.length})
+                                    </h4>
+                                    {members.students.length === 0 ? (
+                                      <p className="text-[13px] text-on-surface-variant">Учеников не было</p>
+                                    ) : (
+                                      <ul className="space-y-1">
+                                        {members.students.map((s) => (
+                                          <li key={s.id}>
+                                            <Link
+                                              to={`/admin/students/${s.id}`}
+                                              className="text-[13px] text-primary hover:underline"
+                                            >
+                                              {fullName(s)} <span className="text-outline">— {s.email}</span>
+                                            </Link>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -560,7 +747,7 @@ export default function AdminBranches() {
         open={!!branchToDelete}
         title="Удалить филиал?"
         itemLabel={branchToDelete?.name}
-        description="Сотрудники и ученики этого филиала не удалятся, но потеряют привязку к нему. Расписание, курсы и договоры филиала при этом не переносятся автоматически."
+        description="Руководители этого филиала будут удалены полностью, без возможности восстановления. Преподаватели и ученики не удалятся, а сам филиал переместится в раздел «Удалённые филиалы» — там его всегда можно будет посмотреть."
         busy={deleteBusy}
         error={deleteError}
         onCancel={() => (deleteBusy ? null : setBranchToDelete(null))}

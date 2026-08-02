@@ -117,6 +117,7 @@ func NewRouter(d *Deps) http.Handler {
 				r.Post("/users/branch-owners", userHandler.CreateBranchOwner)
 				r.Post("/branches", userHandler.CreateBranch)
 				r.Delete("/branches/{id}", userHandler.DeleteBranch)
+				r.Get("/branches/deleted", userHandler.ListDeletedBranches)
 			})
 
 			r.Group(func(r chi.Router) {

@@ -781,8 +781,15 @@ func (h *UserHandler) CreateBranch(w http.ResponseWriter, r *http.Request) {
 // --- 1.17b. DELETE /branches/{id} ---
 // Доступ только owner. Двойное подтверждение удаления реализовано на
 // фронтенде (см. AdminBranches.jsx) — бэкенд просто выполняет удаление.
-// Пользователи филиала не удаляются (FK ON DELETE SET NULL), они лишь
-// теряют привязку к филиалу.
+//
+// Это мягкое удаление (см. BranchRepository.Delete): сам филиал остаётся в
+// базе с проставленным deleted_at и пропадает из GET /branches, но
+// появляется в GET /branches/deleted ("Удалённые"), чтобы можно было
+// посмотреть, какие преподаватели и ученики там были. Руководители этого
+// филиала (role=branch_owner) при этом удаляются полностью — их аккаунты
+// физически стираются из базы вместе с самим удалением филиала. Обычные
+// преподаватели и ученики филиала не удаляются, они лишь остаются
+// привязаны к уже удалённому филиалу.
 func (h *UserHandler) DeleteBranch(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
@@ -798,6 +805,24 @@ func (h *UserHandler) DeleteBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// --- 1.17c. GET /branches/deleted ---
+// Доступ только owner. Раздел "Удалённые" на вкладке "Филиалы" — список
+// мягко удалённых филиалов. Чтобы посмотреть преподавателей/учеников
+// конкретного удалённого филиала, фронт дополнительно дёргает
+// GET /users?branch_id=<id>&... — у этих пользователей branch_id никуда
+// не делся, изменился только сам филиал (стал "удалённым").
+func (h *UserHandler) ListDeletedBranches(w http.ResponseWriter, r *http.Request) {
+	branches, err := h.branches.ListDeleted(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
+		return
+	}
+	if branches == nil {
+		branches = []*models.Branch{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": branches})
 }
 
 // --- 1.18. GET /parents/{parentId}/children ---

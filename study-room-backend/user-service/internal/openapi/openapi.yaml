@@ -365,6 +365,48 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Branch'
+  /api/v1/branches/{id}:
+    delete:
+      summary: Delete (soft-delete) a branch
+      description: >
+        Owner only. The branch is marked as deleted (kept for history, see
+        GET /branches/deleted) instead of being physically removed. Branch
+        owner accounts (role=branch_owner) attached to this branch are hard
+        deleted. Tutors and students keep their branch_id.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Branch deleted
+        '404':
+          description: Branch not found
+  /api/v1/branches/deleted:
+    get:
+      summary: List soft-deleted branches
+      description: >
+        Owner only. Returns branches previously removed via DELETE
+        /branches/{id}. To see the tutors/students that belonged to a
+        deleted branch, call GET /users?branch_id=<id> separately.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Deleted branch list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Branch'
   /api/v1/parents/{parentId}/children:
     get:
       summary: List children for a parent
@@ -616,6 +658,11 @@ components:
           type: string
         city:
           type: string
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Заполнено, если филиал "удалён" (мягкое удаление, см. DELETE /branches/{id})
     ErrorResponse:
       type: object
       properties:

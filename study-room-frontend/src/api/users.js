@@ -86,13 +86,25 @@ export function createBranch(payload) {
 }
 
 // Удалить филиал (owner). Двойное подтверждение — на фронте (см. AdminBranches.jsx).
-// Пользователи филиала не удаляются, они лишь теряют привязку к филиалу (branch_id -> null).
+// Мягкое удаление на бэкенде (см. user-service handlers/user_handler.go:DeleteBranch):
+// сам филиал не стирается, а помечается deleted_at и переезжает в
+// GET /branches/deleted ("Удалённые"). Руководители филиала (branch_owner)
+// удаляются полностью; преподаватели и ученики остаются с тем же branch_id.
 export function deleteBranch(id) {
   return usersApi(`/branches/${id}`, { method: "DELETE" }).then((res) => {
     invalidateQuery(["branches"]);
+    invalidateQuery(["deletedBranches"]);
     invalidateQuery(["myPeople"]);
     return res;
   });
+}
+
+// Список удалённых филиалов ("корзина" на вкладке "Филиалы", owner). Чтобы
+// посмотреть преподавателей/учеников конкретного удалённого филиала,
+// используем тот же fetchMyPeople({ branch_id }) — их branch_id никуда не
+// делся, изменился только сам филиал.
+export function fetchDeletedBranches() {
+  return cachedQuery(["deletedBranches"], () => usersApi("/branches/deleted"), { staleTime: 60_000 });
 }
 
 // 1.18 Дети родителя

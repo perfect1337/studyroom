@@ -63,6 +63,11 @@ type Branch struct {
 	Address   *string   `json:"address,omitempty"`
 	Phone     *string   `json:"phone,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
+	// DeletedAt — nil для активного филиала. Заполняется при "удалении"
+	// филиала (см. BranchRepository.Delete): сам филиал физически не
+	// стирается, а только помечается, чтобы owner мог посмотреть его в
+	// разделе "Удалённые" (какие преподаватели/ученики там были).
+	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 }
 
 type StudentProfile struct {
