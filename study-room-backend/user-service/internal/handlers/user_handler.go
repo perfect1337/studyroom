@@ -1,17 +1,20 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
-	"github.com/go-chi/chi/v5"
 	"studyroom/user-service/internal/auth"
 	"studyroom/user-service/internal/events"
 	"studyroom/user-service/internal/middleware"
 	"studyroom/user-service/internal/models"
 	"studyroom/user-service/internal/repository"
+
+	"github.com/go-chi/chi/v5"
 )
 
 type UserHandler struct {
@@ -404,8 +407,8 @@ func canViewUser(r *http.Request, h *UserHandler, claims *auth.Claims, target *m
 	if claims.Role == models.RoleTutor && target.Role == models.RoleStudent {
 		return target.BranchID != nil && claims.BranchID != nil && *target.BranchID == *claims.BranchID
 	}
-	if claims.Role == models.RoleStudent && target.Role == models.RoleTutor{
-		return target.BranchID != nil && claims.BranchID !=nil && *target.BranchID == *claims.BranchID
+	if claims.Role == models.RoleStudent && target.Role == models.RoleTutor {
+		return target.BranchID != nil && claims.BranchID != nil && *target.BranchID == *claims.BranchID
 	}
 	return false
 }
@@ -721,30 +724,50 @@ func (h *UserHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	updated, err := h.users.Update(r.Context(), id, map[string]any{"is_active": body.IsActive})
-	if err != nil {
+	if body.IsActive {
+		updated, err := h.users.Update(r.Context(), id, map[string]any{"is_active": true})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
+			return
+		}
+		h.events.UserUpdated(updated)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if err := h.fireTutorOrDeactivate(r.Context(), target); err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
 		return
 	}
-	if !body.IsActive {
-		_ = h.authRepo.RevokeAllRefreshTokens(r.Context(), id)
+	w.WriteHeader(http.StatusOK)
+}
 
-		// Увольнение репетитора: помимо блокировки входа (is_active=false),
-		// его статус в tutor_profiles тоже переводится в inactive — это то,
-		// что видно в карточке преподавателя и в списках (см. TeacherDetail.jsx,
-		// TUTOR_STATUS_LABEL.inactive = "Неактивен"). Отвязка его учеников
-		// (course_tutors / enrollments.tutor_id) происходит асинхронно в
-		// Academic Service по событию user.updated с is_active=false — см.
-		// academic-service/internal/events/subscriber.go.
-		if target.Role == models.RoleTutor {
-			if err := h.tutorProfiles.SetStatus(r.Context(), id, models.TutorStatusInactive); err != nil {
-				writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
-				return
-			}
+// fireTutorOrDeactivate — общая логика увольнения/деактивации пользователя
+// (is_active=false), используется как ручным увольнением через
+// PATCH /users/{id}/status, так и автоматическим массовым увольнением
+// преподавателей при удалении их филиала (см. DeleteBranch ниже). Помимо
+// блокировки входа: отзывает все refresh-токены, для tutor переводит
+// tutor_profiles в inactive (видно в TeacherDetail.jsx как "Неактивен") и
+// публикует user.updated — по этому событию Academic Service асинхронно
+// отвязывает учеников уволенного репетитора (course_tutors/enrollments.tutor_id,
+// см. academic-service/internal/events/subscriber.go). Сам пользователь и
+// его branch_id НЕ трогаются — запись остаётся видна в разделе
+// «Филиалы» → «Удалённые» (или просто в списке уволенных), только со
+// статусом "Уволен"/"Неактивен".
+func (h *UserHandler) fireTutorOrDeactivate(ctx context.Context, target *models.User) error {
+	updated, err := h.users.Update(ctx, target.ID, map[string]any{"is_active": false})
+	if err != nil {
+		return err
+	}
+	_ = h.authRepo.RevokeAllRefreshTokens(ctx, target.ID)
+
+	if target.Role == models.RoleTutor {
+		if err := h.tutorProfiles.SetStatus(ctx, target.ID, models.TutorStatusInactive); err != nil {
+			return err
 		}
 	}
 	h.events.UserUpdated(updated)
-	w.WriteHeader(http.StatusOK)
+	return nil
 }
 
 // --- 1.16. GET /branches ---
@@ -787,15 +810,35 @@ func (h *UserHandler) CreateBranch(w http.ResponseWriter, r *http.Request) {
 // появляется в GET /branches/deleted ("Удалённые"), чтобы можно было
 // посмотреть, какие преподаватели и ученики там были. Руководители этого
 // филиала (role=branch_owner) при этом удаляются полностью — их аккаунты
-// физически стираются из базы вместе с самим удалением филиала. Обычные
-// преподаватели и ученики филиала не удаляются, они лишь остаются
-// привязаны к уже удалённому филиалу.
+// физически стираются из базы вместе с самим удалением филиала.
+//
+// Обычные преподаватели филиала не удаляются и не отвязываются от
+// branch_id (иначе они пропали бы из GET /users?branch_id=<id> и их
+// нельзя было бы найти в разделе «Удалённые») — вместо этого они
+// автоматически "увольняются" той же логикой, что и ручное увольнение
+// через PATCH /users/{id}/status (is_active=false, отзыв refresh-токенов,
+// tutor_profiles → inactive, отвязка их учеников в Academic Service по
+// событию user.updated). Так их карточки остаются доступны в «Удалённые»
+// со статусом "Уволен", просто больше не смогут войти и вести занятия.
+// Ученики филиала не трогаются вообще.
 func (h *UserHandler) DeleteBranch(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid branch id")
 		return
 	}
+
+	// Список берём ДО удаления филиала — сам список тьюторов ищется по
+	// branch_id, который у них не меняется, так что порядок относительно
+	// h.branches.Delete не принципиален, но так проще: не удаляем филиал,
+	// если вдруг не смогли прочитать его тьюторов.
+	role := models.RoleTutor
+	tutors, err := h.users.ListAll(r.Context(), repository.ListFilter{Role: &role, BranchID: &id})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "list tutors failed")
+		return
+	}
+
 	if err := h.branches.Delete(r.Context(), id); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "branch not found")
@@ -804,6 +847,22 @@ func (h *UserHandler) DeleteBranch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "delete failed")
 		return
 	}
+
+	// Массовое увольнение: только те, кто ещё не был уволен вручную ранее
+	// (is_active уже false у них не трогаем — не нужно второй раз отзывать
+	// токены/публиковать событие). Ошибку по отдельному тьютору не считаем
+	// фатальной для всего запроса — филиал уже удалён, продолжаем
+	// увольнять остальных и просто логируем, чтобы одна проблемная запись
+	// не блокировала увольнение всех остальных.
+	for _, t := range tutors {
+		if !t.IsActive {
+			continue
+		}
+		if err := h.fireTutorOrDeactivate(r.Context(), t); err != nil {
+			log.Printf("[branches] delete branch=%d: fire tutor=%d failed: %v", id, t.ID, err)
+		}
+	}
+
 	w.WriteHeader(http.StatusOK)
 }
 
