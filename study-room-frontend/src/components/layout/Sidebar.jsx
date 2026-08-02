@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { fetchCourses } from "../../api/academic.js";
+import { academicApi } from "../../api/http.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { preloadRoute } from "../../routes/routeComponents.js";
 import { useQuery } from "../../hooks/useQuery.js";
@@ -136,9 +136,18 @@ function FooterLinks({ showSwitchAccount = true }) {
 // invalidateQuery(["courses"]) (см. api/academic.js — это происходит при
 // любой мутации курса), без мигания и без явной перезагрузки.
 function useTutorCourses(tutorId) {
+  // ВАЖНО: fetchCourses() сама уже оборачивает запрос в cachedQuery() с тем
+  // же ключом ["courses", {tutor_id}]. Если передать её сюда как fetcher,
+  // useQuery() вызовет cachedQuery(key, () => fetchCourses(...)) — и внутри
+  // fetchCourses() снова попадёт в cachedQuery(тот же key), которая увидит,
+  // что entry.promise уже занят (тем самым промисом, что сейчас исполняется)
+  // и просто вернёт его обратно — получается замкнутый цикл промисов, который
+  // никогда не резолвится, а реальный fetch() к /academic/courses не
+  // происходит вообще ни разу. Поэтому здесь дергаем academicApi напрямую —
+  // единственный слой кэширования для этого ключа остаётся за useQuery.
   const { data } = useQuery(
     tutorId ? ["courses", { tutor_id: tutorId }] : null,
-    () => fetchCourses({ tutor_id: tutorId }),
+    () => academicApi("/courses", { params: { tutor_id: tutorId } }),
   );
   return data?.items ?? [];
 }
