@@ -40,8 +40,13 @@ func (h *HomeworkHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student_id and link_url are required")
 		return
 	}
+	if err := validateLinkURL(req.LinkURL); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
 
 	hw, err := h.repo.Create(r.Context(), req.StudentID, claims.UserID, req.LinkURL)
+
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to create homework")
 		return

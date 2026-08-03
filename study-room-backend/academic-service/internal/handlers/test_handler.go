@@ -47,6 +47,10 @@ func (h *TestHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student_id, title and link_url are required")
 		return
 	}
+	if err := validateLinkURL(req.LinkURL); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
 
 	t, err := h.repo.Create(r.Context(), req.StudentID, claims.UserID, req.Title, req.LinkURL, req.CourseID)
 	if err != nil {
