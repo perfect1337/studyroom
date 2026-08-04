@@ -89,7 +89,8 @@ export default function StudentHomework() {
           ))}
         </div>
 
-        <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden overflow-x-auto">
+        <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden">
+          <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left min-w-[640px]">
             <thead className="bg-surface-container text-on-surface-variant text-label-md font-bold uppercase tracking-wider">
               <tr>
@@ -147,6 +148,42 @@ export default function StudentHomework() {
               )}
             </tbody>
           </table>
+          </div>
+
+          {/* Мобильные карточки */}
+          <div className="md:hidden divide-y divide-outline-variant/30">
+            {loading && <div className="px-4 py-10 text-center text-on-surface-variant">Загрузка…</div>}
+            {!loading &&
+              items.map((hw) => {
+                const isViewed = hw.status === "viewed";
+                return (
+                  <div key={hw.id} className="p-4 flex flex-col gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="p-1.5 bg-primary/10 text-primary rounded shrink-0">
+                        <span className="material-symbols-outlined text-[18px]">link</span>
+                      </div>
+                      <span className="font-label-md text-on-surface truncate min-w-0 flex-1">{hw.link_url}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`flex items-center gap-1.5 font-bold text-[12px] ${isViewed ? "text-primary" : "text-secondary"}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${isViewed ? "bg-primary" : "bg-secondary"}`} />
+                        {isViewed ? `Сделано ${formatDate(hw.viewed_at)}` : "Не сделано"}
+                      </span>
+                      <span className="text-[12px] text-on-surface-variant">{formatDate(hw.created_at)}</span>
+                    </div>
+                    <button
+                      onClick={() => handleOpen(hw)}
+                      className="w-full py-2.5 rounded-lg bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container transition-colors"
+                    >
+                      Открыть
+                    </button>
+                  </div>
+                );
+              })}
+            {!loading && items.length === 0 && (
+              <div className="px-4 py-10 text-center text-on-surface-variant">Нет заданий с таким статусом.</div>
+            )}
+          </div>
         </div>
       </div>
     </DashboardShell>

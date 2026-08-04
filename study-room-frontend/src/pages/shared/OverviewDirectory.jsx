@@ -215,7 +215,8 @@ export default function OverviewDirectory({ role }) {
             </Link>
           </div>
 
-          <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden overflow-x-auto">
+          <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden">
+            <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left min-w-[640px]">
               <thead className="bg-surface-container-low border-b border-outline-variant">
                 <tr>
@@ -255,6 +256,30 @@ export default function OverviewDirectory({ role }) {
                 ))}
               </tbody>
             </table>
+            </div>
+
+            <div className="md:hidden divide-y divide-outline-variant">
+              {!loading && tutors.length === 0 && (
+                <div className="px-4 py-8 text-center text-on-surface-variant">Репетиторов пока нет</div>
+              )}
+              {pagedTutors.map((t) => (
+                <div
+                  key={t.id}
+                  onClick={() => navigate(`${base}/teachers/${t.id}`)}
+                  className="p-4 flex items-center gap-3 active:bg-surface-container-low cursor-pointer"
+                >
+                  <div className="w-10 h-10 shrink-0 rounded-full bg-primary-fixed flex items-center justify-center font-bold text-primary">
+                    {initials(t)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold truncate">{fullName(t)}</p>
+                    <p className="text-[12px] text-outline">{t.specialization ?? "—"}</p>
+                  </div>
+                  <StatusBadge status={TUTOR_STATUS_LABEL[t.tutor_status] ?? "Активен"} />
+                </div>
+              ))}
+            </div>
+
             <Pagination
               page={teachersPage}
               pageSize={TEACHERS_PAGE_SIZE}

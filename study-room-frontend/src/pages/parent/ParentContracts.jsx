@@ -301,6 +301,7 @@ export default function ParentContracts() {
               {loading ? "…" : `Показано ${filteredContracts.length} из ${contracts.length}`}
             </span>
           </div>
+          <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left">
             <thead className="bg-surface-container text-on-surface-variant text-label-md font-bold uppercase tracking-wider">
               <tr>
@@ -377,6 +378,54 @@ export default function ParentContracts() {
               })}
             </tbody>
           </table>
+          </div>
+
+          {/* Мобильные карточки */}
+          <div className="md:hidden divide-y divide-outline-variant/30">
+            {loading && <div className="px-4 py-8 text-center text-on-surface-variant">Загрузка…</div>}
+            {!loading && contracts.length === 0 && (
+              <div className="px-4 py-8 text-center text-on-surface-variant">Договоров пока нет</div>
+            )}
+            {!loading && contracts.length > 0 && filteredContracts.length === 0 && (
+              <div className="px-4 py-8 text-center text-on-surface-variant">
+                Ничего не найдено по заданным фильтрам.{" "}
+                <button type="button" onClick={resetFilters} className="text-primary hover:underline font-bold">
+                  Сбросить фильтры
+                </button>
+              </div>
+            )}
+            {!loading && filteredContracts.map((c) => {
+              const child = childrenById[c.student_id];
+              const course = coursesById[c.course_id];
+              const expiring = isExpiringSoon(c.end_date) && c.status !== "terminated";
+              return (
+                <div key={c.id} className={`p-4 flex flex-col gap-2 ${expiring ? "bg-warning/5" : ""}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-1.5 font-bold text-on-surface">
+                      {expiring && <span className="material-symbols-outlined text-warning text-[16px]">warning</span>}
+                      {c.contract_number || `№${c.id}`}
+                    </div>
+                    <span className={`font-bold text-[13px] ${expiring ? "text-warning" : "text-on-surface-variant"}`}>
+                      {formatDate(c.end_date)}
+                    </span>
+                  </div>
+                  <div className="text-[13px] text-on-surface">{child ? fullName(child) : `#${c.student_id}`}</div>
+                  <div className="text-[13px] text-on-surface-variant">{course?.title ?? course?.subject ?? `Курс #${c.course_id}`}</div>
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="font-bold text-on-surface">{formatMoney(c.amount)}</span>
+                    <div className="flex gap-1.5">
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full uppercase ${PAYMENT_STATUS_COLORS[c.payment_status] ?? "bg-surface-container text-on-surface-variant"}`}>
+                        {PAYMENT_STATUS_LABEL[c.payment_status] ?? c.payment_status}
+                      </span>
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full uppercase ${CONTRACT_STATUS_COLORS[c.status] ?? "bg-surface-container text-on-surface-variant"}`}>
+                        {CONTRACT_STATUS_LABEL[c.status] ?? c.status}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         <footer className="pt-6 text-center border-t border-outline-variant/30 text-on-surface-variant text-[13px] opacity-60">

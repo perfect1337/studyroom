@@ -238,6 +238,22 @@ export default function PeopleDirectory({ role }) {
 
   const { page, setPage, pageItems: pagedPeople } = usePagination(filteredPeople, PAGE_SIZE);
 
+  // Общие для десктопной таблицы и мобильных карточек вычисления по каждой
+  // строке — считаем один раз, чтобы не дублировать логику в двух местах.
+  const pagedRows = useMemo(
+    () =>
+      pagedPeople.map((p) => {
+        const pEnrollments = enrollmentsByStudent[p.id] ?? [];
+        const avg = pEnrollments.length
+          ? Math.round(pEnrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / pEnrollments.length)
+          : 0;
+        const pContracts = contractsByStudent[p.id] ?? [];
+        const latestContract = pContracts[0];
+        return { p, pEnrollments, avg, pContracts, latestContract };
+      }),
+    [pagedPeople, enrollmentsByStudent, contractsByStudent]
+  );
+
   const avgProgress = enrollments.length
     ? Math.round(enrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / enrollments.length)
     : 0;
@@ -249,6 +265,27 @@ export default function PeopleDirectory({ role }) {
         { label: "Средний прогресс", value: `${avgProgress}%` },
         { label: "Активные курсы", value: String(courses.length) },
       ];
+
+  function renderStatusBadge(pEnrollments, latestContract) {
+    if (showContracts) {
+      return (
+        <span
+          className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase ${
+            !latestContract || latestContract.status === "active" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
+          }`}
+        >
+          {latestContract ? CONTRACT_STATUS_LABEL[latestContract.status] ?? latestContract.status : "Без договора"}
+        </span>
+      );
+    }
+    const activeStatus = pEnrollments.length === 0 ? null : pEnrollments.find((e) => e.status === "active")?.status ?? pEnrollments[0].status;
+    return (
+      <StatusBadge
+        status={pEnrollments.length === 0 ? "Нет записи" : ENROLLMENT_STATUS_LABEL[activeStatus] ?? activeStatus}
+        color={pEnrollments.length === 0 ? "secondary" : ENROLLMENT_STATUS_COLOR[activeStatus] ?? "secondary"}
+      />
+    );
+  }
 
   function openAddModal() {
     setAddForm(EMPTY_CHILD_FORM);
@@ -328,8 +365,8 @@ export default function PeopleDirectory({ role }) {
             <h3 className="font-headline-sm text-headline-sm text-on-surface">
               {isParent ? "Список детей" : "Список учеников"}
             </h3>
-            <div className="flex flex-wrap gap-3">
-              <div className="relative">
+            <div className="flex flex-wrap gap-3 w-full md:w-auto">
+              <div className="relative flex-1 min-w-[160px] md:flex-none">
                 <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">
                   search
                 </span>
@@ -338,13 +375,13 @@ export default function PeopleDirectory({ role }) {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Поиск по ФИО..."
-                  className="bg-surface-container-lowest border border-outline-variant rounded-lg pl-9 pr-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none w-full sm:w-56"
+                  className="bg-surface-container-lowest border border-outline-variant rounded-lg pl-9 pr-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none w-full md:w-56"
                 />
               </div>
               <select
                 value={subjectFilter}
                 onChange={(e) => setSubjectFilter(e.target.value)}
-                className="bg-surface-container-lowest border border-outline-variant rounded-lg px-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                className="flex-1 min-w-[140px] md:flex-none bg-surface-container-lowest border border-outline-variant rounded-lg px-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
               >
                 <option value="">Все предметы</option>
                 {subjects.map((s) => (
@@ -355,7 +392,7 @@ export default function PeopleDirectory({ role }) {
                 <select
                   value={branchFilter}
                   onChange={(e) => setBranchFilter(e.target.value)}
-                  className="bg-surface-container-lowest border border-outline-variant rounded-lg px-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                  className="flex-1 min-w-[140px] md:flex-none bg-surface-container-lowest border border-outline-variant rounded-lg px-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
                 >
                   <option value="">Все филиалы</option>
                   {branches.map((b) => (
@@ -366,7 +403,8 @@ export default function PeopleDirectory({ role }) {
             </div>
           </div>
 
-          <div className="bg-surface-container-lowest rounded-2xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] overflow-hidden border border-outline-variant/30 overflow-x-auto">
+          <div className="bg-surface-container-lowest rounded-2xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 overflow-hidden">
+            <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[820px]">
               <thead>
                 <tr className="bg-surface-container-low text-on-surface-variant font-label-md">
@@ -391,13 +429,7 @@ export default function PeopleDirectory({ role }) {
                     </td>
                   </tr>
                 )}
-                {pagedPeople.map((p) => {
-                  const pEnrollments = enrollmentsByStudent[p.id] ?? [];
-                  const avg = pEnrollments.length
-                    ? Math.round(pEnrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / pEnrollments.length)
-                    : 0;
-                  const pContracts = contractsByStudent[p.id] ?? [];
-                  const latestContract = pContracts[0];
+                {pagedRows.map(({ p, pEnrollments, avg, latestContract }) => {
                   return (
                     <tr
                       key={p.id}
@@ -452,39 +484,77 @@ export default function PeopleDirectory({ role }) {
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
-                        {showContracts ? (
-                          <span
-                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase ${
-                              !latestContract || latestContract.status === "active" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
-                            }`}
-                          >
-                            {latestContract ? CONTRACT_STATUS_LABEL[latestContract.status] ?? latestContract.status : "Без договора"}
-                          </span>
-                        ) : (
-                          <StatusBadge
-                            status={
-                              pEnrollments.length === 0
-                                ? "Нет записи"
-                                : ENROLLMENT_STATUS_LABEL[
-                                    pEnrollments.find((e) => e.status === "active")?.status ?? pEnrollments[0].status
-                                  ] ?? pEnrollments[0].status
-                            }
-                            color={
-                              pEnrollments.length === 0
-                                ? "secondary"
-                                : ENROLLMENT_STATUS_COLOR[
-                                    pEnrollments.find((e) => e.status === "active")?.status ?? pEnrollments[0].status
-                                  ] ?? "secondary"
-                            }
-                          />
-                        )}
-                      </td>
+                      <td className="px-6 py-4">{renderStatusBadge(pEnrollments, latestContract)}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+            </div>
+
+            {/* Мобильный вид: карточки вместо таблицы, которая на узких экранах
+                съезжала бы за пределы экрана. */}
+            <div className="md:hidden divide-y divide-outline-variant/20">
+              {loading && <div className="px-4 py-10 text-center text-on-surface-variant">Загрузка…</div>}
+              {!loading && filteredPeople.length === 0 && (
+                <div className="px-4 py-8 text-center text-on-surface-variant">
+                  {isParent ? "У вас пока нет добавленных детей." : "Учеников не найдено"}
+                </div>
+              )}
+              {pagedRows.map(({ p, pEnrollments, avg, latestContract }) => (
+                <div
+                  key={p.id}
+                  onClick={() => navigate(detailPath(p.id))}
+                  className="p-4 flex flex-col gap-3 active:bg-surface-container-low cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 shrink-0 rounded-full bg-primary-container/20 flex items-center justify-center text-primary font-bold">
+                      {initials(p)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-on-surface truncate">{fullName(p) || p._fallbackName || "Ученик"}</div>
+                      <div className="text-[12px] text-on-surface-variant truncate">
+                        {[p.class_info, p.school].filter(Boolean).join(" · ") || "—"}
+                      </div>
+                    </div>
+                    {renderStatusBadge(pEnrollments, latestContract)}
+                  </div>
+
+                  <div className="flex flex-wrap gap-1">
+                    {pEnrollments.map((e) => (
+                      <span key={e.id} className="px-2 py-1 bg-surface-variant rounded text-[11px] font-bold text-primary">
+                        {coursesById[e.course_id]?.title ?? coursesById[e.course_id]?.subject ?? `#${e.course_id}`}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[12px] pt-2 border-t border-outline-variant/20">
+                    <div>
+                      <span className="text-on-surface-variant block">Прогресс</span>
+                      <span className="font-bold text-on-surface">{avg}%</span>
+                    </div>
+                    <div>
+                      <span className="text-on-surface-variant block">Успеваемость</span>
+                      <span className="text-on-surface">
+                        {avgGradeFor(p) != null ? avgGradeFor(p).toFixed(1) : "—"}
+                        {p.attendance_pct != null ? ` · ${Math.round(p.attendance_pct)}%` : ""}
+                      </span>
+                    </div>
+                    {showContracts && (
+                      <div className="col-span-2">
+                        <span className="text-on-surface-variant block">Срок договора</span>
+                        <span className="text-on-surface">
+                          {latestContract
+                            ? `${formatContractDate(latestContract.start_date)} — ${formatContractDate(latestContract.end_date)}`
+                            : "—"}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
             <Pagination page={page} pageSize={PAGE_SIZE} total={filteredPeople.length} onPageChange={setPage} itemLabel={isParent ? "детей" : "учеников"} />
           </div>
         </section>

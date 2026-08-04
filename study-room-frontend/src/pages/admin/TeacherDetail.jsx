@@ -466,7 +466,8 @@ export default function TeacherDetail({ role = "owner" }) {
                   <h3 className="font-headline-sm text-headline-sm text-on-surface">Ученики преподавателя</h3>
                 </div>
 
-                <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 overflow-hidden overflow-x-auto">
+                <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 overflow-hidden">
+                  <div className="hidden md:block overflow-x-auto">
                   <table className="w-full text-left border-collapse min-w-[720px]">
                     <thead>
                       <tr className="bg-surface-container-low text-on-surface-variant font-label-md">
@@ -538,11 +539,68 @@ export default function TeacherDetail({ role = "owner" }) {
                       })}
                     </tbody>
                   </table>
+                  </div>
+
+                  <div className="md:hidden divide-y divide-outline-variant/20">
+                    {myStudents.length === 0 && (
+                      <div className="px-4 py-8 text-center text-on-surface-variant">
+                        К этому преподавателю пока не записан ни один ученик
+                      </div>
+                    )}
+                    {myStudents.map(({ student, enrollments: sEnrollments }) => {
+                      const avg = sEnrollments.length
+                        ? Math.round(sEnrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / sEnrollments.length)
+                        : 0;
+                      return (
+                        <div
+                          key={student.id}
+                          onClick={() => navigate(isOwner ? `/admin/students/${student.id}` : `/branch/students/${student.id}`)}
+                          className="p-4 flex flex-col gap-3 active:bg-surface-container-low cursor-pointer"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 shrink-0 rounded-full bg-primary-container/20 flex items-center justify-center text-primary font-bold">
+                              {initials(student)}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="font-bold text-on-surface truncate">{fullName(student) || "Ученик"}</div>
+                              <div className="text-[12px] text-on-surface-variant truncate">
+                                {[student.class_info, student.school].filter(Boolean).join(" · ") || "—"}
+                              </div>
+                            </div>
+                            <span className="shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase bg-green-100 text-green-700">
+                              {sEnrollments.some((e) => e.status === "active") ? "Активен" : "—"}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {sEnrollments.map((e) => (
+                              <span key={e.id} className="px-2 py-1 bg-surface-variant rounded text-[11px] font-bold text-primary">
+                                {coursesById[e.course_id]?.title ?? coursesById[e.course_id]?.subject ?? `#${e.course_id}`}
+                              </span>
+                            ))}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-[12px] pt-2 border-t border-outline-variant/20">
+                            <div>
+                              <span className="text-on-surface-variant block">Прогресс</span>
+                              <span className="font-bold text-on-surface">{avg}%</span>
+                            </div>
+                            <div>
+                              <span className="text-on-surface-variant block">Успеваемость</span>
+                              <span className="text-on-surface">
+                                {avgGradeForStudent(student) != null ? avgGradeForStudent(student).toFixed(1) : "—"}
+                                {student.attendance_pct != null ? ` · ${Math.round(student.attendance_pct)}%` : ""}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div className="pt-stack-lg">
                   <h3 className="font-headline-sm text-headline-sm text-on-surface mb-stack-md">Все занятия за месяц</h3>
                   <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 overflow-hidden">
+                    <div className="hidden md:block">
                     <table className="w-full text-left">
                       <thead className="bg-surface-container text-on-surface-variant text-label-md font-bold uppercase tracking-wider">
                         <tr>
@@ -575,6 +633,29 @@ export default function TeacherDetail({ role = "owner" }) {
                         })}
                       </tbody>
                     </table>
+                    </div>
+
+                    <div className="md:hidden divide-y divide-outline-variant/30">
+                      {upcomingLessons.length === 0 && (
+                        <div className="px-4 py-8 text-center text-on-surface-variant">Занятий в этом месяце не запланировано</div>
+                      )}
+                      {upcomingLessons.map((l) => {
+                        const course = coursesById[l.course_id];
+                        return (
+                          <div key={l.id} className="p-4 flex flex-col gap-1">
+                            <p className="font-label-md text-on-surface">{l.topic || course?.title || course?.subject || `Курс #${l.course_id}`}</p>
+                            <div className="flex items-center justify-between text-[12px]">
+                              <span className="text-on-surface-variant">
+                                {new Date(l.lesson_date).toLocaleDateString("ru-RU")} · {l.start_time}–{l.end_time}
+                              </span>
+                              <span className="text-on-surface-variant">
+                                {l.location_type === "remote" ? "Дистанционно" : "Очно"} · {l.lesson_format === "group" ? "Группа" : "Индивидуально"}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </section>

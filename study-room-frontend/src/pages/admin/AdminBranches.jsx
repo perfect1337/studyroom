@@ -291,7 +291,7 @@ export default function AdminBranches() {
         )}
 
         <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead className="bg-surface-container-low text-on-surface-variant border-b border-outline-variant">
                 <tr>
@@ -345,6 +345,35 @@ export default function AdminBranches() {
               </tbody>
             </table>
           </div>
+
+          <div className="md:hidden divide-y divide-outline-variant">
+            {!loading && branches.length === 0 && (
+              <div className="px-4 py-10 text-center text-on-surface-variant">Филиалов пока нет</div>
+            )}
+            {loading && <div className="px-4 py-10 text-center text-on-surface-variant">Загрузка...</div>}
+            {branches.map((b) => (
+              <div key={b.id} className="p-4 flex flex-col gap-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="font-bold text-on-surface">{b.name}</div>
+                    <div className="text-[12px] text-outline">ID: {b.id} · {b.city}</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setDeleteError("");
+                      setBranchToDelete(b);
+                    }}
+                    className="shrink-0 p-1.5 -m-1.5 text-error"
+                    aria-label="Удалить филиал"
+                  >
+                    <span className="material-symbols-outlined text-[20px]">delete</span>
+                  </button>
+                </div>
+                <div className="text-[12px] text-on-surface-variant">{b.address || "—"}</div>
+                <div className="text-[12px] text-on-surface-variant">{b.phone || "—"}</div>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div>
@@ -360,7 +389,7 @@ export default function AdminBranches() {
           )}
 
           <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead className="bg-surface-container-low text-on-surface-variant border-b border-outline-variant">
                   <tr>
@@ -415,6 +444,38 @@ export default function AdminBranches() {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            <div className="md:hidden divide-y divide-outline-variant">
+              {!ownersLoading && branchOwners.length === 0 && (
+                <div className="px-4 py-10 text-center text-on-surface-variant">Руководителей филиалов пока нет</div>
+              )}
+              {ownersLoading && <div className="px-4 py-10 text-center text-on-surface-variant">Загрузка...</div>}
+              {branchOwners.map((o) => (
+                <div key={o.id} className="p-4 flex flex-col gap-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-bold text-on-surface truncate">{fullName(o)}</div>
+                      <div className="text-[12px] text-outline">ID: {o.id}</div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setOwnerDeleteError("");
+                        setOwnerToDelete(o);
+                      }}
+                      className="shrink-0 p-1.5 -m-1.5 text-error"
+                      aria-label="Удалить руководителя"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">delete</span>
+                    </button>
+                  </div>
+                  <div className="text-[12px] text-on-surface-variant truncate">{o.email}</div>
+                  <div className="text-[12px] text-on-surface-variant">{o.phone || "—"}</div>
+                  <div className="text-[12px] text-on-surface">
+                    {branchNameById[o.branch_id] || (o.branch_id ? `Филиал #${o.branch_id}` : "—")}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>

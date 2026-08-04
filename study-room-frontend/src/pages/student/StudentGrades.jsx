@@ -103,10 +103,11 @@ export default function StudentGrades() {
           </div>
         </section>
 
-        <section className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden overflow-x-auto">
+        <section className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden">
           <div className="p-stack-md border-b border-outline-variant">
             <h3 className="font-headline-sm text-headline-sm text-on-background">Оценки по каждому тесту</h3>
           </div>
+          <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left min-w-[640px]">
             <thead className="bg-surface-container text-on-surface-variant text-label-md font-bold uppercase tracking-wider">
               <tr>
@@ -164,6 +165,47 @@ export default function StudentGrades() {
                 })}
             </tbody>
           </table>
+          </div>
+
+          {/* Мобильные карточки */}
+          <div className="md:hidden divide-y divide-outline-variant/30">
+            {loading && <div className="px-4 py-10 text-center text-on-surface-variant">Загрузка…</div>}
+            {!loading && sorted.length === 0 && (
+              <div className="px-4 py-10 text-center text-on-surface-variant">Тестов пока не было.</div>
+            )}
+            {!loading &&
+              sorted.map((t) => {
+                const isSubmitted = t.status === "submitted";
+                return (
+                  <div key={t.id} className="p-4 flex flex-col gap-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-label-md text-on-background truncate">{t.title}</p>
+                        <div className="mt-1">
+                          <CourseTag title={t.course_title} subject={t.course_subject} />
+                        </div>
+                      </div>
+                      {t.grade != null ? (
+                        <span className="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-lg bg-primary/10 text-primary font-bold">
+                          {t.grade}
+                        </span>
+                      ) : (
+                        <span className="shrink-0 text-on-surface-variant text-sm">—</span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className={`flex items-center gap-1.5 font-bold text-[13px] ${isSubmitted ? "text-primary" : "text-secondary"}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${isSubmitted ? "bg-primary" : "bg-secondary"}`} />
+                        {isSubmitted ? "Сдан" : "Не сдан"}
+                      </span>
+                      <span className="text-[12px] text-on-surface-variant">
+                        {formatDate(t.graded_at || t.submitted_at || t.created_at)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
         </section>
       </div>
     </DashboardShell>

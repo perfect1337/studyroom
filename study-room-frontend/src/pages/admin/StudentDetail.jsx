@@ -402,6 +402,7 @@ export default function StudentDetail({ role = "parent" }) {
             <div className="pt-stack-lg">
               <h3 className="font-headline-sm text-headline-sm text-on-surface mb-stack-md">Домашние задания</h3>
               <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 overflow-hidden">
+                <div className="hidden md:block">
                 <table className="w-full text-left">
                   <thead className="bg-surface-container text-on-surface-variant text-label-md font-bold uppercase tracking-wider">
                     <tr>
@@ -437,12 +438,37 @@ export default function StudentDetail({ role = "parent" }) {
                     })}
                   </tbody>
                 </table>
+                </div>
+
+                <div className="md:hidden divide-y divide-outline-variant/30">
+                  {homework.length === 0 && (
+                    <div className="px-4 py-8 text-center text-on-surface-variant">Заданий пока нет</div>
+                  )}
+                  {homework.map((hw) => {
+                    const isViewed = hw.status === "viewed";
+                    return (
+                      <div key={hw.id} className="p-4 flex flex-col gap-1.5">
+                        <p className="font-label-md text-on-surface truncate">{hw.link_url}</p>
+                        <div className="flex items-center justify-between">
+                          <span className={`flex items-center gap-1.5 font-bold text-[13px] ${isViewed ? "text-green-600" : "text-orange-600"}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${isViewed ? "bg-green-600" : "bg-orange-600"}`} />
+                            {isViewed ? "Сделано" : "Не сделано"}
+                          </span>
+                          <span className="text-[12px] text-on-surface-variant font-bold">
+                            {hw.created_at ? new Date(hw.created_at).toLocaleDateString("ru-RU") : "—"}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
             <div className="pt-stack-lg">
               <h3 className="font-headline-sm text-headline-sm text-on-surface mb-stack-md">Тесты и оценки</h3>
               <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant/30 overflow-hidden">
+                <div className="hidden md:block">
                 <table className="w-full text-left">
                   <thead className="bg-surface-container text-on-surface-variant text-label-md font-bold uppercase tracking-wider">
                     <tr>
@@ -492,6 +518,39 @@ export default function StudentDetail({ role = "parent" }) {
                       })}
                   </tbody>
                 </table>
+                </div>
+
+                <div className="md:hidden divide-y divide-outline-variant/30">
+                  {tests.length === 0 && (
+                    <div className="px-4 py-8 text-center text-on-surface-variant">Тестов пока нет</div>
+                  )}
+                  {tests
+                    .slice()
+                    .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
+                    .map((t) => {
+                      const isSubmitted = t.status === "submitted";
+                      return (
+                        <div key={t.id} className="p-4 flex flex-col gap-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="font-label-md text-on-surface truncate min-w-0">{t.title}</p>
+                            <span className="shrink-0 font-bold text-on-surface">
+                              {t.grade != null ? t.grade : <span className="text-on-surface-variant font-normal">—</span>}
+                            </span>
+                          </div>
+                          <CourseTag title={t.course_title} subject={t.course_subject} />
+                          <div className="flex items-center justify-between">
+                            <span className={`flex items-center gap-1.5 font-bold text-[13px] ${isSubmitted ? "text-green-600" : "text-orange-600"}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${isSubmitted ? "bg-green-600" : "bg-orange-600"}`} />
+                              {isSubmitted ? "Сдан" : "Не сдан"}
+                            </span>
+                            <span className="text-[12px] text-on-surface-variant font-bold">
+                              {t.created_at ? new Date(t.created_at).toLocaleDateString("ru-RU") : "—"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
               </div>
             </div>
           </section>

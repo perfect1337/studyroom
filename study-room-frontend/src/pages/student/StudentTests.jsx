@@ -93,7 +93,8 @@ export default function StudentTests() {
           ))}
         </div>
 
-        <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden overflow-x-auto">
+        <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden">
+          <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left min-w-[720px]">
             <thead className="bg-surface-container text-on-surface-variant text-label-md font-bold uppercase tracking-wider">
               <tr>
@@ -176,6 +177,61 @@ export default function StudentTests() {
               )}
             </tbody>
           </table>
+          </div>
+
+          {/* Мобильные карточки */}
+          <div className="md:hidden divide-y divide-outline-variant/30">
+            {loading && <div className="px-4 py-10 text-center text-on-surface-variant">Загрузка…</div>}
+            {!loading &&
+              items.map((t) => {
+                const isSubmitted = t.status === "submitted";
+                return (
+                  <div key={t.id} className="p-4 flex flex-col gap-3">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="p-1.5 bg-primary/10 text-primary rounded shrink-0">
+                        <span className="material-symbols-outlined text-[18px]">quiz</span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-label-md text-on-surface truncate">{t.title}</p>
+                        <a
+                          href={t.link_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs text-primary hover:underline break-all"
+                        >
+                          {t.link_url}
+                        </a>
+                      </div>
+                      {t.grade ? (
+                        <span className="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 text-primary font-bold">
+                          {t.grade}
+                        </span>
+                      ) : (
+                        <span className="shrink-0 text-on-surface-variant text-sm">—</span>
+                      )}
+                    </div>
+                    <CourseTag title={t.course_title} subject={t.course_subject} />
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`flex items-center gap-1.5 font-bold text-[12px] ${isSubmitted ? "text-primary" : "text-secondary"}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${isSubmitted ? "bg-primary" : "bg-secondary"}`} />
+                        {isSubmitted ? `Сдан ${formatDate(t.submitted_at)}` : "Не сдан"}
+                      </span>
+                      <span className="text-[12px] text-on-surface-variant">{formatDate(t.created_at)}</span>
+                    </div>
+                    <button
+                      onClick={() => handleSubmit(t)}
+                      disabled={isSubmitted || submittingId === t.id}
+                      className="w-full py-2.5 rounded-lg bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container transition-colors disabled:opacity-50"
+                    >
+                      {isSubmitted ? "Сдан" : submittingId === t.id ? "Отправка..." : "Отметить сданным"}
+                    </button>
+                  </div>
+                );
+              })}
+            {!loading && items.length === 0 && (
+              <div className="px-4 py-10 text-center text-on-surface-variant">Нет тестов с таким статусом.</div>
+            )}
+          </div>
         </div>
       </div>
     </DashboardShell>

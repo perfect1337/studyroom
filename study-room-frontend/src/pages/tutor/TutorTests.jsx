@@ -244,11 +244,11 @@ export default function TutorTests() {
           {submitError && <p className="text-sm text-error mt-3">{submitError}</p>}
         </section>
 
-        <section className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden overflow-x-auto">
+        <section className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden">
           <div className="p-stack-md border-b border-outline-variant flex flex-col md:flex-row md:items-center md:justify-between gap-stack-md">
             <h3 className="font-headline-sm text-headline-sm text-on-background">Выданные тесты</h3>
             <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
+              <div className="relative flex-1 min-w-[160px] sm:flex-none">
                 <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">
                   search
                 </span>
@@ -263,7 +263,7 @@ export default function TutorTests() {
               <select
                 value={studentFilter}
                 onChange={(e) => setStudentFilter(e.target.value)}
-                className="bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md font-label-md outline-none focus:ring-2 focus:ring-primary/20"
+                className="flex-1 min-w-[140px] sm:flex-none bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md font-label-md outline-none focus:ring-2 focus:ring-primary/20"
               >
                 <option value="">Все ученики</option>
                 {students.map((s) => (
@@ -275,7 +275,7 @@ export default function TutorTests() {
               <select
                 value={courseFilter}
                 onChange={(e) => setCourseFilter(e.target.value)}
-                className="bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md font-label-md outline-none focus:ring-2 focus:ring-primary/20"
+                className="flex-1 min-w-[140px] sm:flex-none bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md font-label-md outline-none focus:ring-2 focus:ring-primary/20"
               >
                 <option value="">Все курсы</option>
                 {courses.map((c) => (
@@ -284,7 +284,7 @@ export default function TutorTests() {
                   </option>
                 ))}
               </select>
-              <div className="flex gap-1.5">
+              <div className="flex gap-1.5 flex-wrap">
                 {STATUS_FILTERS.map((f) => (
                   <button
                     key={f}
@@ -308,6 +308,8 @@ export default function TutorTests() {
           ) : filteredSorted.length === 0 ? (
             <p className="p-stack-md text-on-surface-variant font-body-md">Тестов с такими фильтрами не найдено</p>
           ) : (
+            <>
+            <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left min-w-[720px]">
               <thead className="bg-surface-container text-on-surface-variant text-label-md font-bold uppercase tracking-wider">
                 <tr>
@@ -378,6 +380,67 @@ export default function TutorTests() {
                 })}
               </tbody>
             </table>
+            </div>
+
+            {/* Мобильные карточки */}
+            <div className="md:hidden divide-y divide-outline-variant/30">
+              {filteredSorted.map((t) => {
+                const student = studentsById[t.student_id];
+                const isSubmitted = t.status === "submitted";
+                return (
+                  <div key={t.id} className="p-4 flex flex-col gap-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-bold text-on-background">
+                        {student ? fullName(student) : t.student_name || `Ученик #${t.student_id}`}
+                      </span>
+                      <span
+                        className={`shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full ${
+                          isSubmitted ? "bg-surface-container-highest text-primary" : "bg-secondary-fixed text-on-secondary-container"
+                        }`}
+                      >
+                        {STATUS_LABEL[t.status] ?? t.status}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="font-label-md text-on-background">{t.title}</p>
+                      <a
+                        href={t.link_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm text-primary hover:underline break-all"
+                      >
+                        {t.link_url}
+                      </a>
+                      <p className="text-xs text-on-surface-variant mt-1">Выдан {formatDate(t.created_at)}</p>
+                    </div>
+                    <CourseTag title={t.course_title} subject={t.course_subject} />
+                    <div>
+                      {!isSubmitted ? (
+                        <span className="text-on-surface-variant text-sm">Ждём сдачи</span>
+                      ) : (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {GRADES.map((g) => (
+                            <button
+                              key={g}
+                              disabled={gradingId === t.id}
+                              onClick={() => handleGrade(t.id, g)}
+                              className={`w-9 h-9 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 ${
+                                t.grade === g
+                                  ? "bg-primary text-on-primary"
+                                  : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"
+                              }`}
+                            >
+                              {g}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            </>
           )}
         </section>
       </div>

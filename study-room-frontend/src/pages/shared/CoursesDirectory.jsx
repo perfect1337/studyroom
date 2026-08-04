@@ -235,7 +235,7 @@ export default function CoursesDirectory({ role }) {
         )}
 
         <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead className="bg-surface-container-low text-on-surface-variant border-b border-outline-variant">
                 <tr>
@@ -319,6 +319,66 @@ export default function CoursesDirectory({ role }) {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Мобильные карточки */}
+          <div className="md:hidden divide-y divide-outline-variant">
+            {!loading && courses.length === 0 && (
+              <div className="px-4 py-10 text-center text-on-surface-variant">Курсы не найдены</div>
+            )}
+            {loading && <div className="px-4 py-10 text-center text-on-surface-variant">Загрузка...</div>}
+            {courses.map((c) => (
+              <div key={c.id} className="p-4 flex flex-col gap-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-bold text-on-surface truncate">{c.title}</div>
+                    {isOwner ? (
+                      <div className="text-[12px] text-outline">ID: {c.id}</div>
+                    ) : (
+                      c.description && <div className="text-[12px] text-on-surface-variant mt-0.5 line-clamp-2">{c.description}</div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setDeleteError("");
+                      setCourseToDelete(c);
+                    }}
+                    className="shrink-0 p-1.5 -m-1.5 text-error"
+                    aria-label="Удалить курс"
+                  >
+                    <span className="material-symbols-outlined text-[20px]">delete</span>
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <span className="text-[12px] font-bold text-on-surface bg-surface-variant px-2 py-1 rounded">{c.subject}</span>
+                  <span className="inline-block whitespace-nowrap bg-primary-fixed text-on-primary-fixed px-2.5 py-1 rounded-full text-[11px] font-medium">
+                    {FORMAT_LABEL[c.format] ?? c.format}
+                  </span>
+                  {isOwner && (
+                    <span className="text-[12px] text-on-surface-variant px-2 py-1">
+                      {branchNameById[c.branch_id] || `Филиал #${c.branch_id}`}
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-[12px] text-on-surface-variant border-t border-outline-variant/40 pt-2">
+                  <span className="block mb-1">Преподаватели{isOwner ? ` (${c.tutor_ids?.length ?? 0})` : ""}</span>
+                  {!isOwner &&
+                    (c.tutor_ids?.length ? (
+                      <div className="flex flex-wrap gap-1">
+                        {c.tutor_ids.map((id) => (
+                          <span key={id} className="inline-block whitespace-nowrap bg-surface-container-high px-2 py-0.5 rounded-full text-[12px]">
+                            {tutorNameById[id] || `#${id}`}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-outline">Не назначены</span>
+                    ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>

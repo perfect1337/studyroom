@@ -419,7 +419,7 @@ export default function FinanceDirectory({ role }) {
                 />
               </div>
             </div>
-            <div className="overflow-x-auto">
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-container-low/50">
@@ -470,6 +470,42 @@ export default function FinanceDirectory({ role }) {
                   })}
                 </tbody>
               </table>
+            </div>
+
+            {/* Мобильные карточки */}
+            <div className="md:hidden divide-y divide-surface-container-high">
+              {!loading && filteredContracts.length === 0 && (
+                <div className="px-4 py-8 text-center text-on-surface-variant">
+                  {contracts.length === 0 ? "Договоров пока нет" : "Ничего не найдено"}
+                </div>
+              )}
+              {pagedContracts.map((c) => {
+                const student = studentsById[c.student_id];
+                const parent = parentsById[c.parent_id];
+                return (
+                  <div key={c.id} onClick={() => openEditModal(c)} className="p-4 flex flex-col gap-2 active:bg-surface-container-low/30 cursor-pointer">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-bold text-on-surface truncate">
+                          {student ? fullName(student) : `Ученик #${c.student_id}`}
+                        </div>
+                        <div className="text-xs text-on-surface-variant truncate">{parent ? fullName(parent) : `Родитель #${c.parent_id}`}</div>
+                      </div>
+                      <span className="shrink-0 text-xs text-on-surface-variant">№{c.id}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[13px]">
+                      <span className="text-on-surface-variant">{formatDate(c.start_date)} — {formatDate(c.end_date)}</span>
+                      <span className="font-semibold text-on-surface">{formatMoney(c.amount)}</span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap pt-1">
+                      <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-bold ${CONTRACT_STATUS_COLORS[c.status] ?? "bg-gray-100 text-gray-800"}`}>
+                        {CONTRACT_STATUS_LABEL[c.status] ?? c.status}
+                      </span>
+                      <StatusBadge status={PAYMENT_STATUS_LABEL[c.payment_status] ?? c.payment_status} />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             <Pagination
               page={contractsPage}

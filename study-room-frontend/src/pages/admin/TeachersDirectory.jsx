@@ -373,7 +373,7 @@ export default function TeachersDirectory({ role }) {
 
         {/* Таблица преподавателей */}
         <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead className="bg-surface-container-low text-on-surface-variant border-b border-outline-variant">
               <tr>
@@ -462,6 +462,71 @@ export default function TeachersDirectory({ role }) {
             </tbody>
           </table>
           </div>
+
+          {/* Мобильные карточки вместо таблицы */}
+          <div className="md:hidden divide-y divide-outline-variant">
+            {!loading && visibleTutors.length === 0 && (
+              <div className="px-4 py-10 text-center text-on-surface-variant">Преподаватели не найдены</div>
+            )}
+            {loading && <div className="px-4 py-10 text-center text-on-surface-variant">Загрузка...</div>}
+            {pagedTutors.map((t) => {
+              const studentCount = activeStudentsByTutor[t.id]?.size ?? 0;
+              const status = t.tutor_status ?? "active";
+              const isFired = t.is_active === false;
+              return (
+                <div key={t.id} className="p-4 flex flex-col gap-3 active:bg-surface-container-low">
+                  <div className="flex items-center gap-3" onClick={() => navigate(detailPath(t.id))}>
+                    <div className="h-11 w-11 shrink-0 rounded-lg bg-primary-fixed flex items-center justify-center font-bold text-primary">
+                      {initials(t)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-on-surface truncate">{fullName(t)}</div>
+                      <div className="text-[12px] text-on-surface-variant">ID: {t.id}</div>
+                    </div>
+                    <span className="inline-block whitespace-nowrap bg-primary-fixed text-on-primary-fixed px-2.5 py-1 rounded-full text-[11px] font-medium">
+                      {t.specialization || "—"}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[12px] pt-2 border-t border-outline-variant/40" onClick={() => navigate(detailPath(t.id))}>
+                    {isOwner && (
+                      <div>
+                        <span className="text-on-surface-variant block">Филиал</span>
+                        <span className="text-on-surface">{branchNameById[t.branch_id] || (t.branch_id ? `#${t.branch_id}` : "—")}</span>
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-on-surface-variant block">Активные ученики</span>
+                      <span className="font-bold text-on-surface">{studentCount}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap pt-1" onClick={(e) => e.stopPropagation()}>
+                    {isFired ? (
+                      <StatusBadge status="Уволен" color="red" />
+                    ) : (
+                      <>
+                        <StatusBadge status={TUTOR_STATUS_LABEL[status] ?? status} />
+                        <select
+                          value={status}
+                          disabled={rowUpdating === t.id}
+                          onChange={(e) => handleStatusChange(t.id, e.target.value)}
+                          className="flex-1 min-w-[140px] text-[12px] border border-outline-variant rounded-md px-2 py-1.5 bg-surface-container-lowest disabled:opacity-50"
+                        >
+                          {statusOptions.map((s) => (
+                            <option key={s} value={s}>
+                              {TUTOR_STATUS_LABEL[s]}
+                            </option>
+                          ))}
+                        </select>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
           <Pagination page={page} pageSize={PAGE_SIZE} total={visibleTutors.length} onPageChange={setPage} itemLabel="преподавателей" />
         </div>
       </div>
