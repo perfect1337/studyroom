@@ -13,12 +13,13 @@ import (
 
 type HomeworkHandler struct {
 	repo       *repository.HomeworkRepository
+	lessons    *repository.LessonRepository
 	userRefs   *repository.UserRefRepository
 	userClient ChildrenResolver
 }
 
-func NewHomeworkHandler(repo *repository.HomeworkRepository, userRefs *repository.UserRefRepository, userClient ChildrenResolver) *HomeworkHandler {
-	return &HomeworkHandler{repo: repo, userRefs: userRefs, userClient: userClient}
+func NewHomeworkHandler(repo *repository.HomeworkRepository, lessons *repository.LessonRepository, userRefs *repository.UserRefRepository, userClient ChildrenResolver) *HomeworkHandler {
+	return &HomeworkHandler{repo: repo, lessons: lessons, userRefs: userRefs, userClient: userClient}
 }
 
 type createHomeworkRequest struct {
@@ -42,6 +43,20 @@ func (h *HomeworkHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := validateLinkURL(req.LinkURL); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+
+	// Тьютор может выдать домашнее задание только ученику, с которым у
+	// него уже было или ещё будет занятие (см. IsStudentOfTutor) — иначе
+	// любой тьютор мог бы выдать задание произвольному ученику по одному
+	// лишь id, даже никогда его не обучая.
+	isOwn, err := h.lessons.IsStudentOfTutor(r.Context(), claims.UserID, req.StudentID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to verify student")
+		return
+	}
+	if !isOwn {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "you can only assign homework to students you have lessons with")
 		return
 	}
 
@@ -121,6 +136,18 @@ func (h *HomeworkHandler) List(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		items = filtered
+	}
+
+	// student_name — фолбэк-имя на случай, если GET /users на фронте не
+	// вернёт этого ученика (branch-фильтр для роли tutor, см. Homework.StudentName).
+	studentIDs := make([]int64, len(items))
+	for i, hw := range items {
+		studentIDs[i] = hw.StudentID
+	}
+	if names, err := h.userRefs.NamesOf(r.Context(), studentIDs); err == nil {
+		for _, hw := range items {
+			hw.StudentName = names[hw.StudentID]
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"items": nonNilHomework(items)})

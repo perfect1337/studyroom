@@ -113,6 +113,29 @@ func (h *LessonHandler) List(w http.ResponseWriter, r *http.Request) {
 		l.ParticipantIDs = participantsByLesson[l.ID]
 	}
 
+	// participant_names — фолбэк-имена из user_refs (см. Lesson.ParticipantNames):
+	// не блокируем ответ, если резолв не удался, просто отдаём без имён.
+	allParticipantIDs := make([]int64, 0, len(lessons))
+	for _, l := range lessons {
+		allParticipantIDs = append(allParticipantIDs, l.ParticipantIDs...)
+	}
+	if names, err := h.userRefs.NamesOf(r.Context(), allParticipantIDs); err == nil {
+		for _, l := range lessons {
+			if len(l.ParticipantIDs) == 0 {
+				continue
+			}
+			m := make(map[int64]string, len(l.ParticipantIDs))
+			for _, id := range l.ParticipantIDs {
+				if name, ok := names[id]; ok {
+					m[id] = name
+				}
+			}
+			if len(m) > 0 {
+				l.ParticipantNames = m
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"items": nonNilLessons(lessons)})
 }
 

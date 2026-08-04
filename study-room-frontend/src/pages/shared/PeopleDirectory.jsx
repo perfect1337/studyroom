@@ -148,7 +148,12 @@ export default function PeopleDirectory({ role }) {
         lessonItems.forEach((l) => {
           (l.participant_ids ?? []).forEach((studentId) => {
             if (!seen.has(studentId)) {
-              seen.set(studentId, byId[studentId] ?? { id: studentId });
+              // GET /users фильтрует учеников тьютора по branch_id — если
+              // участник занятия в этот фильтр не попал (см. api/lesson_handler.go
+              // ParticipantNames), используем денормализованное имя из
+              // lesson.participant_names, чтобы не показывать голое "Ученик".
+              const fallbackName = l.participant_names?.[studentId];
+              seen.set(studentId, byId[studentId] ?? { id: studentId, _fallbackName: fallbackName });
             }
           });
         });
@@ -226,7 +231,7 @@ export default function PeopleDirectory({ role }) {
         const hasSubject = pEnrollments.some((e) => coursesById[e.course_id]?.subject === subjectFilter);
         if (!hasSubject) return false;
       }
-      if (query && !fullName(p).toLowerCase().includes(query)) return false;
+      if (query && !`${fullName(p)} ${p._fallbackName ?? ""}`.toLowerCase().includes(query)) return false;
       return true;
     });
   }, [people, isOwner, branchFilter, subjectFilter, search, enrollmentsByStudent, coursesById]);
@@ -405,7 +410,7 @@ export default function PeopleDirectory({ role }) {
                             {initials(p)}
                           </div>
                           <div>
-                            <div className="font-bold text-on-surface">{fullName(p) || "Ученик"}</div>
+                            <div className="font-bold text-on-surface">{fullName(p) || p._fallbackName || "Ученик"}</div>
                             <div className="text-[12px] text-on-surface-variant">
                               {[p.class_info, p.school].filter(Boolean).join(" · ") || "—"}
                             </div>

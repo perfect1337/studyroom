@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { assignHomework, fetchHomework } from "../../api/academic.js";
+import { assignHomework, fetchHomework, fetchLessons } from "../../api/academic.js";
 import { fetchMyPeople } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
@@ -21,7 +21,7 @@ export default function TutorHomework() {
 
   const [homework, setHomework] = useState([]);
   const [studentsById, setStudentsById] = useState({});
-  const [students, setStudents] = useState([]);
+  const [assignableStudents, setAssignableStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -33,13 +33,33 @@ export default function TutorHomework() {
     setLoading(true);
     setError("");
     try {
-      const [hwRes, peopleRes] = await Promise.all([fetchHomework(), fetchMyPeople()]);
+      const [hwRes, peopleRes, lessonsRes] = await Promise.all([
+        fetchHomework(),
+        fetchMyPeople(),
+        fetchLessons({ tutor_id: user.id }),
+      ]);
       setHomework(hwRes?.items ?? []);
       const list = peopleRes?.students ?? [];
-      setStudents(list);
       const byId = {};
       list.forEach((s) => (byId[s.id] = s));
       setStudentsById(byId);
+
+      // Задание можно выдать только тому, с кем уже было или ещё будет
+      // занятие (см. TutorStudents.jsx / PeopleDirectory.jsx и бэкенд
+      // IsStudentOfTutor в lesson_repository.go). Часть таких учеников может
+      // не найтись в peopleRes (GET /users фильтрует по branch_id тьютора) —
+      // добавляем их отдельно, с именем из lesson.participant_names, чтобы
+      // их вообще можно было выбрать в форме, а не только показать в списке.
+      const lessonList = lessonsRes?.items ?? [];
+      const linked = new Map();
+      lessonList.forEach((l) => {
+        if (l.status === "cancelled") return;
+        (l.participant_ids ?? []).forEach((id) => {
+          if (linked.has(id)) return;
+          linked.set(id, byId[id] ?? { id, first_name: l.participant_names?.[id] ?? `#${id}`, last_name: "" });
+        });
+      });
+      setAssignableStudents(Array.from(linked.values()));
     } catch (e) {
       setError(e.message || "Не удалось загрузить данные");
     } finally {
@@ -105,12 +125,17 @@ export default function TutorHomework() {
                 className="w-full bg-surface border border-outline-variant rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20"
               >
                 <option value="">Выберите ученика</option>
-                {students.map((s) => (
+                {assignableStudents.map((s) => (
                   <option key={s.id} value={s.id}>
                     {fullName(s)}
                   </option>
                 ))}
               </select>
+              {assignableStudents.length === 0 && (
+                <p className="text-xs text-on-surface-variant mt-1">
+                  Нет учеников с назначенными занятиями. Сначала добавьте занятие в расписании.
+                </p>
+              )}
             </div>
             <div className="space-y-stack-sm">
               <label className="font-label-md text-on-surface-variant ml-1">Ссылка на задание</label>
@@ -151,7 +176,7 @@ export default function TutorHomework() {
                   <li key={hw.id} className="p-stack-md flex items-center justify-between gap-4 flex-wrap">
                     <div className="min-w-0">
                       <p className="font-label-md text-label-md font-bold text-on-background">
-                        {student ? fullName(student) : `Ученик #${hw.student_id}`}
+                        {student ? fullName(student) : hw.student_name || `Ученик #${hw.student_id}`}
                       </p>
                       <a
                         href={hw.link_url}

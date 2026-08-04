@@ -58,8 +58,8 @@ func NewRouter(d *Deps) http.Handler {
 	courseHandler := handlers.NewCourseHandler(d.Courses, d.UserRefs, d.Enrollments, d.UserClient)
 	enrollHandler := handlers.NewEnrollmentHandler(d.Enrollments, d.UserClient)
 	lessonHandler := handlers.NewLessonHandler(d.Lessons, d.Enrollments, d.Attendance, d.UserRefs, d.UserClient, d.Events)
-	homeworkHandler := handlers.NewHomeworkHandler(d.Homework, d.UserRefs, d.UserClient)
-	testHandler := handlers.NewTestHandler(d.Tests, d.UserRefs, d.UserClient)
+	homeworkHandler := handlers.NewHomeworkHandler(d.Homework, d.Lessons, d.UserRefs, d.UserClient)
+	testHandler := handlers.NewTestHandler(d.Tests, d.Lessons, d.UserRefs, d.UserClient)
 
 	r := chi.NewRouter()
 	r.Use(middleware.CORS)

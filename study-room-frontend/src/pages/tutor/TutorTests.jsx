@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { assignTest, fetchCourses, fetchTests, gradeTest } from "../../api/academic.js";
+import { assignTest, fetchCourses, fetchLessons, fetchTests, gradeTest } from "../../api/academic.js";
 import { fetchMyPeople } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import CourseTag from "../../components/ui/CourseTag.jsx";
@@ -35,6 +35,7 @@ export default function TutorTests() {
   const [tests, setTests] = useState([]);
   const [studentsById, setStudentsById] = useState({});
   const [students, setStudents] = useState([]);
+  const [assignableStudents, setAssignableStudents] = useState([]);
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -55,7 +56,12 @@ export default function TutorTests() {
     setLoading(true);
     setError("");
     try {
-      const [testsRes, peopleRes, coursesRes] = await Promise.all([fetchTests(), fetchMyPeople(), fetchCourses({ tutor_id: user.id })]);
+      const [testsRes, peopleRes, coursesRes, lessonsRes] = await Promise.all([
+        fetchTests(),
+        fetchMyPeople(),
+        fetchCourses({ tutor_id: user.id }),
+        fetchLessons({ tutor_id: user.id }),
+      ]);
       setTests(testsRes?.items ?? []);
       const list = peopleRes?.students ?? [];
       setStudents(list);
@@ -64,6 +70,22 @@ export default function TutorTests() {
       setStudentsById(byId);
       const courseList = coursesRes?.items ?? [];
       setCourses(courseList);
+
+      // Выдавать тест можно только тому, с кем уже было или ещё будет
+      // занятие — те же правила, что и в PeopleDirectory.jsx / бэкенде
+      // (IsStudentOfTutor в lesson_repository.go). См. TutorHomework.jsx —
+      // тот же фолбэк для участников, которых нет в branch-фильтрованном
+      // peopleRes.
+      const lessonList = lessonsRes?.items ?? [];
+      const linked = new Map();
+      lessonList.forEach((l) => {
+        if (l.status === "cancelled") return;
+        (l.participant_ids ?? []).forEach((id) => {
+          if (linked.has(id)) return;
+          linked.set(id, byId[id] ?? { id, first_name: l.participant_names?.[id] ?? `#${id}`, last_name: "" });
+        });
+      });
+      setAssignableStudents(Array.from(linked.values()));
     } catch (e) {
       setError(e.message || "Не удалось загрузить данные");
     } finally {
@@ -162,12 +184,17 @@ export default function TutorTests() {
                 className="w-full bg-surface border border-outline-variant rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20"
               >
                 <option value="">Выберите ученика</option>
-                {students.map((s) => (
+                {assignableStudents.map((s) => (
                   <option key={s.id} value={s.id}>
                     {fullName(s)}
                   </option>
                 ))}
               </select>
+              {assignableStudents.length === 0 && (
+                <p className="text-xs text-on-surface-variant mt-1">
+                  Нет учеников с назначенными занятиями. Сначала добавьте занятие в расписании.
+                </p>
+              )}
             </div>
             <div className="space-y-stack-sm">
               <label className="font-label-md text-on-surface-variant ml-1">Курс / предмет</label>
@@ -298,7 +325,7 @@ export default function TutorTests() {
                   return (
                     <tr key={t.id} className="hover:bg-surface-container-low transition-colors">
                       <td className="px-6 py-5 font-label-md text-label-md font-bold text-on-background whitespace-nowrap">
-                        {student ? fullName(student) : `Ученик #${t.student_id}`}
+                        {student ? fullName(student) : t.student_name || `Ученик #${t.student_id}`}
                       </td>
                       <td className="px-6 py-5 min-w-0">
                         <p className="font-label-md text-on-background">{t.title}</p>

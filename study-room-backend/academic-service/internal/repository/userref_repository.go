@@ -117,3 +117,48 @@ func (r *UserRefRepository) BranchesOf(ctx context.Context, userIDs []int64) (ma
 	}
 	return result, nil
 }
+
+// NamesOf — пакетное получение full_name по списку user_id, из локального
+// кэша user_refs. Используется, чтобы подставить имя участнику занятия/
+// автору дз-теста, когда GET /users на фронте его не отдаёт из-за
+// branch-фильтра (см. Lesson.ParticipantNames, Homework.StudentName,
+// Test.StudentName). Отсутствующие в user_refs id просто отсутствуют в
+// результирующей map — вызывающий код должен иметь свой fallback.
+func (r *UserRefRepository) NamesOf(ctx context.Context, userIDs []int64) (map[int64]string, error) {
+	result := make(map[int64]string, len(userIDs))
+	if len(userIDs) == 0 {
+		return result, nil
+	}
+
+	seen := make(map[int64]struct{}, len(userIDs))
+	unique := make([]int64, 0, len(userIDs))
+	for _, id := range userIDs {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+
+	rows, err := r.pool.Query(ctx,
+		`SELECT user_id, full_name FROM user_refs WHERE user_id = ANY($1)`, unique)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var userID int64
+		var fullName string
+		if err := rows.Scan(&userID, &fullName); err != nil {
+			return nil, err
+		}
+		if fullName != "" {
+			result[userID] = fullName
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}

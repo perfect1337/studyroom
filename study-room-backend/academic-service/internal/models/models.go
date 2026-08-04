@@ -124,6 +124,15 @@ type Lesson struct {
 	// "Мои ученики" тьютора из реально созданных занятий, а не из enrollments/
 	// course_tutors — см. TutorStudents.jsx / PeopleDirectory.jsx.
 	ParticipantIDs []int64 `json:"participant_ids,omitempty"`
+	// ParticipantNames — id -> ФИО участников, из локального кэша user_refs
+	// (см. userref_repository.go), а не из User Service напрямую. Нужно,
+	// потому что GET /users для роли tutor фильтрует учеников строго по
+	// branch_id тьютора (см. user_handler.go List), а участник занятия
+	// иногда не проходит этот фильтр (сменил филиал, филиал не совпадает
+	// и т.п.) — тогда фронт не находит его в справочнике и рисует голое
+	// "Ученик" без имени (см. PeopleDirectory.jsx). user_refs — это просто
+	// кэш для отображения, без прав доступа, поэтому подходит как фолбэк.
+	ParticipantNames map[int64]string `json:"participant_names,omitempty"`
 }
 
 type AttendanceStatus string
@@ -159,6 +168,9 @@ type Homework struct {
 	Status    HomeworkStatus `json:"status"`
 	ViewedAt  *time.Time     `json:"viewed_at"`
 	CreatedAt time.Time      `json:"created_at"`
+	// StudentName — см. Lesson.ParticipantNames: фолбэк-имя из user_refs на
+	// случай, если ученик не попадает в branch-фильтр GET /users у тьютора.
+	StudentName string `json:"student_name,omitempty"`
 }
 
 type TestStatus string
@@ -192,4 +204,6 @@ type Test struct {
 	CourseID      *int64     `json:"course_id,omitempty"`
 	CourseTitle   *string    `json:"course_title,omitempty"`
 	CourseSubject *string    `json:"course_subject,omitempty"`
+	// StudentName — см. Lesson.ParticipantNames / Homework.StudentName.
+	StudentName string `json:"student_name,omitempty"`
 }

@@ -13,12 +13,13 @@ import (
 
 type TestHandler struct {
 	repo       *repository.TestRepository
+	lessons    *repository.LessonRepository
 	userRefs   *repository.UserRefRepository
 	userClient ChildrenResolver
 }
 
-func NewTestHandler(repo *repository.TestRepository, userRefs *repository.UserRefRepository, userClient ChildrenResolver) *TestHandler {
-	return &TestHandler{repo: repo, userRefs: userRefs, userClient: userClient}
+func NewTestHandler(repo *repository.TestRepository, lessons *repository.LessonRepository, userRefs *repository.UserRefRepository, userClient ChildrenResolver) *TestHandler {
+	return &TestHandler{repo: repo, lessons: lessons, userRefs: userRefs, userClient: userClient}
 }
 
 type createTestRequest struct {
@@ -49,6 +50,18 @@ func (h *TestHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := validateLinkURL(req.LinkURL); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+
+	// Как и в homework_handler.go: тест можно выдать только ученику, с
+	// которым у тьютора уже было или ещё будет занятие.
+	isOwn, err := h.lessons.IsStudentOfTutor(r.Context(), claims.UserID, req.StudentID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to verify student")
+		return
+	}
+	if !isOwn {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "you can only assign tests to students you have lessons with")
 		return
 	}
 
@@ -120,6 +133,17 @@ func (h *TestHandler) List(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		items = filtered
+	}
+
+	// student_name — см. HomeworkHandler.List.
+	studentIDs := make([]int64, len(items))
+	for i, t := range items {
+		studentIDs[i] = t.StudentID
+	}
+	if names, err := h.userRefs.NamesOf(r.Context(), studentIDs); err == nil {
+		for _, t := range items {
+			t.StudentName = names[t.StudentID]
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"items": nonNilTests(items)})

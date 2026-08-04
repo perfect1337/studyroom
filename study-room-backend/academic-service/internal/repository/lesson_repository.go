@@ -274,6 +274,27 @@ func (r *LessonRepository) ParticipantsByLessons(ctx context.Context, lessonIDs 
 	return out, rows.Err()
 }
 
+// IsStudentOfTutor — есть ли у этого преподавателя хоть одно занятие
+// (проведённое или ещё запланированное, т.е. не отменённое) с данным
+// учеником среди участников. Используется для ограничения выдачи домашних
+// заданий и тестов: тьютор может выдавать их только тем ученикам, с
+// которыми у него уже было или будет занятие (см. homework_handler.go,
+// test_handler.go — Create), а не любому ученику филиала/сети.
+func (r *LessonRepository) IsStudentOfTutor(ctx context.Context, tutorID, studentID int64) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM lesson_participants lp
+			JOIN lessons l ON l.id = lp.lesson_id
+			WHERE l.tutor_id = $1 AND lp.student_id = $2 AND l.status <> 'cancelled'
+		)`, tutorID, studentID).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
 // Participants — id учеников, участвующих в занятии (для проверки доступа
 // parent/student к посещаемости, см. api-contracts.md 2.11).
 func (r *LessonRepository) Participants(ctx context.Context, lessonID int64) ([]int64, error) {
