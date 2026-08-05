@@ -210,7 +210,7 @@ export default function StudentOverview() {
 
         <section className="grid grid-cols-1 xl:grid-cols-3 gap-gutter">
           <div className="xl:col-span-2 space-y-stack-md">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-headline-sm text-headline-sm text-on-background">Текущие курсы</h3>
               <Link
                 to="/student/courses"
@@ -271,7 +271,7 @@ export default function StudentOverview() {
           </div>
 
           <div className="xl:col-span-1 space-y-stack-md">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-headline-sm text-headline-sm text-on-background">Домашние задания</h3>
               <Link
                 to="/student/homework"

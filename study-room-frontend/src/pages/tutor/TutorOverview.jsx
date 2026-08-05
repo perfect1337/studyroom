@@ -124,7 +124,7 @@ export default function TutorOverview() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-stack-lg pb-stack-lg">
         <section className="lg:col-span-2 bg-surface-container-lowest rounded-xl p-6 shadow-[0px_10px_30px_rgba(0,0,0,0.05)]">
-          <div className="flex justify-between items-center mb-6">
+          <div className="flex flex-wrap justify-between items-center gap-2 mb-6">
             <h2 className="font-headline-sm text-headline-sm text-on-background flex items-center gap-2">
               <span className="material-symbols-outlined text-primary">calendar_month</span>
               Расписание на сегодня

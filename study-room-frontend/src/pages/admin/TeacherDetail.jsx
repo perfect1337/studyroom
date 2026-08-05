@@ -354,13 +354,13 @@ export default function TeacherDetail({ role = "owner" }) {
   return (
     <DashboardShell role={config.sidebarRole} user={toSidebarUser(user)} searchPlaceholder={config.searchPlaceholder} userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
       <div className="space-y-stack-lg pb-stack-lg">
-        <nav className="flex items-center justify-between gap-2 text-label-md text-on-surface-variant mt-4">
-          <div className="flex items-center gap-2">
-            <Link to={config.homePath} className="hover:text-primary">{config.homeLabel}</Link>
-            <span className="material-symbols-outlined text-[16px]">chevron_right</span>
-            <Link to={config.listPath} className="hover:text-primary">{config.listLabel}</Link>
-            <span className="material-symbols-outlined text-[16px]">chevron_right</span>
-            <span className="text-on-surface font-bold">{teacher ? fullName(teacher) : "—"}</span>
+        <nav className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-label-md text-on-surface-variant mt-4">
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
+            <Link to={config.homePath} className="hover:text-primary shrink-0">{config.homeLabel}</Link>
+            <span className="material-symbols-outlined text-[16px] shrink-0">chevron_right</span>
+            <Link to={config.listPath} className="hover:text-primary shrink-0">{config.listLabel}</Link>
+            <span className="material-symbols-outlined text-[16px] shrink-0">chevron_right</span>
+            <span className="text-on-surface font-bold truncate">{teacher ? fullName(teacher) : "—"}</span>
           </div>
 
           {config.canFire && teacher && (
@@ -368,7 +368,7 @@ export default function TeacherDetail({ role = "owner" }) {
               <button
                 onClick={handleReinstate}
                 disabled={fireStatus === "saving-reinstate"}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-outline-variant text-on-surface-variant hover:bg-surface-container-low hover:text-primary transition-colors text-label-md font-label-md disabled:opacity-60"
+                className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-outline-variant text-on-surface-variant hover:bg-surface-container-low hover:text-primary transition-colors text-label-md font-label-md disabled:opacity-60 w-full sm:w-auto"
               >
                 <span className="material-symbols-outlined text-[18px]">person_check</span>
                 {fireStatus === "saving-reinstate" ? "Восстановление…" : "Восстановить в штат"}
@@ -379,7 +379,7 @@ export default function TeacherDetail({ role = "owner" }) {
                   setFireStatus("");
                   setShowFireModal(true);
                 }}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 transition-colors text-label-md font-label-md"
+                className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 transition-colors text-label-md font-label-md w-full sm:w-auto"
               >
                 <span className="material-symbols-outlined text-[18px]">person_remove</span>
                 Уволить
