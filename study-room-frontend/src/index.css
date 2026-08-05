@@ -15,6 +15,30 @@ body {
   font-variation-settings: "FILL" 1, "wght" 400, "GRAD" 0, "opsz" 24;
 }
 
+/* --- "Карточка-профиль" (student/parent) ---------------------------------
+   Точечный набор утилит для шапок с ФИО на /student, /student/courses,
+   /parent: акцентный шрифт + лёгкая текстура "тетрадь в клетку", отсылающая
+   к дневнику/зачётке, а не абстрактный градиент. Используются только в этих
+   компонентах — на остальные страницы (Inter/MD3-токены) не влияют. */
+.font-display-academic {
+  font-family: "Fraunces", "Georgia", serif;
+  font-optical-sizing: auto;
+}
+
+.bg-notebook-grid {
+  background-image:
+    linear-gradient(currentColor 1px, transparent 1px),
+    linear-gradient(90deg, currentColor 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+/* Ленточка-закладка над карточкой профиля — форма "уголок дневника".
+   clip-path задаётся отдельно (нужен разный размер/цвет по контексту),
+   здесь только сам вырез. */
+.ribbon-tab {
+  clip-path: polygon(0 0, 100% 0, 100% 80%, 50% 100%, 0 80%);
+}
+
 /* Экран "Загрузка…" под <Suspense> в App.jsx. Появляется с задержкой в 150мс:
    если чанк страницы уже прогрет (обычный случай — см. routeComponents.js),
    React вообще не успевает показать этот блок, и перехода не видно. Если же

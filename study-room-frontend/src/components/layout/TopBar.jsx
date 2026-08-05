@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import NotificationBell from "./NotificationBell.jsx";
+import Avatar from "../ui/Avatar.jsx";
 
 /**
  * Верхняя панель. На мобильных слева появляется гамбургер (открывает Sidebar-drawer).
@@ -119,10 +120,14 @@ export default function TopBar({
             <>
               <div className="hidden sm:block h-8 w-px bg-outline-variant" />
               <div className="flex items-center gap-3">
-                {userLabel && <span className="font-label-md text-label-md hidden lg:block">{userLabel}</span>}
-                {avatarUrl && (
-                  <img src={avatarUrl} alt={userLabel || "avatar"} className="w-8 h-8 rounded-full object-cover" />
+                {userLabel && (
+                  <span className="font-label-md text-label-md hidden lg:block truncate max-w-[180px]">{userLabel}</span>
                 )}
+                {/* Avatar сам рисует инициалы, если avatarUrl нет — раньше здесь
+                    просто ничего не появлялось (см. историю файла), из-за чего
+                    у большинства тестовых аккаунтов (без avatar_url) в шапке
+                    справа не было вообще никакого визуального "я" пользователя. */}
+                <Avatar src={avatarUrl} name={userLabel} size="xs" />
               </div>
             </>
           )}

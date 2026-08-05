@@ -52,6 +52,13 @@ export default {
         "surface-container-high": "#e2e7ff",
         "secondary-fixed": "#ffe083",
         surface: "#faf8ff",
+        // Не было в исходной палитре, хотя класс text-warning/bg-warning/
+        // border-warning уже использовался в ParentOverview/ParentContracts/
+        // FinanceDirectory (индикаторы "к оплате", "скоро истекает") — без
+        // этого токена Tailwind просто не генерировал для них никакого цвета.
+        warning: "#b25e00",
+        "on-warning": "#ffffff",
+        "warning-container": "#ffddb3",
       },
       borderRadius: {
         DEFAULT: "0.25rem",

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import ProgressBar from "../../components/ui/ProgressBar.jsx";
+import Avatar from "../../components/ui/Avatar.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchCourses, fetchEnrollments, fetchLessons } from "../../api/academic.js";
 import { fetchUserById } from "../../api/users.js";
@@ -113,6 +114,24 @@ export default function StudentCourses() {
       avatarUrl={user?.avatar_url}
     >
       <div className="space-y-stack-lg pb-section-padding">
+        {/* Мини-профиль в шапке страницы — раньше здесь не было вообще ни
+            одного упоминания, чей это кабинет (в отличие от /student и
+            /parent). Не дублируем полную карточку профиля — только
+            компактная строка "кто я" над заголовком списка, тем же визуальным
+            языком, что и hero-карточка на /student (акцентное ФИО + тонкая
+            золотая линия-подчёркивание вместо рамки со всех сторон). */}
+        <div className="flex items-center gap-3.5 mt-1 pb-4 border-b-2 border-secondary-container">
+          <Avatar src={user?.avatar_url} name={fullName(user)} size="sm" className="ring-2 ring-secondary-container" />
+          <div className="min-w-0">
+            <p className="font-display-academic text-lg font-semibold text-on-surface truncate leading-tight">
+              {fullName(user)}
+            </p>
+            <p className="text-xs text-on-surface-variant leading-tight mt-0.5">
+              {user?.class_info || user?.school ? [user.class_info, user.school].filter(Boolean).join(" · ") : "Ученик"}
+            </p>
+          </div>
+        </div>
+
         <div className="flex items-center justify-between flex-wrap gap-4">
           <h2 className="font-headline-md text-headline-md text-on-background">Мои курсы</h2>
           <div className="flex gap-2">
@@ -157,7 +176,7 @@ export default function StudentCourses() {
               return (
                 <div
                   key={e.id}
-                  className="bg-surface-container-lowest rounded-xl p-stack-md shadow-sm border border-outline-variant flex flex-col"
+                  className="bg-surface-container-lowest rounded-xl p-stack-md shadow-sm border border-outline-variant border-t-2 border-t-primary/40 flex flex-col"
                 >
                   <div className="flex items-start justify-between mb-3">
                     <h3 className="font-headline-sm text-headline-sm text-on-background">
@@ -179,11 +198,18 @@ export default function StudentCourses() {
                       </div>
                       <ProgressBar value={e.progress_pct ?? 0} />
                     </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-on-surface-variant">
-                        Преп: {tutor ? fullName(tutor) : "не назначен"}
+                    <div className="flex items-center justify-between gap-2 text-sm">
+                      <span className="flex items-center gap-2 min-w-0 text-on-surface-variant">
+                        {tutor ? (
+                          <>
+                            <Avatar src={tutor.avatar_url} name={fullName(tutor)} size="xs" />
+                            <span className="truncate font-medium text-on-surface">{fullName(tutor)}</span>
+                          </>
+                        ) : (
+                          <span className="italic">Преподаватель не назначен</span>
+                        )}
                       </span>
-                      <span className="font-bold text-primary">
+                      <span className="font-bold text-primary shrink-0">
                         {e.status}
                       </span>
                     </div>

@@ -3,6 +3,7 @@ import { academicApi } from "../../api/http.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { preloadRoute } from "../../routes/routeComponents.js";
 import { useQuery } from "../../hooks/useQuery.js";
+import Avatar from "../ui/Avatar.jsx";
 
 // Пункты меню для каждой роли. `end: true` — пункт активен только на точном совпадении пути
 // (иначе, например, "/admin" подсвечивался бы активным на "/admin/finance").
@@ -156,8 +157,8 @@ function TutorProfileCard({ user }) {
   const courses = useTutorCourses(user?.id);
 
   return (
-    <div className="flex items-center gap-3 bg-surface-container rounded-lg p-3">
-      <img src={user?.avatarUrl} alt={user?.name} className="w-12 h-12 rounded-full object-cover" />
+    <div className="flex items-center gap-3 bg-surface-container rounded-lg p-3 hover:bg-surface-container-high transition-colors">
+      <Avatar src={user?.avatarUrl} name={user?.name} size="md" />
       <div className="min-w-0">
         <div className="font-label-md text-label-md font-bold text-on-surface truncate">{user?.name}</div>
 
@@ -179,12 +180,68 @@ function TutorProfileCard({ user }) {
   );
 }
 
+// Мини-карточка профиля ученика в сайдбаре — до этого у роли "student" здесь
+// вообще не было ни ФИО, ни аватара (только статичная подпись "Ученик"),
+// в отличие от tutor/admin/branch_owner. См. StudentOverview/StudentProfile —
+// тот же визуальный язык (аватар с инициалами + имя), но в компактном виде.
+function StudentProfileCard({ user }) {
+  if (!user) return null;
+  return (
+    <div className="flex items-center gap-3 bg-surface-container rounded-lg p-3">
+      <Avatar src={user.avatarUrl} name={user.name} size="md" />
+      <div className="min-w-0">
+        <div className="font-label-md text-label-md font-bold text-on-surface truncate">{user.name}</div>
+        <div className="flex items-center gap-1 text-on-surface-variant mt-0.5">
+          <span className="material-symbols-outlined text-[14px]">store</span>
+          <span className="font-label-md text-[11px] truncate">{user.branchName || "Филиал не назначен"}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Мини-карточка профиля родителя в сайдбаре — аналогично, вместо
+// прежней статичной надписи "Study Room Родитель" без единого упоминания,
+// кто именно сейчас в аккаунте. childrenCount передаётся не всеми страницами
+// (см. toSidebarUser(user, { childrenCount })) — если его нет, просто не
+// показываем строку про детей, ничего не ломаем.
+function ParentProfileCard({ user }) {
+  if (!user) return null;
+  return (
+    <div className="flex items-center gap-3 bg-surface-container rounded-lg p-3">
+      <Avatar src={user.avatarUrl} name={user.name} size="md" />
+      <div className="min-w-0">
+        <div className="font-label-md text-label-md font-bold text-on-surface truncate">{user.name}</div>
+        <div className="flex items-center gap-1 text-on-surface-variant mt-0.5">
+          <span className="material-symbols-outlined text-[14px]">family_restroom</span>
+          <span className="font-label-md text-[11px] truncate">
+            {typeof user.childrenCount === "number"
+              ? `${user.childrenCount} ${declineChild(user.childrenCount)}`
+              : "Родитель"}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function declineChild(n) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "ребёнок";
+  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return "ребёнка";
+  return "детей";
+}
+
 function SidebarHeader({ role, user }) {
   if (role === "student") {
     return (
-      <div className="px-2 mb-4">
-        <h1 className="font-headline-md text-headline-md font-bold text-primary">Study Room</h1>
-        <p className="font-label-md text-label-md text-on-surface-variant">Ученик</p>
+      <div className="flex flex-col gap-4">
+        <div className="px-2">
+          <h1 className="font-headline-md text-headline-md font-bold text-primary">Study Room</h1>
+          <p className="font-label-md text-label-md text-on-surface-variant">Ученик</p>
+        </div>
+        <StudentProfileCard user={user} />
       </div>
     );
   }
@@ -205,8 +262,12 @@ function SidebarHeader({ role, user }) {
   }
   if (role === "parent") {
     return (
-      <div className="px-2 mb-2">
-        <h1 className="font-headline-sm text-headline-sm font-bold text-primary">Study Room Родитель</h1>
+      <div className="flex flex-col gap-4">
+        <div className="px-2">
+          <h1 className="font-headline-sm text-headline-sm font-bold text-primary">Study Room</h1>
+          <p className="font-label-md text-label-md text-on-surface-variant">Родитель</p>
+        </div>
+        <ParentProfileCard user={user} />
       </div>
     );
   }
@@ -276,9 +337,9 @@ export default function Sidebar({ role, user, mobileOpen = false, onClose = () =
 
         {(role === "admin" || role === "branch_owner") && user && (
           <div className="flex items-center gap-3 px-2 py-2 border-t border-outline-variant pt-4">
-            <img src={user.avatarUrl} alt={user.name} className="w-10 h-10 rounded-full border-2 border-primary object-cover" />
-            <div className="flex flex-col">
-              <span className="font-label-md text-label-md font-bold">{user.name}</span>
+            <Avatar src={user.avatarUrl} name={user.name} size="sm" className="border-2 border-primary" />
+            <div className="flex flex-col min-w-0">
+              <span className="font-label-md text-label-md font-bold truncate">{user.name}</span>
             </div>
           </div>
         )}

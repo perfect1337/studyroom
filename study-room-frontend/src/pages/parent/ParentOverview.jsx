@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
+import Avatar from "../../components/ui/Avatar.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchParentChildren } from "../../api/users.js";
 import { fetchEnrollments, fetchCourses, fetchLessons, fetchTests } from "../../api/academic.js";
@@ -15,10 +16,6 @@ const SUBJECT_OPTIONS = ["Математика", "Физика", "Английс
 function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-function initials(person) {
-  if (!person) return "?";
-  return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
 }
 function formatMoney(n) {
   return `₽ ${Number(n ?? 0).toLocaleString("ru-RU")}`;
@@ -213,21 +210,72 @@ export default function ParentOverview() {
   return (
     <DashboardShell role="parent" user={toSidebarUser(user)} searchPlaceholder="Поиск..." userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
       <div className="space-y-stack-lg pb-stack-lg">
-        <header className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant flex flex-col md:flex-row items-center md:items-start justify-between gap-6 mt-4">
-          <div className="flex items-center gap-6 z-10">
-            <div className="w-24 h-24 rounded-full overflow-hidden bg-primary-fixed flex items-center justify-center text-primary font-headline-md font-bold border-4 border-surface shadow-sm shrink-0">
-              {user?.avatar_url ? (
-                <img src={user.avatar_url} alt={fullName(user)} className="w-full h-full object-cover" />
-              ) : (
-                <span>{initials(user)}</span>
-              )}
-            </div>
-            <div>
-              <h2 className="font-headline-md text-headline-md text-on-surface">{fullName(user)}</h2>
-              <p className="font-body-md text-body-md text-on-surface-variant">{user?.email}</p>
-            </div>
+        <div className="relative mt-4">
+          {/* Лента-закладка — тот же приём, что и в шапке /student, для
+              единого визуального языка "карточки профиля" по всему кабинету. */}
+          <div
+            className="ribbon-tab absolute -top-2 left-8 z-10 w-9 h-12 bg-gradient-to-b from-tertiary to-tertiary-container shadow-sm flex items-start justify-center pt-2"
+            aria-hidden="true"
+          >
+            <span className="material-symbols-outlined text-on-tertiary text-[18px]">family_restroom</span>
           </div>
-        </header>
+
+          <header className="relative bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="bg-notebook-grid absolute inset-0 text-tertiary opacity-[0.035] pointer-events-none" aria-hidden="true" />
+
+            <div className="relative flex items-center gap-6 z-10 min-w-0 p-6 pt-10">
+              <Avatar
+                src={user?.avatar_url}
+                name={fullName(user)}
+                size="xl"
+                className="ring-4 ring-tertiary-fixed shadow-sm"
+              />
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-tertiary/70 mb-1">
+                  Личный кабинет · Родитель
+                </p>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h2 className="font-display-academic text-[28px] sm:text-[34px] leading-[1.1] font-semibold text-on-surface truncate">
+                    {fullName(user)}
+                  </h2>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-on-surface-variant">
+                  {user?.email && (
+                    <span className="inline-flex items-center gap-1.5 font-body-md text-body-md text-sm">
+                      <span className="material-symbols-outlined text-[16px]">mail</span>
+                      {user.email}
+                    </span>
+                  )}
+                  {user?.phone && (
+                    <span className="inline-flex items-center gap-1.5 font-body-md text-body-md text-sm">
+                      <span className="material-symbols-outlined text-[16px]">call</span>
+                      {user.phone}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {!loading && (
+              <div className="relative flex gap-4 shrink-0 p-6 pt-2 md:pt-10 z-10">
+                {/* Статистика как круглые "печати" — тот же диплом-мотив, что и
+                    лента выше, вместо обычных прямоугольных плашек. */}
+                <div className="flex flex-col items-center justify-center w-20 h-20 rounded-full border-2 border-dashed border-primary/40 bg-surface-container-lowest shrink-0">
+                  <p className="font-headline-sm text-headline-sm text-primary leading-none">{children.length}</p>
+                  <p className="text-[9px] uppercase tracking-wide text-on-surface-variant mt-1 text-center leading-tight px-1">
+                    {children.length === 1 ? "ребёнок" : "детей"}
+                  </p>
+                </div>
+                {contractsDue > 0 && (
+                  <div className="flex flex-col items-center justify-center w-20 h-20 rounded-full border-2 border-dashed border-warning/50 bg-surface-container-lowest shrink-0">
+                    <p className="font-headline-sm text-[15px] text-warning leading-none text-center px-1">{formatMoney(contractsDue)}</p>
+                    <p className="text-[9px] uppercase tracking-wide text-on-surface-variant mt-1">к оплате</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </header>
+        </div>
 
         {error && (
           <div className="p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
@@ -264,12 +312,10 @@ export default function ParentOverview() {
                 return (
                   <div key={child.id} className="bg-surface-container-lowest rounded-xl p-5 shadow-sm border border-outline-variant flex flex-col gap-5">
                     <div className="flex flex-col md:flex-row gap-5 items-start">
-                      <div className="w-16 h-16 rounded-lg bg-primary-fixed flex items-center justify-center text-primary font-bold shadow-sm shrink-0">
-                        {initials(child)}
-                      </div>
+                      <Avatar src={child.avatar_url} name={fullName(child)} size="lg" className="shadow-sm ring-2 ring-tertiary-fixed/60" />
                       <div className="flex-1 w-full">
                         <div className="flex justify-between items-center w-full">
-                          <h4 className="font-label-md text-label-md font-bold text-on-surface text-lg mb-1">{fullName(child)}</h4>
+                          <h4 className="font-display-academic text-xl font-semibold text-on-surface mb-1">{fullName(child)}</h4>
                           <Link to={`/parent/children/${child.id}`} className="text-primary hover:bg-surface-container-low p-2 rounded-full transition-colors">
                             <span className="material-symbols-outlined">chevron_right</span>
                           </Link>
