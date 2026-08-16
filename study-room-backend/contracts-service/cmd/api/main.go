@@ -17,10 +17,7 @@ import (
 	"studyroom/contracts-service/internal/migrate"
 )
 
-// expiringSoonWithinDays — за сколько дней до окончания договора публиковать
-// contract.expiring_soon. Значение и сам механизм периодической проверки не
-// описаны в api-contracts.md/event-schema.md — см. README.md.
-const expiringSoonWithinDays = 5
+const expiringSoonWithinDays = 1
 const expiringSoonCheckInterval = 24 * time.Hour
 
 func main() {
@@ -89,18 +86,13 @@ func main() {
 	srv.Shutdown(shutdownCtx)
 }
 
-// startExpiringSoonJob — раз в expiringSoonCheckInterval публикует
-// contract.expiring_soon для договоров, у которых end_date наступает в
-// ближайшие expiringSoonWithinDays дней (см.
-// internal/repository.ContractRepository.ListExpiringSoon). Получатель —
-// parent_id самого договора (он уже указан при создании, отдельный
-// синхронный запрос в User Service не нужен).
+// startExpiringSoonJob — раз в сутки проверяет договоры и отправляет два
+// уведомления: за 1 день до окончания и в день окончания.
 func startExpiringSoonJob(ctx context.Context, deps *app.Deps) func() {
 	ticker := time.NewTicker(expiringSoonCheckInterval)
 	done := make(chan struct{})
 
 	go func() {
-		// Первая проверка сразу при старте, не через сутки.
 		checkExpiringSoon(ctx, deps)
 		for {
 			select {
@@ -124,13 +116,37 @@ func checkExpiringSoon(ctx context.Context, deps *app.Deps) {
 		log.Printf("[expiring-soon-job] list error: %v", err)
 		return
 	}
+
+	today := time.Now().Format("2006-01-02")
+	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+
 	for _, c := range contracts {
-		deps.Events.ContractExpiringSoon(c.ParentID, c.StudentID, c.ContractNumber, c.EndDate.Format("2006-01-02"))
-		if err := deps.Contracts.MarkExpiryNotified(ctx, c.ID); err != nil {
-			log.Printf("[expiring-soon-job] mark notified contract=%d error: %v", c.ID, err)
+		end := c.EndDate.Format("2006-01-02")
+
+		switch {
+		case end == tomorrow:
+			// Первое уведомление: завтра истекает – отправляем, но флаг не ставим.
+			deps.Events.ContractExpiringSoon(c.ParentID, c.StudentID, c.ContractNumber, end)
+			log.Printf("[expiring-soon-job] sent first notification (tomorrow) for contract %d", c.ID)
+
+		case end == today:
+			// Второе уведомление: сегодня истекает – отправляем и ставим флаг.
+			deps.Events.ContractExpiringSoon(c.ParentID, c.StudentID, c.ContractNumber, end)
+			if err := deps.Contracts.MarkExpiryNotified(ctx, c.ID); err != nil {
+				log.Printf("[expiring-soon-job] mark notified contract=%d error: %v", c.ID, err)
+			} else {
+				log.Printf("[expiring-soon-job] sent second notification (today) and marked for contract %d", c.ID)
+			}
+
+		default:
+			// Если end_date уже прошла (меньше today) – просто ставим флаг.
+			if err := deps.Contracts.MarkExpiryNotified(ctx, c.ID); err != nil {
+				log.Printf("[expiring-soon-job] mark notified contract=%d error: %v", c.ID, err)
+			}
 		}
 	}
+
 	if len(contracts) > 0 {
-		log.Printf("[expiring-soon-job] notified %d contract(s)", len(contracts))
+		log.Printf("[expiring-soon-job] processed %d contract(s)", len(contracts))
 	}
 }
