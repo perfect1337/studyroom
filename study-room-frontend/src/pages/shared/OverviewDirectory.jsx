@@ -80,10 +80,16 @@ export default function OverviewDirectory({ role }) {
     [contracts]
   );
 
-  const stats = [
+  const statsOwner = [
     { label: "Всего учеников", value: String(students.length), icon: "school" },
     { label: "Всего репетиторов", value: String(tutors.length), icon: "person_pin" },
     { label: "Выручка (оплачено)", value: `₽${totalRevenue.toLocaleString("ru-RU")}`, icon: "trending_up" },
+    { label: "Новые заявки", value: String(applications.length), icon: "assignment_ind" },
+  ];
+
+   const statsBranchOwner = [
+    { label: "Всего учеников", value: String(students.length), icon: "school" },
+    { label: "Всего репетиторов", value: String(tutors.length), icon: "person_pin" },
     { label: "Новые заявки", value: String(applications.length), icon: "assignment_ind" },
   ];
 
@@ -181,21 +187,36 @@ export default function OverviewDirectory({ role }) {
       </section>
 
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-stack-md mb-stack-lg mt-4">
-        {stats.map((s) => (
-          <div
-            key={s.label}
-            className="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant flex items-center gap-4 hover:-translate-y-1 transition-transform"
-          >
-            <div className="w-12 h-12 bg-primary-container rounded-lg flex items-center justify-center text-on-primary-container">
-              <span className="material-symbols-outlined">{s.icon}</span>
-            </div>
-            <div>
-              <p className="text-on-surface-variant font-label-md text-label-md">{s.label}</p>
-              <p className="text-headline-sm font-headline-sm text-primary">{loading ? "…" : s.value}</p>
-            </div>
+  {isOwner
+    ? statsOwner.map((s) => (
+        <div
+          key={s.label}
+          className="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant flex items-center gap-4 hover:-translate-y-1 transition-transform"
+        >
+          <div className="w-12 h-12 bg-primary-container rounded-lg flex items-center justify-center text-on-primary-container">
+            <span className="material-symbols-outlined">{s.icon}</span>
           </div>
-        ))}
-      </section>
+          <div>
+            <p className="text-on-surface-variant font-label-md text-label-md">{s.label}</p>
+            <p className="text-headline-sm font-headline-sm text-primary">{loading ? "…" : s.value}</p>
+          </div>
+        </div>
+      ))
+    : statsBranchOwner.map((s) => (
+        <div
+          key={s.label}
+          className="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant flex items-center gap-4 hover:-translate-y-1 transition-transform"
+        >
+          <div className="w-12 h-12 bg-primary-container rounded-lg flex items-center justify-center text-on-primary-container">
+            <span className="material-symbols-outlined">{s.icon}</span>
+          </div>
+          <div>
+            <p className="text-on-surface-variant font-label-md text-label-md">{s.label}</p>
+            <p className="text-headline-sm font-headline-sm text-primary">{loading ? "…" : s.value}</p>
+          </div>
+        </div>
+      ))}
+</section>
 
       <div className="pb-stack-lg">
         <section className="flex flex-col gap-stack-md">
