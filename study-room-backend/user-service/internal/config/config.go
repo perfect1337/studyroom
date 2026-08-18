@@ -34,6 +34,14 @@ type Config struct {
 	// исчерпать общий лимит и словить 429 на логине. По умолчанию 600/мин.
 	RefreshRateLimit int
 
+	// AllowedOrigins — список origin'ов (через запятую), которым разрешён
+	// CORS с credentials (см. internal/middleware/cors.go). По умолчанию
+	// пусто — значит браузерные cross-origin запросы с credentials
+	// заблокированы для всех origin'ов ("никому не доверяем"). Для
+	// локальной разработки нужно явно указать адрес фронтенда, например
+	// "http://localhost:5173,http://localhost:3000".
+	AllowedOrigins string
+
 	// TrustedProxies — список CIDR/IP реверс-прокси (через запятую), которым
 	// разрешено доверять заголовку X-Forwarded-For при определении реального
 	// IP клиента (используется в rate limit на /auth/* и в аудит-логах).
@@ -65,6 +73,7 @@ func Load() (*Config, error) {
 		AuthRateLimit:    getEnvInt("AUTH_RATE_LIMIT_PER_MIN", 200),
 		LoginRateLimit:   getEnvInt("LOGIN_RATE_LIMIT_PER_MIN", 20),
 		RefreshRateLimit: getEnvInt("REFRESH_RATE_LIMIT_PER_MIN", 600),
+		AllowedOrigins:   getEnv("ALLOWED_ORIGINS", ""),
 		TrustedProxies:   getEnv("TRUSTED_PROXIES", ""),
 		CookieSecure:     getEnvBool("COOKIE_SECURE", true),
 		CookieSameSite:   getEnv("COOKIE_SAMESITE", "Lax"),

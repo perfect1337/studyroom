@@ -34,6 +34,7 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-Lax}
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000}
     ports:
       - "8081:8081"
     depends_on:
@@ -90,6 +91,7 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000}
     ports:
       - "8085:8085"
     depends_on:
@@ -132,6 +134,7 @@ services:
       # "чьи дети" у parent (GET /parents/{id}/children), см.
       # internal/userclient. Всё остальное идёт через user_refs/события.
       USER_SERVICE_URL: http://user-service:8081
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000}
     ports:
       - "8082:8082"
     depends_on:
@@ -176,6 +179,7 @@ services:
       # "чьи дети" у parent (GET /parents/{id}/children) для
       # GET /contracts/{id}/expiry, см. internal/userclient.
       USER_SERVICE_URL: http://user-service:8081
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000}
     ports:
       - "8083:8083"
     depends_on:
@@ -220,6 +224,7 @@ services:
       # см. crm-service/README.md. Пусто по умолчанию = проверка подписи
       # выключена (годится только для локальной разработки).
       TILDA_WEBHOOK_SECRET: ${TILDA_WEBHOOK_SECRET:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000}
     ports:
       - "8084:8084"
     depends_on:

@@ -19,6 +19,13 @@ type Config struct {
 	// GET /parents/{id}/children для GET /contracts/{id}/expiry с role=parent
 	// (см. api-contracts.md, 3.3a и internal/userclient).
 	UserServiceURL string
+
+	// AllowedOrigins — список origin'ов (через запятую), которым разрешён
+	// CORS с credentials (см. internal/middleware/cors.go). По умолчанию
+	// пусто — браузерные cross-origin запросы с credentials заблокированы
+	// для всех origin'ов. Для локальной разработки укажите адрес фронтенда,
+	// например "http://localhost:5173,http://localhost:3000".
+	AllowedOrigins string
 }
 
 func Load() (*Config, error) {
@@ -28,6 +35,7 @@ func Load() (*Config, error) {
 		JWTSecret:      getEnv("JWT_SECRET", ""),
 		NATSURL:        getEnv("NATS_URL", ""),
 		UserServiceURL: getEnv("USER_SERVICE_URL", ""),
+		AllowedOrigins: getEnv("ALLOWED_ORIGINS", ""),
 	}
 
 	if cfg.DatabaseURL == "" {

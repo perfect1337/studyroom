@@ -15,6 +15,7 @@ import (
 	"studyroom/notification-service/internal/db"
 	"studyroom/notification-service/internal/events"
 	"studyroom/notification-service/internal/mailer"
+	"studyroom/notification-service/internal/middleware"
 	"studyroom/notification-service/internal/migrate"
 )
 
@@ -24,6 +25,11 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config error: %v", err)
+	}
+
+	middleware.SetAllowedOrigins(middleware.ParseAllowedOrigins(cfg.AllowedOrigins))
+	if cfg.AllowedOrigins == "" {
+		log.Println("ALLOWED_ORIGINS not set: browser cross-origin requests with credentials are blocked for all origins")
 	}
 
 	pool, err := db.NewPool(ctx, cfg.DatabaseURL)

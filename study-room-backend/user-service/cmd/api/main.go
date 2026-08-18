@@ -27,6 +27,11 @@ func main() {
 		log.Fatalf("config error: %v", err)
 	}
 
+	middleware.SetAllowedOrigins(middleware.ParseAllowedOrigins(cfg.AllowedOrigins))
+	if cfg.AllowedOrigins == "" {
+		log.Println("ALLOWED_ORIGINS not set: browser cross-origin requests with credentials are blocked for all origins")
+	}
+
 	trustedProxies, err := middleware.ParseTrustedProxies(cfg.TrustedProxies)
 	if err != nil {
 		log.Fatalf("config error: %v", err)
