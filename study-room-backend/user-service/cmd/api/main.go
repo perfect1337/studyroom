@@ -68,7 +68,7 @@ func main() {
 		SameSite: cfg.CookieSameSite,
 		Domain:   cfg.CookieDomain,
 	}
-	deps := app.NewDeps(pool, tm, pub, cfg.AppPublicURL, cfg.AuthRateLimit, cookieOpts)
+	deps := app.NewDepsWithRateLimits(pool, tm, pub, cfg.AppPublicURL, cfg.AuthRateLimit, cfg.LoginRateLimit, cfg.RefreshRateLimit, cookieOpts)
 	handler := app.NewRouter(deps)
 
 	srv := &http.Server{
