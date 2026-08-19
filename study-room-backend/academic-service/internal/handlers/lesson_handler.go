@@ -296,7 +296,7 @@ func (h *LessonHandler) checkLessonAccess(w http.ResponseWriter, r *http.Request
 		}
 		return lesson, true
 	case models.RoleBranchOwner:
-		branchID, err := h.lessons.CourseBranchID(r.Context(), lessonID)
+		branchID, err := h.lessons.TutorBranchID(r.Context(), lessonID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check branch")
 			return nil, false

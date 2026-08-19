@@ -91,7 +91,8 @@ func (r *EnrollmentRepository) GetByID(ctx context.Context, id int64) (*models.E
 
 // EnrollmentFilter — student_id/tutor_id/course_id как в query-параметрах
 // контракта 2.5. BranchID — не часть публичного контракта, а внутренний
-// фильтр для branch_owner (джойн по courses.branch_id), проставляется
+// фильтр для branch_owner (курсы больше не привязаны к филиалу, поэтому
+// фильтруем по филиалу самого ученика через user_refs), проставляется
 // сервером принудительно, а не пользователем.
 type EnrollmentFilter struct {
 	StudentID *int64
@@ -107,7 +108,9 @@ type EnrollmentFilter struct {
 func (r *EnrollmentRepository) List(ctx context.Context, f EnrollmentFilter) ([]*models.Enrollment, error) {
 	query := `SELECT e.id, e.student_id, e.course_id, e.tutor_id, e.progress_pct, e.status,
 		e.start_date, e.end_date, e.created_at
-		FROM enrollments e JOIN courses c ON c.id = e.course_id WHERE 1=1`
+		FROM enrollments e
+		LEFT JOIN user_refs ur ON ur.user_id = e.student_id
+		WHERE 1=1`
 	args := []any{}
 	i := 1
 	if len(f.StudentIDs) > 0 {
@@ -130,7 +133,7 @@ func (r *EnrollmentRepository) List(ctx context.Context, f EnrollmentFilter) ([]
 		i++
 	}
 	if f.BranchID != nil {
-		query += " AND c.branch_id = $" + strconv.Itoa(i)
+		query += " AND ur.branch_id = $" + strconv.Itoa(i)
 		args = append(args, *f.BranchID)
 		i++
 	}
@@ -162,13 +165,13 @@ func (r *EnrollmentRepository) ListForTutor(ctx context.Context, tutorID int64, 
 	query := `SELECT e.id, e.student_id, e.course_id, e.tutor_id, e.progress_pct, e.status,
 		e.start_date, e.end_date, e.created_at
 		FROM enrollments e
-		JOIN courses c ON c.id = e.course_id
-		JOIN course_tutors ct ON ct.course_id = c.id AND ct.tutor_id = $1
+		JOIN course_tutors ct ON ct.course_id = e.course_id AND ct.tutor_id = $1
+		LEFT JOIN user_refs ur ON ur.user_id = e.student_id
 		WHERE 1=1`
 	args := []any{tutorID}
 	i := 2
 	if branchID != nil {
-		query += " AND c.branch_id = $" + strconv.Itoa(i)
+		query += " AND ur.branch_id = $" + strconv.Itoa(i)
 		args = append(args, *branchID)
 		i++
 	}
@@ -308,16 +311,24 @@ func (r *EnrollmentRepository) UpdateProgress(ctx context.Context, id int64, fie
 	return scanEnrollment(r.pool.QueryRow(ctx, query, args...))
 }
 
-// CourseBranchID — вспомогательный запрос для авторизации (branch_owner
-// может назначать репетитора только на записи курсов своего филиала).
-func (r *EnrollmentRepository) CourseBranchID(ctx context.Context, courseID int64) (int64, error) {
-	var branchID int64
-	err := r.pool.QueryRow(ctx, `SELECT branch_id FROM courses WHERE id = $1`, courseID).Scan(&branchID)
+// EnrollmentStudentBranchID — вспомогательный запрос для авторизации
+// (branch_owner может управлять только записями учеников своего филиала).
+// Курсы больше не привязаны к филиалу, поэтому филиал берётся из карточки
+// ученика (user_refs), а не из курса.
+func (r *EnrollmentRepository) EnrollmentStudentBranchID(ctx context.Context, enrollmentID int64) (int64, error) {
+	var branchID *int64
+	err := r.pool.QueryRow(ctx, `
+		SELECT ur.branch_id FROM enrollments e
+		LEFT JOIN user_refs ur ON ur.user_id = e.student_id
+		WHERE e.id = $1`, enrollmentID).Scan(&branchID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, ErrNotFound
 		}
 		return 0, err
 	}
-	return branchID, nil
+	if branchID == nil {
+		return 0, ErrNotFound
+	}
+	return *branchID, nil
 }

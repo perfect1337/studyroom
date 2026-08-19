@@ -22,17 +22,15 @@ func NewCourseHandler(repo *repository.CourseRepository, userRefs *repository.Us
 	return &CourseHandler{repo: repo, userRefs: userRefs, enrollRepo: enrollRepo, userClient: userClient}
 }
 
-// List — GET /courses?branch_id=&subject=&tutor_id= (api-contracts.md 2.1).
-// Фильтр по branch_id обязателен для всех ролей кроме owner — сервер
-// подставляет его принудительно из claims, а не доверяет query-параметру,
-// иначе branch_owner/tutor/student/parent смогли бы подсмотреть чужой филиал
-// просто поменяв ?branch_id= в адресной строке.
+// List — GET /courses?subject=&tutor_id= (api-contracts.md 2.1). Курсы не
+// привязаны к филиалу — весь каталог курсов общий для всей сети, виден
+// всем ролям одинаково (кроме родителя, см. ниже).
 //
 // tutor_id — опциональный доп.фильтр "только курсы, которые ведёт этот
 // преподаватель" (через course_tutors). Tutor может передать только
 // свой собственный id (используется для "Мои курсы" на фронте) — чужой
 // tutor_id ему запрещён, чтобы не подглядывать нагрузку других
-// преподавателей своего филиала.
+// преподавателей.
 func (h *CourseHandler) List(w http.ResponseWriter, r *http.Request) {
     claims, _ := middleware.FromContext(r.Context())
     filter := repository.CourseFilter{Subject: r.URL.Query().Get("subject")}
@@ -79,22 +77,7 @@ func (h *CourseHandler) List(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // ---- Остальные роли (owner, branch_owner, tutor, student) ----
-    if claims.Role == models.RoleOwner {
-        branchID, ok := parseIntQuery(r, "branch_id")
-        if !ok {
-            writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid branch_id")
-            return
-        }
-        filter.BranchID = branchID
-    } else {
-        if claims.BranchID == nil {
-            writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
-            return
-        }
-        filter.BranchID = claims.BranchID
-    }
-
+    // ---- Остальные роли (owner, branch_owner, tutor, student) — общий каталог курсов ----
     if v, ok := parseIntQuery(r, "tutor_id"); ok && v != nil {
         if claims.Role == models.RoleTutor && *v != claims.UserID {
             writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor can only filter by their own tutor_id")
@@ -123,32 +106,19 @@ type createCourseRequest struct {
 	Subject     string             `json:"subject"`
 	Format      models.CourseFormat `json:"format"`
 	Description *string            `json:"description"`
-	BranchID    int64              `json:"branch_id"`
 }
 
-// Create — POST /courses, roles: owner (любой филиал), branch_owner (только
-// свой — branch_id из запроса игнорируется и принудительно подставляется
-// из claims, чтобы руководитель филиала не мог завести курс в чужом
-// филиале, просто передав другой branch_id).
+// Create — POST /courses, roles: owner, branch_owner. Курс общий для всей
+// сети — филиал не указывается и не сохраняется.
 func (h *CourseHandler) Create(w http.ResponseWriter, r *http.Request) {
-	claims, _ := middleware.FromContext(r.Context())
-
 	var req createCourseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
 		return
 	}
 
-	if claims.Role == models.RoleBranchOwner {
-		if claims.BranchID == nil {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "branch_owner has no branch")
-			return
-		}
-		req.BranchID = *claims.BranchID
-	}
-
-	if req.Title == "" || req.Subject == "" || req.BranchID == 0 {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "title, subject and branch_id are required")
+	if req.Title == "" || req.Subject == "" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "title and subject are required")
 		return
 	}
 	if req.Format == "" {
@@ -157,7 +127,7 @@ func (h *CourseHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	course, err := h.repo.Create(r.Context(), &models.Course{
 		Title: req.Title, Subject: req.Subject, Format: req.Format,
-		Description: req.Description, BranchID: req.BranchID,
+		Description: req.Description,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to create course")
@@ -171,16 +141,11 @@ type updateCourseRequest struct {
 	Subject     *string             `json:"subject"`
 	Format      *models.CourseFormat `json:"format"`
 	Description *string             `json:"description"`
-	BranchID    *int64              `json:"branch_id"`
 }
 
-// Update — PATCH /courses/{id}, roles: owner (любой курс), branch_owner
-// (только курс своего филиала — проверяется до применения изменений; смена
-// branch_id branch_owner-у запрещена, иначе он мог бы "перевести" курс в
-// чужой филиал).
+// Update — PATCH /courses/{id}, roles: owner, branch_owner. Курс общий для
+// всей сети, поэтому доступен для редактирования из любого филиала.
 func (h *CourseHandler) Update(w http.ResponseWriter, r *http.Request) {
-	claims, _ := middleware.FromContext(r.Context())
-
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid course id")
@@ -191,27 +156,6 @@ func (h *CourseHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
 		return
-	}
-
-	if claims.Role == models.RoleBranchOwner {
-		if claims.BranchID == nil {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "branch_owner has no branch")
-			return
-		}
-		existing, err := h.repo.GetByID(r.Context(), id)
-		if err != nil {
-			if errors.Is(err, repository.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "NOT_FOUND", "course not found")
-				return
-			}
-			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course")
-			return
-		}
-		if existing.BranchID != *claims.BranchID {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "course belongs to another branch")
-			return
-		}
-		req.BranchID = nil // руководителю филиала запрещено переносить курс в другой филиал
 	}
 
 	fields := map[string]any{}
@@ -227,9 +171,6 @@ func (h *CourseHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.Description != nil {
 		fields["description"] = *req.Description
 	}
-	if req.BranchID != nil {
-		fields["branch_id"] = *req.BranchID
-	}
 
 	course, err := h.repo.Update(r.Context(), id, fields)
 	if err != nil {
@@ -243,35 +184,13 @@ func (h *CourseHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, course)
 }
 
-// Delete — DELETE /courses/{id}, roles: owner (любой курс), branch_owner
-// (только курс своего филиала).
+// Delete — DELETE /courses/{id}, roles: owner, branch_owner. Курс общий для
+// всей сети, поэтому доступен для удаления из любого филиала.
 func (h *CourseHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	claims, _ := middleware.FromContext(r.Context())
-
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid course id")
 		return
-	}
-
-	if claims.Role == models.RoleBranchOwner {
-		if claims.BranchID == nil {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "branch_owner has no branch")
-			return
-		}
-		existing, err := h.repo.GetByID(r.Context(), id)
-		if err != nil {
-			if errors.Is(err, repository.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "NOT_FOUND", "course not found")
-				return
-			}
-			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course")
-			return
-		}
-		if existing.BranchID != *claims.BranchID {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "course belongs to another branch")
-			return
-		}
 	}
 
 	if err := h.repo.Delete(r.Context(), id); err != nil {
@@ -306,12 +225,10 @@ type assignCourseTutorRequest struct {
 	TutorID int64 `json:"tutor_id"`
 }
 
-// AssignTutor — POST /courses/{id}/tutors, owner (любой филиал) или
-// branch_owner (только курсы своего филиала, и только преподавателей
-// своего же филиала — иначе получится "ведёт курс в чужом филиале",
-// что ломает саму идею "ученики = мой филиал + мой курс").
+// AssignTutor — POST /courses/{id}/tutors, owner или branch_owner. Курс
+// общий для всей сети, поэтому доступен из любого филиала; преподаватель
+// может быть назначен на курс независимо от своего филиала.
 func (h *CourseHandler) AssignTutor(w http.ResponseWriter, r *http.Request) {
-	claims, _ := middleware.FromContext(r.Context())
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid course id")
@@ -328,30 +245,13 @@ func (h *CourseHandler) AssignTutor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	course, err := h.repo.GetByID(r.Context(), id)
-	if err != nil {
+	if _, err := h.repo.GetByID(r.Context(), id); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "course not found")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course")
 		return
-	}
-
-	if claims.Role == models.RoleBranchOwner {
-		if claims.BranchID == nil || *claims.BranchID != course.BranchID {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "course belongs to a different branch")
-			return
-		}
-		tutorBranch, err := h.userRefs.BranchOf(r.Context(), req.TutorID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check tutor branch")
-			return
-		}
-		if tutorBranch == nil || *tutorBranch != course.BranchID {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor must belong to the course's branch")
-			return
-		}
 	}
 
 	if err := h.repo.AssignTutor(r.Context(), id, req.TutorID); err != nil {
@@ -386,7 +286,6 @@ func (h *CourseHandler) AssignTutor(w http.ResponseWriter, r *http.Request) {
 // RemoveTutor — DELETE /courses/{id}/tutors/{tutorId}. Те же права, что и
 // на AssignTutor.
 func (h *CourseHandler) RemoveTutor(w http.ResponseWriter, r *http.Request) {
-	claims, _ := middleware.FromContext(r.Context())
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid course id")
@@ -396,22 +295,6 @@ func (h *CourseHandler) RemoveTutor(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid tutor id")
 		return
-	}
-
-	if claims.Role == models.RoleBranchOwner {
-		course, err := h.repo.GetByID(r.Context(), id)
-		if err != nil {
-			if errors.Is(err, repository.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "NOT_FOUND", "course not found")
-				return
-			}
-			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course")
-			return
-		}
-		if claims.BranchID == nil || *claims.BranchID != course.BranchID {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "course belongs to a different branch")
-			return
-		}
 	}
 
 	if err := h.repo.RemoveTutor(r.Context(), id, tutorID); err != nil {

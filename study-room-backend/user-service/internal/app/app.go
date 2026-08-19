@@ -46,18 +46,18 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, pub events.Publisher, ap
 		pub = events.NoopPublisher{}
 	}
 	return &Deps{
-		Pool:            pool,
-		TM:              tm,
-		Users:           repository.NewUserRepository(pool),
-		Branches:        repository.NewBranchRepository(pool),
-		Auth:            repository.NewAuthRepository(pool),
-		ParentChild:     repository.NewParentChildRepository(pool),
-		TutorProfiles:   repository.NewTutorProfileRepository(pool),
+		Pool:          pool,
+		TM:            tm,
+		Users:         repository.NewUserRepository(pool),
+		Branches:      repository.NewBranchRepository(pool),
+		Auth:          repository.NewAuthRepository(pool),
+		ParentChild:   repository.NewParentChildRepository(pool),
+		TutorProfiles: repository.NewTutorProfileRepository(pool),
 		StudentProfiles: repository.NewStudentProfileRepository(pool),
-		Events:          pub,
-		AppPublicURL:    appPublicURL,
-		AuthRateLimit:   authRateLimit,
-		CookieOptions:   cookieOpts,
+		Events:        pub,
+		AppPublicURL:  appPublicURL,
+		AuthRateLimit: authRateLimit,
+		CookieOptions: cookieOpts,
 	}
 }
 
@@ -68,7 +68,6 @@ func NewRouter(d *Deps) http.Handler {
 	tutorHandler := handlers.NewTutorHandler(d.TutorProfiles, d.Users)
 
 	r := chi.NewRouter()
-	r.Use(middleware.CORS)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logging)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })

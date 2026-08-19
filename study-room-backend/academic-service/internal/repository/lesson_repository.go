@@ -89,8 +89,9 @@ func (r *LessonRepository) GetByID(ctx context.Context, id int64) (*models.Lesso
 }
 
 // LessonFilter — tutor_id/student_id/date_from/date_to как в контракте 2.7.
-// BranchID — внутренний принудительный фильтр для branch_owner (джойн по
-// courses.branch_id), не часть публичного query-контракта.
+// BranchID — внутренний принудительный фильтр для branch_owner (курсы не
+// привязаны к филиалу, поэтому фильтруем по филиалу преподавателя занятия
+// через user_refs), не часть публичного query-контракта.
 type LessonFilter struct {
 	TutorID    *int64
 	StudentID  *int64
@@ -106,7 +107,7 @@ func (r *LessonRepository) List(ctx context.Context, f LessonFilter) ([]*models.
 	query := `SELECT DISTINCT l.id, l.course_id, l.tutor_id, l.created_by, l.topic, l.lesson_date,
 		l.start_time, l.end_time, l.location_type, l.group_type, l.status, l.comment, l.created_at
 		FROM lessons l
-		JOIN courses c ON c.id = l.course_id`
+		LEFT JOIN user_refs ur ON ur.user_id = l.tutor_id`
 	if f.StudentID != nil || len(f.StudentIDs) > 0 {
 		query += ` JOIN lesson_participants lp ON lp.lesson_id = l.id`
 	}
@@ -128,7 +129,7 @@ func (r *LessonRepository) List(ctx context.Context, f LessonFilter) ([]*models.
 		i++
 	}
 	if f.BranchID != nil {
-		query += " AND c.branch_id = $" + strconv.Itoa(i)
+		query += " AND ur.branch_id = $" + strconv.Itoa(i)
 		args = append(args, *f.BranchID)
 		i++
 	}
@@ -233,11 +234,14 @@ func (r *LessonRepository) DeleteByTutor(ctx context.Context, tutorID int64) (in
 	return tag.RowsAffected(), nil
 }
 
-// CourseBranchID — филиал курса занятия, для проверки прав branch_owner.
-func (r *LessonRepository) CourseBranchID(ctx context.Context, lessonID int64) (int64, error) {
-	var branchID int64
+// TutorBranchID — филиал преподавателя занятия, для проверки прав
+// branch_owner (курсы больше не привязаны к филиалу).
+func (r *LessonRepository) TutorBranchID(ctx context.Context, lessonID int64) (int64, error) {
+	var branchID *int64
 	err := r.pool.QueryRow(ctx, `
-		SELECT c.branch_id FROM lessons l JOIN courses c ON c.id = l.course_id WHERE l.id = $1`,
+		SELECT ur.branch_id FROM lessons l
+		LEFT JOIN user_refs ur ON ur.user_id = l.tutor_id
+		WHERE l.id = $1`,
 		lessonID).Scan(&branchID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -245,7 +249,10 @@ func (r *LessonRepository) CourseBranchID(ctx context.Context, lessonID int64) (
 		}
 		return 0, err
 	}
-	return branchID, nil
+	if branchID == nil {
+		return 0, ErrNotFound
+	}
+	return *branchID, nil
 }
 
 // ParticipantsByLessons — батч-версия Participants для списка занятий сразу

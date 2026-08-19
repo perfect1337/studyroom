@@ -74,25 +74,17 @@ export default function TeachersDirectory({ role }) {
   const [addFormCourses, setAddFormCourses] = useState([]); // курсы филиала, выбранного в форме добавления
   const [addFormCoursesLoading, setAddFormCoursesLoading] = useState(false);
 
-  // Курсы для формы добавления преподавателя — только курсы того филиала,
-  // который выбран для преподавателя в форме (branch_id). Это принципиально,
-  // а не просто "потому что курс привязан к филиалу": GET /courses для
-  // tutor'а на бэкенде всегда жёстко фильтруется по его claims.BranchID
-  // (см. course_handler.go: List подставляет branch_id из токена для всех
-  // ролей кроме owner) — если закрепить преподавателя за курсом из ЧУЖОГО
-  // филиала, запись в course_tutors создастся, но сам преподаватель после
-  // входа никогда её не увидит (сервер отфильтрует по branch_id раньше, чем
-  // дойдёт до course_tutors). Поэтому выбор курсов всегда ограничен
-  // филиалом, в который принят преподаватель — весь список курсов ЭТОГО
-  // филиала ("из всех возможных" для него), а не всей сети.
+  // Курсы для формы добавления преподавателя — курсы больше не привязаны к
+  // филиалу, поэтому показываем весь каталог курсов сети независимо от
+  // того, в какой филиал принят преподаватель.
   useEffect(() => {
-    if (!showAddModal || !addForm.branch_id) {
+    if (!showAddModal) {
       setAddFormCourses([]);
       return;
     }
     let cancelled = false;
     setAddFormCoursesLoading(true);
-    fetchCourses({ branch_id: Number(addForm.branch_id) })
+    fetchCourses()
       .then((res) => {
         if (!cancelled) setAddFormCourses(res?.items ?? []);
       })
@@ -105,8 +97,7 @@ export default function TeachersDirectory({ role }) {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showAddModal, addForm.branch_id]);
+  }, [showAddModal]);
 
   // Список филиалов — нужен только owner, чтобы выбрать, какой филиал смотреть, и в форме добавления.
   useEffect(() => {

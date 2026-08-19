@@ -242,14 +242,12 @@ export default function TeacherDetail({ role = "owner" }) {
     return map;
   }, [branches]);
 
-  // Курсы филиала преподавателя — база для карточки "Курсы преподавателя"
-  // (назначение/снятие через course_tutors, см. 2.1b). Владелец сети видит
-  // список курсов всей сети, поэтому сужаем до филиала самого преподавателя.
+  // Курсы — база для карточки "Курсы преподавателя" (назначение/снятие через
+  // course_tutors, см. 2.1b). Курсы не привязаны к филиалу — общий каталог
+  // курсов всей сети доступен для назначения любому преподавателю.
   const branchCourses = useMemo(() => {
     if (!teacher) return [];
-    return courses
-      .filter((c) => String(c.branch_id) === String(teacher.branch_id))
-      .sort((a, b) => (a.title || a.subject).localeCompare(b.title || b.subject, "ru"));
+    return [...courses].sort((a, b) => (a.title || a.subject).localeCompare(b.title || b.subject, "ru"));
   }, [courses, teacher]);
 
   const taughtCourseIds = useMemo(() => {

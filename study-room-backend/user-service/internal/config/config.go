@@ -25,7 +25,7 @@ type Config struct {
 	// клиент, слав произвольный X-Forwarded-For, обходит rate limit.
 	TrustedProxies string
 
-	// --- Cookie с refresh-токеном (см. internal/handlers/cookies.go) ---
+	// Cookie с refresh-токеном (см. internal/handlers/cookies.go)
 	// Refresh-токен больше не возвращается в JSON-теле ответа (уязвим к XSS
 	// через localStorage), а кладётся в httpOnly cookie — недоступен из JS.
 	CookieSecure   bool   // Secure-флаг; в проде за HTTPS держите true (по умолчанию)

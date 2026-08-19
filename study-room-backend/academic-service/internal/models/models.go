@@ -46,7 +46,6 @@ type Course struct {
 	Subject     string       `json:"subject"`
 	Format      CourseFormat `json:"format"`
 	Description *string      `json:"description,omitempty"`
-	BranchID    int64        `json:"branch_id"`
 	TutorIDs    []int64      `json:"tutor_ids"`
 	CreatedAt   time.Time    `json:"created_at"`
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import ConfirmDeleteModal from "../../components/ui/ConfirmDeleteModal.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchBranches, fetchMyPeople } from "../../api/users.js";
+import { fetchMyPeople } from "../../api/users.js";
 import { fetchCourses, createCourse, deleteCourse } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
@@ -12,31 +12,22 @@ const EMPTY_FORM = { title: "", subject: "", format: "individual", description: 
 
 /**
  * Раздел "Курсы" — общий компонент для owner (/admin/courses) и branch_owner
- * (/branch/courses). Бэкенд (academic-service) поддерживает POST/PATCH/DELETE
- * /courses для обеих ролей — для branch_owner branch_id всегда принудительно
- * подставляется/проверяется сервером как его собственный филиал (см.
+ * (/branch/courses). Курсы НЕ привязаны к филиалу — единый каталог курсов
+ * на всю сеть, виден и редактируется одинаково из любого филиала. Бэкенд
+ * (academic-service) поддерживает POST/PATCH/DELETE /courses для обеих
+ * ролей без какой-либо фильтрации по филиалу (см.
  * academic-service/internal/handlers/course_handler.go).
  *
  * Важно: у enrollments/lessons внешний ключ на courses настроен
  * ON DELETE CASCADE — удаление курса удалит и связанные записи на курс, и
  * занятия по нему. Поэтому удаление защищено явным предупреждением-подтверждением.
- *
- * Создание курса у owner: у courses в БД branch_id обязателен (один курс =
- * один филиал, см. миграцию 0001_init), поэтому "курс для всех филиалов" на
- * уровне данных — это несколько записей courses с одинаковыми
- * title/subject/format/description, но разными branch_id (по одной на
- * каждый филиал сети) — курс сразу заводится для ВСЕХ филиалов сети без
- * выбора, см. handleAddCourse ниже. У branch_owner филиал всего один, поэтому
- * для него создаётся ровно одна запись — его собственный филиал, без выбора.
  */
 export default function CoursesDirectory({ role }) {
   const isOwner = role === "owner";
   const { user } = useAuth();
 
-  const [branches, setBranches] = useState([]);
-  const [selectedBranch, setSelectedBranch] = useState(""); // "" = все филиалы (только owner)
   const [courses, setCourses] = useState([]);
-  const [tutors, setTutors] = useState([]); // нужны branch_owner, чтобы показать ФИО преподавателей в таблице
+  const [tutors, setTutors] = useState([]); // нужны, чтобы показать ФИО преподавателей в таблице
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -48,17 +39,8 @@ export default function CoursesDirectory({ role }) {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
-  useEffect(() => {
-    if (!isOwner) return;
-    fetchBranches()
-      .then((res) => setBranches(res?.items ?? []))
-      .catch(() => {});
-  }, [isOwner]);
-
-  // branch_owner не выбирает филиал — фильтр/список курсов уже ограничен
-  // сервером его собственным филиалом (см. course_handler.go List). Тут нам
-  // нужны только преподаватели своего филиала, чтобы показать их ФИО в
-  // колонке "Преподаватели" (owner получает это иначе — см. ниже).
+  // Список преподавателей — нужен только для отображения ФИО в колонке
+  // "Преподаватели" у branch_owner (owner получает это иначе — см. ниже).
   useEffect(() => {
     if (isOwner) return;
     let cancelled = false;
@@ -78,7 +60,7 @@ export default function CoursesDirectory({ role }) {
     setLoading(true);
     setError("");
     try {
-      const res = await fetchCourses(selectedBranch ? { branch_id: Number(selectedBranch) } : {});
+      const res = await fetchCourses({});
       setCourses(res?.items ?? []);
     } catch (e) {
       setError(e.message || "Не удалось загрузить список курсов");
@@ -90,13 +72,7 @@ export default function CoursesDirectory({ role }) {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBranch]);
-
-  const branchNameById = useMemo(() => {
-    const map = {};
-    branches.forEach((b) => (map[b.id] = b.name || b.city));
-    return map;
-  }, [branches]);
+  }, []);
 
   const tutorNameById = useMemo(() => {
     const map = {};
@@ -110,20 +86,11 @@ export default function CoursesDirectory({ role }) {
     setShowAddModal(true);
   }
 
-  // owner: курс создаётся сразу для всех филиалов сети — выбор конкретного
-  // филиала убран из формы. На уровне БД branch_id у courses обязателен
-  // (один курс = один филиал), поэтому "курс на всю сеть" реализован как
-  // по одному POST /courses на каждый филиал из уже загруженного списка
-  // branches, с одинаковыми title/subject/format/description.
-  // branch_owner: филиал всего один — один POST /courses, branch_id
-  // подставляет сам бэкенд из JWT (см. course_handler.go Create).
+  // Курс общий для всей сети — создаётся одним POST /courses, без выбора
+  // и без привязки к филиалу.
   async function handleAddCourse(e) {
     e.preventDefault();
     if (!addForm.title || !addForm.subject) return;
-    if (isOwner && branches.length === 0) {
-      setAddStatus("Список филиалов пуст — сначала добавьте хотя бы один филиал");
-      return;
-    }
     setAddStatus("saving");
     try {
       const payload = {
@@ -132,38 +99,8 @@ export default function CoursesDirectory({ role }) {
         format: addForm.format,
         description: addForm.description || undefined,
       };
-
-      if (!isOwner) {
-        const created = await createCourse(payload);
-        if (created) setCourses((list) => [created, ...list]);
-        setShowAddModal(false);
-        return;
-      }
-
-      const results = await Promise.allSettled(
-        branches.map((b) => createCourse({ ...payload, branch_id: Number(b.id) }))
-      );
-
-      const created = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
-      const failed = results.filter((r) => r.status === "rejected");
-
-      if (created.length > 0) {
-        // Показываем сразу те из созданных курсов, что попадают в текущий фильтр.
-        const toShow = selectedBranch
-          ? created.filter((c) => Number(c.branch_id) === Number(selectedBranch))
-          : created;
-        if (toShow.length > 0) {
-          setCourses((list) => [...toShow, ...list]);
-        }
-      }
-
-      if (failed.length > 0) {
-        setAddStatus(
-          `Курс создан для ${created.length} из ${branches.length} филиалов. Не удалось создать для ${failed.length} филиал(ов) — попробуйте ещё раз.`
-        );
-        return;
-      }
-
+      const created = await createCourse(payload);
+      if (created) setCourses((list) => [created, ...list]);
       setShowAddModal(false);
     } catch (err) {
       setAddStatus(err.message || "Не удалось создать курс");
@@ -197,9 +134,7 @@ export default function CoursesDirectory({ role }) {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-stack-md">
           <div>
             <h2 className="font-headline-md text-headline-md text-primary mb-1">Курсы</h2>
-            <p className="font-body-md text-body-md text-on-surface-variant">
-              {isOwner ? "Курсы по всей сети филиалов" : "Курсы вашего филиала"}
-            </p>
+            <p className="font-body-md text-body-md text-on-surface-variant">Курсы по всей сети</p>
           </div>
 
           {isOwner && (
@@ -217,23 +152,6 @@ export default function CoursesDirectory({ role }) {
           <div className="p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
         )}
 
-        {isOwner && (
-          <section className="flex flex-col md:flex-row gap-stack-md md:items-center">
-            <select
-              value={selectedBranch}
-              onChange={(e) => setSelectedBranch(e.target.value)}
-              className="bg-surface-container-lowest border border-outline-variant rounded-lg px-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-            >
-              <option value="">Все филиалы</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name || b.city}
-                </option>
-              ))}
-            </select>
-          </section>
-        )}
-
         <div className="bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant overflow-hidden">
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -242,7 +160,6 @@ export default function CoursesDirectory({ role }) {
                   <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap">Курс</th>
                   <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap">Предмет</th>
                   <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap">Формат</th>
-                  {isOwner && <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap">Филиал</th>}
                   <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap">Преподаватели</th>
                   <th className="px-6 py-4 font-label-md text-label-md whitespace-nowrap text-right">Действия</th>
                 </tr>
@@ -250,73 +167,69 @@ export default function CoursesDirectory({ role }) {
               <tbody className="divide-y divide-outline-variant">
                 {!loading && courses.length === 0 && (
                   <tr>
-                    <td colSpan={isOwner ? 6 : 5} className="px-6 py-10 text-center text-on-surface-variant">
+                    <td colSpan={5} className="px-6 py-10 text-center text-on-surface-variant">
                       Курсы не найдены
                     </td>
                   </tr>
                 )}
                 {loading && (
                   <tr>
-                    <td colSpan={isOwner ? 6 : 5} className="px-6 py-10 text-center text-on-surface-variant">
+                    <td colSpan={5} className="px-6 py-10 text-center text-on-surface-variant">
                       Загрузка...
                     </td>
                   </tr>
                 )}
-                {courses.map((c) => (
-                  <tr key={c.id} className="hover:bg-surface-container-low transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="font-label-md text-label-md font-bold text-on-surface">{c.title}</div>
-                      {isOwner ? (
-                        <div className="text-[12px] text-outline">ID: {c.id}</div>
-                      ) : (
-                        c.description && (
-                          <div className="text-[12px] text-on-surface-variant mt-0.5 max-w-xs truncate">{c.description}</div>
-                        )
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-label-md font-label-md">{c.subject}</td>
-                    <td className="px-6 py-4">
-                      <span className="inline-block whitespace-nowrap bg-primary-fixed text-on-primary-fixed px-3 py-1 rounded-full text-label-md font-medium">
-                        {FORMAT_LABEL[c.format] ?? c.format}
-                      </span>
-                    </td>
-                    {isOwner && (
-                      <td className="px-6 py-4 text-label-md font-label-md text-on-surface-variant whitespace-nowrap">
-                        {branchNameById[c.branch_id] || `Филиал #${c.branch_id}`}
+                {!loading &&
+                  courses.map((c) => (
+                    <tr key={c.id} className="hover:bg-surface-container-low transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-on-surface">{c.title}</div>
+                        {isOwner ? (
+                          <div className="text-[12px] text-outline">ID: {c.id}</div>
+                        ) : (
+                          c.description && (
+                            <div className="text-[12px] text-on-surface-variant mt-0.5 line-clamp-1">{c.description}</div>
+                          )
+                        )}
                       </td>
-                    )}
-                    <td className="px-6 py-4 text-label-md font-label-md text-on-surface-variant">
-                      {isOwner ? (
-                        <span className="font-bold text-on-surface">{c.tutor_ids?.length ?? 0}</span>
-                      ) : c.tutor_ids?.length ? (
-                        <div className="flex flex-wrap gap-1">
-                          {c.tutor_ids.map((id) => (
-                            <span
-                              key={id}
-                              className="inline-block whitespace-nowrap bg-surface-container-high px-2 py-0.5 rounded-full text-[12px]"
-                            >
-                              {tutorNameById[id] || `#${id}`}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-outline">Не назначены</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => {
-                          setDeleteError("");
-                          setCourseToDelete(c);
-                        }}
-                        className="inline-flex items-center gap-1 text-error font-bold text-label-md hover:underline"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">delete</span>
-                        Удалить
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      <td className="px-6 py-4 text-on-surface-variant">{c.subject}</td>
+                      <td className="px-6 py-4">
+                        <span className="inline-block whitespace-nowrap bg-primary-fixed text-on-primary-fixed px-2.5 py-1 rounded-full text-[12px] font-medium">
+                          {FORMAT_LABEL[c.format] ?? c.format}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {isOwner ? (
+                          <span className="font-bold text-on-surface">{c.tutor_ids?.length ?? 0}</span>
+                        ) : c.tutor_ids?.length ? (
+                          <div className="flex flex-wrap gap-1">
+                            {c.tutor_ids.map((id) => (
+                              <span
+                                key={id}
+                                className="inline-block whitespace-nowrap bg-surface-container-high px-2 py-0.5 rounded-full text-[12px]"
+                              >
+                                {tutorNameById[id] || `#${id}`}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-outline">Не назначены</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button
+                          onClick={() => {
+                            setDeleteError("");
+                            setCourseToDelete(c);
+                          }}
+                          className="inline-flex items-center gap-1 text-error font-bold text-label-md hover:underline"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">delete</span>
+                          Удалить
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
@@ -355,11 +268,6 @@ export default function CoursesDirectory({ role }) {
                   <span className="inline-block whitespace-nowrap bg-primary-fixed text-on-primary-fixed px-2.5 py-1 rounded-full text-[11px] font-medium">
                     {FORMAT_LABEL[c.format] ?? c.format}
                   </span>
-                  {isOwner && (
-                    <span className="text-[12px] text-on-surface-variant px-2 py-1">
-                      {branchNameById[c.branch_id] || `Филиал #${c.branch_id}`}
-                    </span>
-                  )}
                 </div>
 
                 <div className="text-[12px] text-on-surface-variant border-t border-outline-variant/40 pt-2">
@@ -431,22 +339,6 @@ export default function CoursesDirectory({ role }) {
                   </select>
                 </div>
               </div>
-              {isOwner ? (
-                <div className="flex items-start gap-2 p-3 rounded-lg bg-primary-fixed/40 text-on-surface-variant">
-                  <span className="material-symbols-outlined text-[18px] text-primary">info</span>
-                  <p className="text-[12px] font-label-md text-label-md">
-                    Курс будет создан сразу для всех филиалов сети ({branches.length}
-                    {branches.length === 1 ? " филиал" : " филиалов"}) — выбирать филиал не нужно.
-                  </p>
-                </div>
-              ) : (
-                <div className="flex items-start gap-2 p-3 rounded-lg bg-primary-fixed/40 text-on-surface-variant">
-                  <span className="material-symbols-outlined text-[18px] text-primary">info</span>
-                  <p className="text-[12px] font-label-md text-label-md">
-                    Курс будет создан в вашем филиале ({user?.branch_name || `Филиал #${user?.branch_id}`}).
-                  </p>
-                </div>
-              )}
               <div>
                 <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Описание</label>
                 <textarea

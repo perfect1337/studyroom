@@ -1,6 +1,6 @@
 PROJECT_DIR := $(shell pwd)
-FRONTEND_DIR := $(PROJECT_DIR)\study-room-frontend
-BACKEND_DIR := $(PROJECT_DIR)\study-room-backend
+FRONTEND_DIR := $(PROJECT_DIR)/study-room-frontend
+BACKEND_DIR := $(PROJECT_DIR)/study-room-backend
 
 .PHONY: up down down-v build build-frontend build-backend logs ps help up-d healthz-full env test-user test-academic test-notification clean
 
@@ -16,10 +16,10 @@ up-d: ## Поднять backend в фоне (docker compose up -d --build)
 	cd "$(BACKEND_DIR)" && docker compose up -d --build
 
 up-prod: ## Поднять production stack (docker compose -f docker-compose.prod.yml)
-	cd "$(BACKEND_DIR)" && docker compose -f docker-compose.prod.yml up -d --build
+	cd "$(BACKEND_DIR)" && docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 
 up-prod-d: ## Поднять production stack в фоне
-	cd "$(BACKEND_DIR)" && docker compose -f docker-compose.prod.yml up -d --build
+	cd "$(BACKEND_DIR)" && docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 
 down: ## Остановить backend (данные сохраняются)
 	cd "$(BACKEND_DIR)" && docker compose down
@@ -28,10 +28,10 @@ down-v: ## Остановить backend и снести volumes (чистая Б
 	cd "$(BACKEND_DIR)" && docker compose down -v
 
 down-prod: ## Остановить production stack
-	cd "$(BACKEND_DIR)" && docker compose -f docker-compose.prod.yml down
+	cd "$(BACKEND_DIR)" && docker compose --env-file .env.prod -f docker-compose.prod.yml down
 
 down-prod-v: ## Остановить production stack и снести volumes
-	cd "$(BACKEND_DIR)" && docker compose -f docker-compose.prod.yml down -v
+	cd "$(BACKEND_DIR)" && docker compose --env-file .env.prod -f docker-compose.prod.yml down -v
 
 build: ## Пересобрать образы без запуска
 	cd "$(BACKEND_DIR)" && docker compose build
@@ -49,10 +49,16 @@ logs: ## Логи всех сервисов (Ctrl+C для выхода)
 	cd "$(BACKEND_DIR)" && docker compose logs -f
 
 logs-frontend: ## Логи nginx
-	cd "$(BACKEND_DIR)" && docker compose logs -f nginx
+	cd "$(BACKEND_DIR)" && docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f nginx
+
+logs-backend: ## Логи всех backend сервисов
+	cd "$(BACKEND_DIR)" && docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f
 
 ps: ## Статус контейнеров
 	cd "$(BACKEND_DIR)" && docker compose ps
+
+ps-prod: ## Статус прода контейнеров
+	cd "$(BACKEND_DIR)" && docker compose --env-file .env.prod -f docker-compose.prod.yml ps
 
 # ============================================================
 # Health Checks
@@ -86,7 +92,7 @@ env-dev: ## Создать .env для dev
 	@if not exist $(BACKEND_DIR)\.env ( copy $(BACKEND_DIR)\.env.example $(BACKEND_DIR)\.env >nul && echo .env created ) else ( echo .env already exists )
 
 env-prod: ## Создать .env.prod
-	@if not exist $(BACKEND_DIR)\.env.prod ( copy $(BACKEND_DIR)\.env.example $(BACKEND_DIR)\.env.prod >nul && echo .env.prod created ) else ( echo .env.prod already exists )
+	@if not exist $(BACKEND_DIR)/.env.prod ( copy $(BACKEND_DIR)/.env.example $(BACKEND_DIR)/.env.prod >nul && echo .env.prod created ) else ( echo .env.prod already exists )
 
 # ============================================================
 # Tests
@@ -95,13 +101,13 @@ test-user: ## Контрактные тесты user-service
 	cd "$(BACKEND_DIR)\user-service" && make test
 
 test-academic: ## Контрактные тесты academic-service
-	cd "$(BACKEND_DIR)\academic-service" && make test
+	cd "$(BACKEND_DIR)/academic-service" && make test
 
 test-notification: ## Контрактные тесты notification-service
-	cd "$(BACKEND_DIR)\notification-service" && make test
+	cd "$(BACKEND_DIR)/notification-service" && make test
 
 test-load: ## Запустить load/integration тесты
-	cd "$(BACKEND_DIR)\tests\load" && go test -v ./...
+	cd "$(BACKEND_DIR)/tests/load" && go test -v ./...
 
 # ============================================================
 # Frontend

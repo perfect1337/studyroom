@@ -22,14 +22,14 @@ func NewCourseRepository(pool *pgxpool.Pool) *CourseRepository {
 // которые его ведут (course_tutors). COALESCE(..., '{}') превращает
 // NULL (когда ни один преподаватель ещё не назначен) в пустой массив,
 // а не в null в JSON.
-const courseSelectColumns = `c.id, c.title, c.subject, c.format, c.description, c.branch_id, c.created_at,
+const courseSelectColumns = `c.id, c.title, c.subject, c.format, c.description, c.created_at,
 	COALESCE(array_agg(ct.tutor_id) FILTER (WHERE ct.tutor_id IS NOT NULL), '{}')::bigint[]`
 
-const courseInsertColumns = `id, title, subject, format, description, branch_id, created_at`
+const courseInsertColumns = `id, title, subject, format, description, created_at`
 
 func scanCourseWithTutors(row pgx.Row) (*models.Course, error) {
 	var c models.Course
-	err := row.Scan(&c.ID, &c.Title, &c.Subject, &c.Format, &c.Description, &c.BranchID, &c.CreatedAt, &c.TutorIDs)
+	err := row.Scan(&c.ID, &c.Title, &c.Subject, &c.Format, &c.Description, &c.CreatedAt, &c.TutorIDs)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -47,7 +47,7 @@ func scanCourseWithTutors(row pgx.Row) (*models.Course, error) {
 // преподавателей никак не поменялся этим запросом).
 func scanCourseNoTutors(row pgx.Row) (*models.Course, error) {
 	var c models.Course
-	err := row.Scan(&c.ID, &c.Title, &c.Subject, &c.Format, &c.Description, &c.BranchID, &c.CreatedAt)
+	err := row.Scan(&c.ID, &c.Title, &c.Subject, &c.Format, &c.Description, &c.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -59,9 +59,9 @@ func scanCourseNoTutors(row pgx.Row) (*models.Course, error) {
 }
 
 func (r *CourseRepository) Create(ctx context.Context, c *models.Course) (*models.Course, error) {
-	query := `INSERT INTO courses (title, subject, format, description, branch_id)
-		VALUES ($1,$2,$3,$4,$5) RETURNING ` + courseInsertColumns
-	row := r.pool.QueryRow(ctx, query, c.Title, c.Subject, c.Format, c.Description, c.BranchID)
+	query := `INSERT INTO courses (title, subject, format, description)
+		VALUES ($1,$2,$3,$4) RETURNING ` + courseInsertColumns
+	row := r.pool.QueryRow(ctx, query, c.Title, c.Subject, c.Format, c.Description)
 	return scanCourseNoTutors(row)
 }
 
@@ -72,16 +72,14 @@ func (r *CourseRepository) GetByID(ctx context.Context, id int64) (*models.Cours
 	return scanCourseWithTutors(r.pool.QueryRow(ctx, query, id))
 }
 
-// CourseFilter — branch_id обязателен для всех ролей кроме owner
-// (проверяется в handlers, см. api-contracts.md 2.1). subject — опциональный
-// ILIKE-фильтр. TutorID — курсы, которые ведёт конкретный преподаватель
-// (через course_tutors); используется и для "мои курсы" у tutor, и как
-// query-фильтр у owner/branch_owner.
+// CourseFilter — курсы больше не привязаны к филиалу, каталог общий для
+// всей сети. subject — опциональный ILIKE-фильтр. TutorID — курсы, которые
+// ведёт конкретный преподаватель (через course_tutors); используется и для
+// "мои курсы" у tutor, и как query-фильтр у owner/branch_owner.
 type CourseFilter struct {
-	BranchID *int64
-	Subject  string
-	TutorID  *int64
-	IDs      []int64
+	Subject string
+	TutorID *int64
+	IDs     []int64
 }
 
 func (r *CourseRepository) List(ctx context.Context, f CourseFilter) ([]*models.Course, error) {
@@ -90,11 +88,6 @@ func (r *CourseRepository) List(ctx context.Context, f CourseFilter) ([]*models.
 	where := " WHERE 1=1"
 	args := []any{}
 	i := 1
-	if f.BranchID != nil {
-		where += " AND c.branch_id = $" + strconv.Itoa(i)
-		args = append(args, *f.BranchID)
-		i++
-	}
 	if f.Subject != "" {
 		where += " AND c.subject ILIKE $" + strconv.Itoa(i)
 		args = append(args, "%"+f.Subject+"%")
@@ -134,7 +127,7 @@ func (r *CourseRepository) Update(ctx context.Context, id int64, fields map[stri
 		return r.GetByID(ctx, id)
 	}
 	allowedCols := map[string]bool{
-		"title": true, "subject": true, "format": true, "description": true, "branch_id": true,
+		"title": true, "subject": true, "format": true, "description": true,
 	}
 	setClauses := ""
 	args := []any{}

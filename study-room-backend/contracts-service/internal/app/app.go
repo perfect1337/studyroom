@@ -53,7 +53,6 @@ func NewRouter(d *Deps) http.Handler {
 	h := handlers.NewContractHandler(d.Contracts, d.UserRefs, d.UserClient, d.Events)
 
 	r := chi.NewRouter()
-	r.Use(middleware.CORS)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logging)
 

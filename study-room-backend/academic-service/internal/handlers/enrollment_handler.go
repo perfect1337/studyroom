@@ -126,7 +126,7 @@ func (h *EnrollmentHandler) enrollmentInOwnBranch(w http.ResponseWriter, r *http
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load enrollment")
 		return false
 	}
-	branchID, err := h.repo.CourseBranchID(r.Context(), enrollment.CourseID)
+	branchID, err := h.repo.EnrollmentStudentBranchID(r.Context(), enrollment.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check branch")
 		return false
@@ -144,7 +144,7 @@ func (h *EnrollmentHandler) enrollmentInOwnBranch(w http.ResponseWriter, r *http
 //   - tutor: только свои (tutor_id = claims.UserID, query игнорируется)
 //   - parent: только свои дети (список получаем синхронно у User Service)
 //   - student: только себя (student_id = claims.UserID)
-//   - branch_owner: только свой филиал (JOIN courses.branch_id)
+//   - branch_owner: только свой филиал (по филиалу ученика в user_refs)
 //   - owner: без ограничений, использует query как есть
 func (h *EnrollmentHandler) List(w http.ResponseWriter, r *http.Request) {
 	claims, _ := middleware.FromContext(r.Context())
@@ -258,7 +258,7 @@ func (h *EnrollmentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	case models.RoleOwner:
 		// без ограничений
 	case models.RoleBranchOwner:
-		branchID, err := h.repo.CourseBranchID(r.Context(), enrollment.CourseID)
+		branchID, err := h.repo.EnrollmentStudentBranchID(r.Context(), enrollment.ID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check branch")
 			return

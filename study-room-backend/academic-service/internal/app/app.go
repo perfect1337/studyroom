@@ -62,7 +62,6 @@ func NewRouter(d *Deps) http.Handler {
 	testHandler := handlers.NewTestHandler(d.Tests, d.Lessons, d.UserRefs, d.UserClient)
 
 	r := chi.NewRouter()
-	r.Use(middleware.CORS)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logging)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })

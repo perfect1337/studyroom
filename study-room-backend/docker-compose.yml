@@ -1,3 +1,8 @@
+# ============================================================
+# Development docker-compose
+# Запускать: docker compose up
+# Использует .env или дефолтные значения
+# ============================================================
 services:
   # ---------- User Service ----------
   postgres-users:
@@ -7,7 +12,7 @@ services:
       POSTGRES_USER: user_service
       POSTGRES_PASSWORD: ${USERS_DB_PASSWORD:-devpassword123}
     ports:
-      - "5433:5432" # для локальных контрактных тестов (TEST_DATABASE_URL)
+      - "5433:5432"
     volumes:
       - postgres_users_data:/var/lib/postgresql/data
     healthcheck:
@@ -28,9 +33,6 @@ services:
       NATS_URL: nats://nats:4222
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:3000}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
-      # Локальный docker-compose работает по http://localhost, поэтому по
-      # умолчанию Secure=false (иначе браузер может не сохранить cookie
-      # без HTTPS вне localhost). В проде это ДОЛЖНО быть true.
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-Lax}
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
@@ -45,10 +47,7 @@ services:
       - studyroom-network
     restart: unless-stopped
 
-  # ---------- Брокер событий (NATS) ----------
-  # Сюда будут публиковать события user.created, contract.created и т.д.
-  # (см. architecture-communication.mermaid) — остальные сервисы, когда появятся,
-  # подключаются к nats:4222 в этой же сети.
+  # ---------- NATS ----------
   nats:
     image: nats:2-alpine
     ports:
@@ -64,7 +63,7 @@ services:
       POSTGRES_USER: notification_service
       POSTGRES_PASSWORD: ${NOTIFICATIONS_DB_PASSWORD:-devpassword123}
     ports:
-      - "5434:5432" # для локальных контрактных тестов (TEST_DATABASE_URL)
+      - "5434:5432"
     volumes:
       - postgres_notifications_data:/var/lib/postgresql/data
     healthcheck:
@@ -84,7 +83,6 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       SERVICE_TOKEN: ${NOTIFICATIONS_SERVICE_TOKEN:-change-me-service-token}
       NATS_URL: nats://nats:4222
-      # --- Яндекс SMTP: см. notification-service/README.md как получить пароль приложения ---
       SMTP_HOST: ${SMTP_HOST:-smtp.yandex.ru}
       SMTP_PORT: ${SMTP_PORT:-465}
       SMTP_USER: ${SMTP_USER:-}
@@ -109,7 +107,7 @@ services:
       POSTGRES_USER: academic_service
       POSTGRES_PASSWORD: ${ACADEMIC_DB_PASSWORD:-devpassword123}
     ports:
-      - "5435:5432" # для локальных контрактных тестов (TEST_DATABASE_URL)
+      - "5435:5432"
     volumes:
       - postgres_academic_data:/var/lib/postgresql/data
     healthcheck:
@@ -128,9 +126,6 @@ services:
       DATABASE_URL: postgres://academic_service:${ACADEMIC_DB_PASSWORD:-devpassword123}@postgres-academic:5432/study_room_academic?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       NATS_URL: nats://nats:4222
-      # Единственный синхронный HTTP-вызов Academic Service — проверка
-      # "чьи дети" у parent (GET /parents/{id}/children), см.
-      # internal/userclient. Всё остальное идёт через user_refs/события.
       USER_SERVICE_URL: http://user-service:8081
     ports:
       - "8082:8082"
@@ -153,7 +148,7 @@ services:
       POSTGRES_USER: contracts_service
       POSTGRES_PASSWORD: ${CONTRACTS_DB_PASSWORD:-devpassword123}
     ports:
-      - "5437:5432" # для локальных контрактных тестов (TEST_DATABASE_URL)
+      - "5437:5432"
     volumes:
       - postgres_contracts_data:/var/lib/postgresql/data
     healthcheck:
@@ -172,9 +167,6 @@ services:
       DATABASE_URL: postgres://contracts_service:${CONTRACTS_DB_PASSWORD:-devpassword123}@postgres-contracts:5432/study_room_contracts?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       NATS_URL: nats://nats:4222
-      # Единственный синхронный HTTP-вызов Contracts Service — проверка
-      # "чьи дети" у parent (GET /parents/{id}/children) для
-      # GET /contracts/{id}/expiry, см. internal/userclient.
       USER_SERVICE_URL: http://user-service:8081
     ports:
       - "8083:8083"
@@ -197,7 +189,7 @@ services:
       POSTGRES_USER: crm_service
       POSTGRES_PASSWORD: ${CRM_DB_PASSWORD:-devpassword123}
     ports:
-      - "5436:5432" # для локальных контрактных тестов (TEST_DATABASE_URL)
+      - "5436:5432"
     volumes:
       - postgres_crm_data:/var/lib/postgresql/data
     healthcheck:
@@ -216,9 +208,6 @@ services:
       DATABASE_URL: postgres://crm_service:${CRM_DB_PASSWORD:-devpassword123}@postgres-crm:5432/study_room_crm?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       NATS_URL: nats://nats:4222
-      # Секрет для проверки X-Tilda-Signature на POST /applications/webhook —
-      # см. crm-service/README.md. Пусто по умолчанию = проверка подписи
-      # выключена (годится только для локальной разработки).
       TILDA_WEBHOOK_SECRET: ${TILDA_WEBHOOK_SECRET:-}
     ports:
       - "8084:8084"
@@ -230,9 +219,6 @@ services:
     networks:
       - studyroom-network
     restart: unless-stopped
-
-  # ---------- Следующие сервисы (пока не реализованы) ----------
-  # (Gateway/BFF — см. microservices-plan.md, п.10)
 
 networks:
   studyroom-network:
