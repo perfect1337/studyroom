@@ -14,7 +14,6 @@ import (
 	"studyroom/academic-service/internal/config"
 	"studyroom/academic-service/internal/db"
 	"studyroom/academic-service/internal/events"
-	"studyroom/academic-service/internal/middleware"
 	"studyroom/academic-service/internal/migrate"
 )
 
@@ -24,11 +23,6 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config error: %v", err)
-	}
-
-	middleware.SetAllowedOrigins(middleware.ParseAllowedOrigins(cfg.AllowedOrigins))
-	if cfg.AllowedOrigins == "" {
-		log.Println("ALLOWED_ORIGINS not set: browser cross-origin requests with credentials are blocked for all origins")
 	}
 
 	pool, err := db.NewPool(ctx, cfg.DatabaseURL)

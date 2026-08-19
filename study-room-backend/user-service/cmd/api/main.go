@@ -27,11 +27,6 @@ func main() {
 		log.Fatalf("config error: %v", err)
 	}
 
-	middleware.SetAllowedOrigins(middleware.ParseAllowedOrigins(cfg.AllowedOrigins))
-	if cfg.AllowedOrigins == "" {
-		log.Println("ALLOWED_ORIGINS not set: browser cross-origin requests with credentials are blocked for all origins")
-	}
-
 	trustedProxies, err := middleware.ParseTrustedProxies(cfg.TrustedProxies)
 	if err != nil {
 		log.Fatalf("config error: %v", err)
@@ -73,7 +68,7 @@ func main() {
 		SameSite: cfg.CookieSameSite,
 		Domain:   cfg.CookieDomain,
 	}
-	deps := app.NewDepsWithRateLimits(pool, tm, pub, cfg.AppPublicURL, cfg.AuthRateLimit, cfg.LoginRateLimit, cfg.RefreshRateLimit, cookieOpts)
+	deps := app.NewDeps(pool, tm, pub, cfg.AppPublicURL, cfg.AuthRateLimit, cookieOpts)
 	handler := app.NewRouter(deps)
 
 	srv := &http.Server{

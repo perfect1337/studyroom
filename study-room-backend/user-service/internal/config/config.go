@@ -16,32 +16,6 @@ type Config struct {
 	RefreshTokenTTL int    // дней
 	AuthRateLimit   int    // запросов/минуту на IP к /auth/* (по умолчанию 200)
 
-	// LoginRateLimit — отдельный, более строгий лимит специально для
-	// POST /auth/login. Раньше login делил один общий лимитер с register,
-	// refresh, forgot/reset-password и logout: 200 запросов/мин было
-	// достаточно для комфортного refresh (может дёргаться на каждый
-	// F5/фоновое обновление токена), но это же давало атакующему 200
-	// попыток подбора пароля в минуту на IP — почти без ограничения.
-	// По умолчанию 20/мин — заметно жёстче, ощутимо тормозит брутфорс/
-	// credential stuffing по логину, но не мешает обычному пользователю,
-	// который вводит неверный пароль пару раз подряд.
-	LoginRateLimit int
-
-	// RefreshRateLimit — отдельный, более щедрый лимит для POST /auth/refresh.
-	// Refresh легитимно дёргается часто (несколько вкладок/устройств,
-	// фоновое обновление access-токена), и раньше делил бюджет с login —
-	// активный пользователь с несколькими открытыми вкладками мог случайно
-	// исчерпать общий лимит и словить 429 на логине. По умолчанию 600/мин.
-	RefreshRateLimit int
-
-	// AllowedOrigins — список origin'ов (через запятую), которым разрешён
-	// CORS с credentials (см. internal/middleware/cors.go). По умолчанию
-	// пусто — значит браузерные cross-origin запросы с credentials
-	// заблокированы для всех origin'ов ("никому не доверяем"). Для
-	// локальной разработки нужно явно указать адрес фронтенда, например
-	// "http://localhost:5173,http://localhost:3000".
-	AllowedOrigins string
-
 	// TrustedProxies — список CIDR/IP реверс-прокси (через запятую), которым
 	// разрешено доверять заголовку X-Forwarded-For при определении реального
 	// IP клиента (используется в rate limit на /auth/* и в аудит-логах).
@@ -63,21 +37,18 @@ type Config struct {
 
 func Load() (*Config, error) {
 	cfg := &Config{
-		Port:             getEnv("PORT", "8081"),
-		DatabaseURL:      getEnv("DATABASE_URL", ""),
-		JWTSecret:        getEnv("JWT_SECRET", ""),
-		NATSURL:          getEnv("NATS_URL", ""),
-		AppPublicURL:     getEnv("APP_PUBLIC_URL", "http://localhost:3000"),
-		AccessTokenTTL:   15,
-		RefreshTokenTTL:  30,
-		AuthRateLimit:    getEnvInt("AUTH_RATE_LIMIT_PER_MIN", 200),
-		LoginRateLimit:   getEnvInt("LOGIN_RATE_LIMIT_PER_MIN", 20),
-		RefreshRateLimit: getEnvInt("REFRESH_RATE_LIMIT_PER_MIN", 600),
-		AllowedOrigins:   getEnv("ALLOWED_ORIGINS", ""),
-		TrustedProxies:   getEnv("TRUSTED_PROXIES", ""),
-		CookieSecure:     getEnvBool("COOKIE_SECURE", true),
-		CookieSameSite:   getEnv("COOKIE_SAMESITE", "Lax"),
-		CookieDomain:     getEnv("COOKIE_DOMAIN", ""),
+		Port:            getEnv("PORT", "8081"),
+		DatabaseURL:     getEnv("DATABASE_URL", ""),
+		JWTSecret:       getEnv("JWT_SECRET", ""),
+		NATSURL:         getEnv("NATS_URL", ""),
+		AppPublicURL:    getEnv("APP_PUBLIC_URL", "http://localhost:3000"),
+		AccessTokenTTL:  15,
+		RefreshTokenTTL: 30,
+		AuthRateLimit:   getEnvInt("AUTH_RATE_LIMIT_PER_MIN", 200),
+		TrustedProxies:  getEnv("TRUSTED_PROXIES", ""),
+		CookieSecure:    getEnvBool("COOKIE_SECURE", true),
+		CookieSameSite:  getEnv("COOKIE_SAMESITE", "Lax"),
+		CookieDomain:    getEnv("COOKIE_DOMAIN", ""),
 	}
 
 	if cfg.DatabaseURL == "" {
