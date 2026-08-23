@@ -299,6 +299,10 @@ export default function FinanceDirectory({ role }) {
       setAddFormError("Укажите фамилию и имя нового ученика.");
       return;
     }
+    if (creatingNewStudent && !new_student_class_info) {
+      setAddFormError("Укажите класс ученика.");
+      return;
+    }
     if (end_date < start_date) {
       setAddFormError("Дата окончания договора не может быть раньше даты начала.");
       return;
@@ -313,7 +317,7 @@ export default function FinanceDirectory({ role }) {
           first_name: new_student_first_name.trim(),
           patronymic: new_student_patronymic.trim() || undefined,
           school: new_student_school.trim() || undefined,
-          class_info: new_student_class_info.trim() || undefined,
+          class_info: new_student_class_info,
           branch_id: Number(branch_id),
           parent_id: Number(parent_id),
         });
@@ -684,13 +688,21 @@ export default function FinanceDirectory({ role }) {
                         />
                       </div>
                       <div>
-                        <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Класс</label>
-                        <input
-                          type="text"
-                          value={addForm.new_student_class_info}
-                          onChange={(e) => setAddForm((f) => ({ ...f, new_student_class_info: e.target.value }))}
-                          className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-                        />
+                        <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Класс *</label>
+                        <div className="relative">
+                          <select
+                            required
+                            value={addForm.new_student_class_info}
+                            onChange={(e) => setAddForm((f) => ({ ...f, new_student_class_info: e.target.value }))}
+                            className="w-full appearance-none bg-surface border border-outline-variant rounded-lg pl-3 pr-9 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                          >
+                            <option value="" disabled>Выберите класс</option>
+                            {Array.from({ length: 11 }, (_, i) => i + 1).map((n) => (
+                              <option key={n} value={String(n)}>{n} класс</option>
+                            ))}
+                          </select>
+                          <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
+                        </div>
                       </div>
                     </div>
                   )}

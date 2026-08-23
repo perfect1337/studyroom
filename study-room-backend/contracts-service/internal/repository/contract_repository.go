@@ -179,6 +179,24 @@ func (r *ContractRepository) UpdatePaymentStatus(ctx context.Context, id int64, 
 	return nil
 }
 
+// CompleteActiveByStudent — переводит ВСЕ активные договоры ученика в
+// status='completed'. Используется при выпуске/удалении ученика (см.
+// user.deleted в user-service/internal/promotion) — в отличие от
+// Academic Service, где данные ученика (enrollments/homework/tests)
+// физически удаляются, здесь договор НЕ удаляется: amount/payment_status —
+// финансово-бухгалтерские данные, их потеря стирала бы историю платежей.
+// 'completed', а не 'terminated' — ученик закончил обучение штатно
+// (11 класс/выпуск), а не разорвал договор досрочно.
+func (r *ContractRepository) CompleteActiveByStudent(ctx context.Context, studentID int64) (int64, error) {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE contracts SET status = 'completed' WHERE student_id = $1 AND status = 'active'`,
+		studentID)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (r *ContractRepository) Delete(ctx context.Context, id int64) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM contracts WHERE id = $1`, id)
 	if err != nil {

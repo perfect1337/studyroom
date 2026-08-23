@@ -25,6 +25,10 @@ type UserRef struct {
 	FullName string `json:"full_name"`
 	Role     Role   `json:"role"`
 	BranchID *int64 `json:"branch_id"`
+	// ClassInfo — класс ученика (role=student), реплицируется из User
+	// Service по событиям user.created/user.updated. nil для остальных
+	// ролей и для учеников, у которых он ещё не пришёл/не задан.
+	ClassInfo *string `json:"class_info,omitempty"`
 }
 
 type ApplicationSource string
@@ -65,5 +69,10 @@ type Application struct {
 	Format          *string           `json:"format,omitempty"`
 	BranchID        *int64            `json:"branch_id,omitempty"`
 	HandledBy       *int64            `json:"handled_by,omitempty"`
-	CreatedAt       time.Time         `json:"created_at"`
+	// ClassInfo — класс ученика НА МОМЕНТ подачи заявки (снимок из
+	// user_refs, см. CreateInternal) — не пересчитывается задним числом,
+	// если класс ученика позже изменится (в т.ч. автоповышением
+	// 1 сентября, см. user-service/internal/promotion).
+	ClassInfo *string   `json:"class_info,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }

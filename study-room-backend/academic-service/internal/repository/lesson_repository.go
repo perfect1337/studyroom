@@ -234,6 +234,32 @@ func (r *LessonRepository) DeleteByTutor(ctx context.Context, tutorID int64) (in
 	return tag.RowsAffected(), nil
 }
 
+// RemoveStudentEverywhere — удаляет ученика из всех занятий (lesson_participants)
+// и его записи о посещаемости (attendance) по ВСЕМ занятиям, но НЕ трогает
+// сами lessons — в отличие от DeleteByTutor (там занятие целиком принадлежит
+// одному репетитору), на одном занятии могут присутствовать другие ученики,
+// поэтому занятие должно остаться для них.
+//
+// Обе таблицы чистятся явно в одной транзакции: lesson_participants и
+// attendance никак не связаны FK друг с другом (обе ссылаются только на
+// lessons — см. 0001_init.up.sql), поэтому удаление из одной не каскадирует
+// в другую автоматически. Используется при выпуске/удалении ученика — см.
+// events/subscriber.go, detachStudent.
+func (r *LessonRepository) RemoveStudentEverywhere(ctx context.Context, studentID int64) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `DELETE FROM lesson_participants WHERE student_id = $1`, studentID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM attendance WHERE student_id = $1`, studentID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // TutorBranchID — филиал преподавателя занятия, для проверки прав
 // branch_owner (курсы больше не привязаны к филиалу).
 func (r *LessonRepository) TutorBranchID(ctx context.Context, lessonID int64) (int64, error) {

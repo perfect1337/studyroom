@@ -109,6 +109,7 @@ func (r *UserRepository) Update(ctx context.Context, id int64, fields map[string
 	allowedCols := map[string]bool{
 		"first_name": true, "last_name": true, "patronymic": true, "avatar_url": true,
 		"password_hash": true, "is_active": true, "phone": true, "branch_id": true,
+		"email": true,
 	}
 	setClauses := ""
 	args := []any{}
@@ -131,7 +132,17 @@ func (r *UserRepository) Update(ctx context.Context, id int64, fields map[string
 	args = append(args, id)
 
 	query := "UPDATE users SET " + setClauses + " WHERE id = $" + strconv.Itoa(i) + " RETURNING " + userColumns
-	return scanUser(r.pool.QueryRow(ctx, query, args...))
+	updated, err := scanUser(r.pool.QueryRow(ctx, query, args...))
+	if err != nil {
+		// email/phone связаны unique-констрейнтом в БД — при смене почты на уже
+		// занятую нужно вернуть предсказуемый ErrDuplicate (как в Create), а не
+		// голую ошибку драйвера, иначе хендлер отдаст 500 вместо 409.
+		if isPgUniqueViolation(err) {
+			return nil, ErrDuplicate
+		}
+		return nil, err
+	}
+	return updated, nil
 }
 
 // CreateStudentWithParent создаёт ученика, профиль и связь с родителем в одной транзакции.
@@ -187,6 +198,13 @@ func (r *UserRepository) CreateStudentWithParent(
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
+	// scanUser выше не делает JOIN на student_profiles (это INSERT в users,
+	// профиля на тот момент ещё не существовало) — дозаполняем вручную из
+	// того, что только что сами же записали, чтобы вызывающий код (событие
+	// user.created, см. UserHandler.CreateStudent) сразу видел актуальный
+	// class_info, не читая профиль повторным запросом.
+	created.ClassInfo = classInfo
+	created.School = school
 	return created, nil
 }
 

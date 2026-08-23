@@ -48,6 +48,16 @@ type ContractCreatedEvent struct {
 	EndDate    *string `json:"end_date"`
 }
 
+// UserDeletedEvent — соответствует events.UserDeletedEvent из User Service
+// (см. user-service/internal/events/publisher.go). Единственный источник на
+// момент написания — ежегодное автоудаление выпускников 11 класса (см.
+// user-service/internal/promotion), но обработчик не завязан на причину:
+// любой user.deleted с role=student запускает detachStudent.
+type UserDeletedEvent struct {
+	ID   int64       `json:"id"`
+	Role models.Role `json:"role"`
+}
+
 func Connect(url string) (*nats.Conn, error) {
 	return nats.Connect(url,
 		nats.MaxReconnects(-1),
@@ -66,15 +76,17 @@ func Connect(url string) (*nats.Conn, error) {
 }
 
 type Subscriber struct {
-	nc          *nats.Conn
-	userRefRepo *repository.UserRefRepository
-	enrollRepo  *repository.EnrollmentRepository
-	courseRepo  *repository.CourseRepository
-	lessonRepo  *repository.LessonRepository
+	nc           *nats.Conn
+	userRefRepo  *repository.UserRefRepository
+	enrollRepo   *repository.EnrollmentRepository
+	courseRepo   *repository.CourseRepository
+	lessonRepo   *repository.LessonRepository
+	homeworkRepo *repository.HomeworkRepository
+	testRepo     *repository.TestRepository
 }
 
-func NewSubscriber(nc *nats.Conn, userRefRepo *repository.UserRefRepository, enrollRepo *repository.EnrollmentRepository, courseRepo *repository.CourseRepository, lessonRepo *repository.LessonRepository) *Subscriber {
-	return &Subscriber{nc: nc, userRefRepo: userRefRepo, enrollRepo: enrollRepo, courseRepo: courseRepo, lessonRepo: lessonRepo}
+func NewSubscriber(nc *nats.Conn, userRefRepo *repository.UserRefRepository, enrollRepo *repository.EnrollmentRepository, courseRepo *repository.CourseRepository, lessonRepo *repository.LessonRepository, homeworkRepo *repository.HomeworkRepository, testRepo *repository.TestRepository) *Subscriber {
+	return &Subscriber{nc: nc, userRefRepo: userRefRepo, enrollRepo: enrollRepo, courseRepo: courseRepo, lessonRepo: lessonRepo, homeworkRepo: homeworkRepo, testRepo: testRepo}
 }
 
 // Start подписывается на нужные субъекты. Подписки живут вместе с процессом
@@ -88,6 +100,9 @@ func (s *Subscriber) Start(ctx context.Context) error {
 		return err
 	}
 	if _, err := s.nc.QueueSubscribe("contract.created", "academic-service", s.handleContractCreated(ctx)); err != nil {
+		return err
+	}
+	if _, err := s.nc.QueueSubscribe("user.deleted", "academic-service", s.handleUserDeleted(ctx)); err != nil {
 		return err
 	}
 	return nil
@@ -166,6 +181,63 @@ func (s *Subscriber) detachTutor(ctx context.Context, tutorID int64, reason stri
 	}
 	if err := s.enrollRepo.PauseOrphanedForCourses(ctx, orphaned); err != nil {
 		log.Printf("[events] %s: pause orphaned enrollments for tutor %d error: %v", reason, tutorID, err)
+	}
+}
+
+// detachStudent — полная зачистка ученика из Academic Service после его
+// физического удаления в User Service (см. user.deleted в
+// user-service/internal/promotion — на данный момент единственный
+// источник: ежегодное автоудаление выпускников 11 класса).
+//
+// В отличие от detachTutor, здесь никакие занятия НЕ удаляются целиком —
+// на одном занятии могут присутствовать другие ученики (lessons это
+// групповые события, см. lesson_participants), поэтому ученика убирают
+// точечно из lesson_participants/attendance, а сами lessons остаются для
+// остальных участников. Полностью удаляются только сущности, которые
+// целиком принадлежат этому ученику: enrollments, homework, tests и его
+// запись в user_refs.
+func (s *Subscriber) detachStudent(ctx context.Context, studentID int64) {
+	if n, err := s.enrollRepo.DeleteByStudent(ctx, studentID); err != nil {
+		log.Printf("[events] student graduated: delete enrollments for student %d error: %v", studentID, err)
+	} else if n > 0 {
+		log.Printf("[events] student graduated: deleted %d enrollment(s) for student %d", n, studentID)
+	}
+	if s.lessonRepo != nil {
+		if err := s.lessonRepo.RemoveStudentEverywhere(ctx, studentID); err != nil {
+			log.Printf("[events] student graduated: remove student %d from lessons error: %v", studentID, err)
+		}
+	}
+	if s.homeworkRepo != nil {
+		if err := s.homeworkRepo.DeleteByStudent(ctx, studentID); err != nil {
+			log.Printf("[events] student graduated: delete homework for student %d error: %v", studentID, err)
+		}
+	}
+	if s.testRepo != nil {
+		if err := s.testRepo.DeleteByStudent(ctx, studentID); err != nil {
+			log.Printf("[events] student graduated: delete tests for student %d error: %v", studentID, err)
+		}
+	}
+	if err := s.userRefRepo.Delete(ctx, studentID); err != nil {
+		log.Printf("[events] student graduated: delete user_ref %d error: %v", studentID, err)
+	}
+}
+
+// handleUserDeleted — реакция на физическое удаление пользователя в User
+// Service. Единственная роль, для которой это сейчас вообще происходит —
+// student (выпускник 11 класса), поэтому обработчик проверяет роль и не
+// делает ничего для остальных (увольнение репетитора идёт отдельным путём
+// через user.updated с is_active=false, см. handleUserUpdated — репетиторов
+// физически не удаляют).
+func (s *Subscriber) handleUserDeleted(ctx context.Context) nats.MsgHandler {
+	return func(msg *nats.Msg) {
+		var ev UserDeletedEvent
+		if err := json.Unmarshal(msg.Data, &ev); err != nil {
+			log.Printf("[events] user.deleted unmarshal error: %v", err)
+			return
+		}
+		if ev.Role == models.RoleStudent {
+			s.detachStudent(ctx, ev.ID)
+		}
 	}
 }
 

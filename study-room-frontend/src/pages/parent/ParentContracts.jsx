@@ -239,38 +239,47 @@ export default function ParentContracts() {
             </div>
 
             {childrenOptions.length > 1 && (
-              <select
-                value={childFilter}
-                onChange={(e) => setChildFilter(e.target.value)}
-                className="px-3 py-2.5 rounded-lg border border-outline-variant bg-surface font-label-md text-label-md text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              >
-                <option value="all">Все дети</option>
-                {childrenOptions.map((c) => (
-                  <option key={c.id} value={String(c.id)}>{fullName(c)}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={childFilter}
+                  onChange={(e) => setChildFilter(e.target.value)}
+                  className="appearance-none pl-3 pr-9 py-2.5 rounded-lg border border-outline-variant bg-surface font-label-md text-label-md text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                >
+                  <option value="all">Все дети</option>
+                  {childrenOptions.map((c) => (
+                    <option key={c.id} value={String(c.id)}>{fullName(c)}</option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
+              </div>
             )}
 
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2.5 rounded-lg border border-outline-variant bg-surface font-label-md text-label-md text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-            >
-              <option value="all">Любой статус</option>
-              <option value="active">Активен</option>
-              <option value="completed">Завершён</option>
-              <option value="terminated">Расторгнут</option>
-            </select>
+            <div className="relative">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="appearance-none pl-3 pr-9 py-2.5 rounded-lg border border-outline-variant bg-surface font-label-md text-label-md text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              >
+                <option value="all">Любой статус</option>
+                <option value="active">Активен</option>
+                <option value="completed">Завершён</option>
+                <option value="terminated">Расторгнут</option>
+              </select>
+              <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
+            </div>
 
-            <select
-              value={paymentFilter}
-              onChange={(e) => setPaymentFilter(e.target.value)}
-              className="px-3 py-2.5 rounded-lg border border-outline-variant bg-surface font-label-md text-label-md text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-            >
-              <option value="all">Любая оплата</option>
-              <option value="paid">Оплачено</option>
-              <option value="unpaid">Ожидание оплаты</option>
-            </select>
+            <div className="relative">
+              <select
+                value={paymentFilter}
+                onChange={(e) => setPaymentFilter(e.target.value)}
+                className="appearance-none pl-3 pr-9 py-2.5 rounded-lg border border-outline-variant bg-surface font-label-md text-label-md text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              >
+                <option value="all">Любая оплата</option>
+                <option value="paid">Оплачено</option>
+                <option value="unpaid">Ожидание оплаты</option>
+              </select>
+              <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
+            </div>
 
             <label className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-outline-variant bg-surface cursor-pointer select-none whitespace-nowrap">
               <input

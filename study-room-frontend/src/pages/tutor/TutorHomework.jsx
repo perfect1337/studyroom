@@ -188,7 +188,7 @@ export default function TutorHomework() {
                       </a>
                     </div>
                     <span
-                      className={`text-xs font-bold px-3 py-1 rounded-full shrink-0 ${
+                      className={`text-xs font-bold px-3 py-1 rounded-full shrink-0 whitespace-nowrap ${
                         isViewed ? "bg-surface-container-highest text-primary" : "bg-secondary-fixed text-on-secondary-container"
                       }`}
                     >

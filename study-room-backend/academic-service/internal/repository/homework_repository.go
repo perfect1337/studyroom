@@ -100,3 +100,10 @@ func (r *HomeworkRepository) MarkViewed(ctx context.Context, id int64) (*models.
 		WHERE id = $1 RETURNING ` + homeworkColumns
 	return scanHomework(r.pool.QueryRow(ctx, query, id, time.Now()))
 }
+
+// DeleteByStudent — удаляет все домашние задания выпустившегося/удалённого
+// ученика. См. events/subscriber.go, detachStudent.
+func (r *HomeworkRepository) DeleteByStudent(ctx context.Context, studentID int64) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM homework WHERE student_id = $1`, studentID)
+	return err
+}

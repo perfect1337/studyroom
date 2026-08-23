@@ -1,9 +1,14 @@
+# syntax=docker/dockerfile:1
 # --- Frontend build stage ---
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app
-COPY ../study-room-frontend/package.json ./
-RUN npm install
-COPY ../study-room-frontend/ .
+ENV NODE_OPTIONS=--dns-result-order=ipv4first
+
+COPY study-room-frontend/package.json study-room-frontend/package-lock.json ./
+RUN npm config set fetch-retries 5 fetch-retry-mintimeout 20000 fetch-timeout 120000 \
+ && npm ci --no-audit --no-fund
+
+COPY study-room-frontend/ .
 RUN npm run build
 
 # --- Nginx gateway ---

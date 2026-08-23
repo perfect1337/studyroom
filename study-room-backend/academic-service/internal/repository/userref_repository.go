@@ -36,6 +36,15 @@ func (r *UserRefRepository) Upsert(ctx context.Context, u *models.UserRef) error
 	return err
 }
 
+// Delete — удаляет локальную копию профиля пользователя из этой БД.
+// Используется при выпуске/удалении ученика (см. events/subscriber.go,
+// detachStudent) — сам пользователь в User Service уже удалён, оставлять
+// его "призрак" в user_refs незачем.
+func (r *UserRefRepository) Delete(ctx context.Context, userID int64) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM user_refs WHERE user_id = $1`, userID)
+	return err
+}
+
 func (r *UserRefRepository) GetByID(ctx context.Context, id int64) (*models.UserRef, error) {
 	row := r.pool.QueryRow(ctx,
 		`SELECT user_id, full_name, role, branch_id FROM user_refs WHERE user_id = $1`, id)

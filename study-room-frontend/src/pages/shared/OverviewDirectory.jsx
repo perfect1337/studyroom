@@ -346,7 +346,10 @@ export default function OverviewDirectory({ role }) {
                       {a.created_at ? new Date(a.created_at).toLocaleDateString("ru-RU") : ""}
                     </span>
                   </div>
-                  <p className="text-[12px] text-on-surface-variant">Интерес: {a.subject_interest ?? a.course ?? "—"}</p>
+                  <p className="text-[12px] text-on-surface-variant">
+                    Интерес: {a.subject_interest ?? a.course ?? "—"}
+                    {a.class_info ? ` · ${a.class_info} класс` : ""}
+                  </p>
                 </div>
               ))}
             </div>
@@ -396,6 +399,12 @@ export default function OverviewDirectory({ role }) {
                       {selectedApplication.name || "—"}{selectedApplication.age ? `, ${selectedApplication.age} лет` : ""}
                     </p>
                   </div>
+                  {selectedApplication.class_info && (
+                    <div>
+                      <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-wide mb-0.5">Класс</p>
+                      <p className="text-label-md text-on-surface">{selectedApplication.class_info} класс</p>
+                    </div>
+                  )}
                   <div>
                     <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-wide mb-0.5">Родитель</p>
                     <p className="text-label-md text-on-surface">{selectedApplication.parent_name || "Не указан"}</p>

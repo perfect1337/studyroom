@@ -170,28 +170,34 @@ export default function StudentsDirectory({ role }) {
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-stack-md">
             <h3 className="font-headline-sm text-headline-sm text-on-surface">Список учеников</h3>
             <div className="flex flex-wrap gap-3">
-              <select
-                value={subjectFilter}
-                onChange={(e) => setSubjectFilter(e.target.value)}
-                className="bg-surface-container-lowest border border-outline-variant rounded-lg px-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-              >
-                <option value="">Все предметы</option>
-                {subjects.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-              {/* Фильтр по филиалу — доступен только владельцу сети (видит все филиалы сразу) */}
-              {isOwner && (
+              <div className="relative">
                 <select
-                  value={branchFilter}
-                  onChange={(e) => setBranchFilter(e.target.value)}
-                  className="bg-surface-container-lowest border border-outline-variant rounded-lg px-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                  value={subjectFilter}
+                  onChange={(e) => setSubjectFilter(e.target.value)}
+                  className="appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
                 >
-                  <option value="">Все филиалы</option>
-                  {branches.map((b) => (
-                    <option key={b.id} value={b.id}>{b.name || b.city}</option>
+                  <option value="">Все предметы</option>
+                  {subjects.map((s) => (
+                    <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
+                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
+              </div>
+              {/* Фильтр по филиалу — доступен только владельцу сети (видит все филиалы сразу) */}
+              {isOwner && (
+                <div className="relative">
+                  <select
+                    value={branchFilter}
+                    onChange={(e) => setBranchFilter(e.target.value)}
+                    className="appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                  >
+                    <option value="">Все филиалы</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name || b.city}</option>
+                    ))}
+                  </select>
+                  <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
+                </div>
               )}
             </div>
           </div>

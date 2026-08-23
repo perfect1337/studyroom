@@ -347,18 +347,21 @@ export default function TeachersDirectory({ role }) {
 
           {/* Выбор филиала — только у owner. branch_owner всегда видит только свой филиал. */}
           {isOwner && (
-            <select
-              value={selectedBranch}
-              onChange={(e) => setSelectedBranch(e.target.value)}
-              className="bg-surface-container-lowest border border-outline-variant rounded-lg px-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none md:ml-auto"
-            >
-              <option value="">Все филиалы</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name || b.city}
-                </option>
-              ))}
-            </select>
+            <div className="relative md:ml-auto">
+              <select
+                value={selectedBranch}
+                onChange={(e) => setSelectedBranch(e.target.value)}
+                className="appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+              >
+                <option value="">Все филиалы</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name || b.city}
+                  </option>
+                ))}
+              </select>
+              <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
+            </div>
           )}
         </section>
 

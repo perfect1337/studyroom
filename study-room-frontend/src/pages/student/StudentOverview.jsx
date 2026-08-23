@@ -178,7 +178,7 @@ export default function StudentOverview() {
                   </p>
 
                   <div className="flex flex-wrap items-center gap-2.5">
-                    <h2 className="font-display-academic text-[28px] sm:text-[34px] leading-[1.1] font-semibold text-on-background truncate">
+                    <h2 className="font-display-academic text-[28px] sm:text-[34px] leading-[1.1] font-semibold text-on-background truncate min-w-0 max-w-full">
                       {fullName(user) || user?.email}
                     </h2>
                     <span

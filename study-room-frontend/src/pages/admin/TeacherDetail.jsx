@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
+import Pagination from "../../components/ui/Pagination.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople, fetchBranches, setTutorStatus, setUserActive } from "../../api/users.js";
 import { fetchEnrollments, fetchCourses, fetchLessons, fetchTests, assignCourseTutor, removeCourseTutor } from "../../api/academic.js";
@@ -267,6 +268,19 @@ export default function TeacherDetail({ role = "owner" }) {
     return Array.from(seen.values());
   }, [enrollments, studentsById]);
 
+  // Пагинация списка учеников этого преподавателя — на клиенте, поверх уже
+  // загруженного массива (тот же паттерн, что и Pagination в других списках,
+  // см. components/ui/Pagination.jsx).
+  const STUDENTS_PAGE_SIZE = 10;
+  const [studentsPage, setStudentsPage] = useState(1);
+  useEffect(() => {
+    setStudentsPage(1);
+  }, [myStudents.length]);
+  const pagedStudents = useMemo(
+    () => myStudents.slice((studentsPage - 1) * STUDENTS_PAGE_SIZE, studentsPage * STUDENTS_PAGE_SIZE),
+    [myStudents, studentsPage]
+  );
+
   const avgProgress = enrollments.length
     ? Math.round(enrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / enrollments.length)
     : 0;
@@ -484,7 +498,7 @@ export default function TeacherDetail({ role = "owner" }) {
                           </td>
                         </tr>
                       )}
-                      {myStudents.map(({ student, enrollments: sEnrollments }) => {
+                      {pagedStudents.map(({ student, enrollments: sEnrollments }) => {
                         const avg = sEnrollments.length
                           ? Math.round(sEnrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / sEnrollments.length)
                           : 0;
@@ -545,7 +559,7 @@ export default function TeacherDetail({ role = "owner" }) {
                         К этому преподавателю пока не записан ни один ученик
                       </div>
                     )}
-                    {myStudents.map(({ student, enrollments: sEnrollments }) => {
+                    {pagedStudents.map(({ student, enrollments: sEnrollments }) => {
                       const avg = sEnrollments.length
                         ? Math.round(sEnrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / sEnrollments.length)
                         : 0;
@@ -593,6 +607,14 @@ export default function TeacherDetail({ role = "owner" }) {
                       );
                     })}
                   </div>
+
+                  <Pagination
+                    page={studentsPage}
+                    pageSize={STUDENTS_PAGE_SIZE}
+                    total={myStudents.length}
+                    onPageChange={setStudentsPage}
+                    itemLabel="учеников"
+                  />
                 </div>
 
                 <div className="pt-stack-lg">

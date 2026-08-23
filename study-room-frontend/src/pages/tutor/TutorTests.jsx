@@ -260,30 +260,36 @@ export default function TutorTests() {
                   className="bg-surface border border-outline-variant rounded-lg pl-9 pr-4 py-2 text-label-md font-label-md outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary w-full sm:w-64"
                 />
               </div>
-              <select
-                value={studentFilter}
-                onChange={(e) => setStudentFilter(e.target.value)}
-                className="flex-1 min-w-[140px] sm:flex-none bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md font-label-md outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                <option value="">Все ученики</option>
-                {students.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {fullName(s)}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={courseFilter}
-                onChange={(e) => setCourseFilter(e.target.value)}
-                className="flex-1 min-w-[140px] sm:flex-none bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md font-label-md outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                <option value="">Все курсы</option>
-                {courses.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.title} · {c.subject}
-                  </option>
-                ))}
-              </select>
+              <div className="relative flex-1 min-w-[140px] sm:flex-none">
+                <select
+                  value={studentFilter}
+                  onChange={(e) => setStudentFilter(e.target.value)}
+                  className="w-full appearance-none bg-surface border border-outline-variant rounded-lg pl-3 pr-9 py-2 text-label-md font-label-md outline-none focus:ring-2 focus:ring-primary/20"
+                >
+                  <option value="">Все ученики</option>
+                  {students.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {fullName(s)}
+                    </option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
+              </div>
+              <div className="relative flex-1 min-w-[140px] sm:flex-none">
+                <select
+                  value={courseFilter}
+                  onChange={(e) => setCourseFilter(e.target.value)}
+                  className="w-full appearance-none bg-surface border border-outline-variant rounded-lg pl-3 pr-9 py-2 text-label-md font-label-md outline-none focus:ring-2 focus:ring-primary/20"
+                >
+                  <option value="">Все курсы</option>
+                  {courses.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.title} · {c.subject}
+                    </option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
+              </div>
               <div className="flex gap-1.5 flex-wrap">
                 {STATUS_FILTERS.map((f) => (
                   <button

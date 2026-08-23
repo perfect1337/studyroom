@@ -24,6 +24,11 @@ type UserEvent struct {
 	LastName  string      `json:"last_name"`
 	Role      models.Role `json:"role"`
 	BranchID  *int64      `json:"branch_id"`
+	// ClassInfo — класс ученика (role=student), приходит из User Service
+	// (events.UserEvent.ClassInfo). Реплицируется в user_refs, чтобы
+	// CreateInternal мог подставить его в заявку без синхронного похода
+	// в User Service — см. application_handler.go.
+	ClassInfo *string `json:"class_info,omitempty"`
 }
 
 func Connect(url string) (*nats.Conn, error) {
@@ -73,10 +78,11 @@ func (s *Subscriber) handleUserEvent(ctx context.Context) nats.MsgHandler {
 			return
 		}
 		ref := &models.UserRef{
-			UserID:   ev.ID,
-			FullName: (ev.FirstName + " " + ev.LastName),
-			Role:     ev.Role,
-			BranchID: ev.BranchID,
+			UserID:    ev.ID,
+			FullName:  (ev.FirstName + " " + ev.LastName),
+			Role:      ev.Role,
+			BranchID:  ev.BranchID,
+			ClassInfo: ev.ClassInfo,
 		}
 		if err := s.userRefRepo.Upsert(ctx, ref); err != nil {
 			log.Printf("[events] upsert user_ref %d error: %v", ev.ID, err)

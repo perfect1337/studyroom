@@ -118,3 +118,10 @@ func (r *TestRepository) SetGrade(ctx context.Context, id int64, grade int) (*mo
 		) SELECT ` + testColumns + ` FROM upd t LEFT JOIN courses c ON c.id = t.course_id`
 	return scanTest(r.pool.QueryRow(ctx, query, id, grade, time.Now()))
 }
+
+// DeleteByStudent — удаляет все тесты выпустившегося/удалённого ученика.
+// См. events/subscriber.go, detachStudent.
+func (r *TestRepository) DeleteByStudent(ctx context.Context, studentID int64) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM tests WHERE student_id = $1`, studentID)
+	return err
+}
