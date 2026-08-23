@@ -1,46 +1,100 @@
-# Зависимости
+# ============================================
+# Dependencies
+# ============================================
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-package-lock.json
+vendor/
+go.sum
 
-# Сборка
-dist/
-build/
-.next/
-out/
+# ============================================
+# Build / Distribution
+# ============================================
+study-room-frontend/dist/
+study-room-frontend/build/
 
-# Переменные окружения
+# ============================================
+# Environment & Secrets
+# ============================================
+*.env
+*.env.local
+*.env.*.local
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 .env.prod
+.env.prod.local
+study-room-backend/.env
+study-room-backend/.env.local
+study-room-backend/.env.prod
+study-room-backend/.env.prod.local
 
+# ============================================
+# SSL Certificates (generated locally)
+# ============================================
+study-room-backend/nginx/ssl/*.pem
+study-room-backend/nginx/ssl/*.key
+study-room-backend/nginx/ssl/*.crt
+study-room-backend/nginx/ssl/localhost*
 
-# Логи
-logs/
-*.log
-
-# Кэш
-.cache/
-.parcel-cache/
-.eslintcache
-
-# IDE / редакторы
+# ============================================
+# IDE / Editors
+# ============================================
 .vscode/
 .idea/
 *.swp
 *.swo
+*.bak
+*.tmp
 .gigacode
 .gigaide
 
-# ОС
+# ============================================
+# OS Files
+# ============================================
 .DS_Store
 Thumbs.db
+Desktop.ini
 
-# Прочее
-coverage/
+# ============================================
+# Logs
+# ============================================
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ============================================
+# Cache
+# ============================================
+.cache/
+.parcel-cache/
+.eslintcache
 *.tsbuildinfo
+
+# ============================================
+# Coverage
+# ============================================
+coverage/
+
+# ============================================
+# Docker
+# ============================================
+# Don't ignore volumes, but ignore local docker configs
+docker-compose.override.yml
+
+# ============================================
+# Generated Scripts
+# ============================================
+generate_ssl.py
+
+# ============================================
+# Seed Scripts (use DB migrations in prod)
+# ============================================
+seed_studyroom*.py
+
+# ============================================
+# Local Development (Windows)
+# ============================================
+*.ps1
