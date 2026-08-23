@@ -1,0 +1,680 @@
+openapi: 3.0.3
+info:
+  title: Study Room User Service API
+  version: "1.0.0"
+  description: |
+    User service API for Study Room. Документация содержит эндпоинты авторизации,
+    управление пользователями, создание учеников и управление филиалами.
+servers:
+  - url: /
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/auth/register:
+    post:
+      summary: Register a new parent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '200':
+          description: Authentication tokens and created user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email or phone already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/auth/login:
+    post:
+      summary: Authenticate by email or phone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Access and refresh tokens
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/auth/refresh:
+    post:
+      summary: Refresh access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: New access and refresh token pair
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '401':
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/auth/forgot-password:
+    post:
+      summary: Request password reset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '200':
+          description: Reset flow initiated
+  /api/v1/auth/reset-password:
+    post:
+      summary: Reset password using token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Password has been reset
+        '400':
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/users/me:
+    get:
+      summary: Return current user profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      summary: Update current user profile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeRequest'
+      responses:
+        '200':
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+  /api/v1/users/me/change-password:
+    post:
+      summary: Change password for current user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Password changed
+        '400':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/users:
+    get:
+      summary: List users and groups visible to the requester
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: branch_id
+          in: query
+          schema:
+            type: integer
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Directory of users
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/v1/users/{id}:
+    get:
+      summary: Return user by id
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: User object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+    patch:
+      summary: Update a user by id
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                first_name:
+                  type: string
+                last_name:
+                  type: string
+                patronymic:
+                  type: string
+                avatar_url:
+                  type: string
+      responses:
+        '200':
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+  /api/v1/users/tutors:
+    post:
+      summary: Create a tutor account
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTutorRequest'
+      responses:
+        '201':
+          description: Created tutor
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+  /api/v1/users/branch-owners:
+    post:
+      summary: Create a branch owner account
+      description: >
+        Owner-only. Creates an account with role=branch_owner for the given
+        branch_id. Login (email) and a temporary password are sent to the
+        provided email via the notification service (user.created event).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBranchOwnerRequest'
+      responses:
+        '201':
+          description: Created branch owner
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+        '400':
+          description: Validation error (missing fields or unknown branch_id)
+        '403':
+          description: Forbidden — only owner can call this endpoint
+        '409':
+          description: Email or phone already registered
+  /api/v1/users/students:
+    post:
+      summary: Create a student record
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStudentRequest'
+      responses:
+        '201':
+          description: Created student
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+  /api/v1/users/{id}/status:
+    patch:
+      summary: Activate or deactivate a user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                is_active:
+                  type: boolean
+      responses:
+        '200':
+          description: Status updated
+  /api/v1/branches:
+    get:
+      summary: List all branches
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Branch list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Branch'
+    post:
+      summary: Create a branch
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Branch'
+      responses:
+        '201':
+          description: Created branch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Branch'
+  /api/v1/branches/{id}:
+    delete:
+      summary: Delete (soft-delete) a branch
+      description: >
+        Owner only. The branch is marked as deleted (kept for history, see
+        GET /branches/deleted) instead of being physically removed. Branch
+        owner accounts (role=branch_owner) attached to this branch are hard
+        deleted. Tutors and students keep their branch_id.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Branch deleted
+        '404':
+          description: Branch not found
+  /api/v1/branches/deleted:
+    get:
+      summary: List soft-deleted branches
+      description: >
+        Owner only. Returns branches previously removed via DELETE
+        /branches/{id}. To see the tutors/students that belonged to a
+        deleted branch, call GET /users?branch_id=<id> separately.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Deleted branch list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Branch'
+  /api/v1/parents/{parentId}/children:
+    get:
+      summary: List children for a parent
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: parentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: List children
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        first_name:
+                          type: string
+                        last_name:
+                          type: string
+                        class_info:
+                          type: string
+                        school:
+                          type: string
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    RegisterRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        phone:
+          type: string
+        password:
+          type: string
+        last_name:
+          type: string
+        first_name:
+          type: string
+        patronymic:
+          type: string
+      required:
+        - email
+        - password
+        - last_name
+        - first_name
+    AuthResponse:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+    LoginRequest:
+      type: object
+      properties:
+        login:
+          type: string
+        password:
+          type: string
+      required:
+        - login
+        - password
+    LoginResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        user:
+          type: object
+          properties:
+            id:
+              type: integer
+            role:
+              type: string
+            first_name:
+              type: string
+            last_name:
+              type: string
+    RefreshRequest:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+      required:
+        - refresh_token
+    RefreshResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+    ForgotPasswordRequest:
+      type: object
+      properties:
+        email:
+          type: string
+      required:
+        - email
+    ResetPasswordRequest:
+      type: object
+      properties:
+        reset_token:
+          type: string
+        new_password:
+          type: string
+      required:
+        - reset_token
+        - new_password
+    UpdateMeRequest:
+      type: object
+      properties:
+        first_name:
+          type: string
+        last_name:
+          type: string
+        patronymic:
+          type: string
+        avatar_url:
+          type: string
+        class_info:
+          type: string
+          description: Только для role=student — редактирует сам ученик. 403 для остальных ролей.
+        school:
+          type: string
+          description: Только для role=student — редактирует сам ученик. 403 для остальных ролей.
+    ChangePasswordRequest:
+      type: object
+      properties:
+        current_password:
+          type: string
+        new_password:
+          type: string
+      required:
+        - current_password
+        - new_password
+    CreateBranchOwnerRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        phone:
+          type: string
+        last_name:
+          type: string
+        first_name:
+          type: string
+        patronymic:
+          type: string
+        branch_id:
+          type: integer
+      required:
+        - email
+        - last_name
+        - first_name
+        - branch_id
+    CreateTutorRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        phone:
+          type: string
+        last_name:
+          type: string
+        first_name:
+          type: string
+        patronymic:
+          type: string
+        branch_id:
+          type: integer
+        specialization:
+          type: string
+      required:
+        - email
+        - last_name
+        - first_name
+        - specialization
+    CreateStudentRequest:
+      type: object
+      properties:
+        last_name:
+          type: string
+        first_name:
+          type: string
+        patronymic:
+          type: string
+        class_info:
+          type: string
+        school:
+          type: string
+        branch_id:
+          type: integer
+        parent_id:
+          type: integer
+      required:
+        - last_name
+        - first_name
+        - parent_id
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        patronymic:
+          type: string
+        avatar_url:
+          type: string
+        branch_id:
+          type: integer
+        is_active:
+          type: boolean
+    Branch:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        city:
+          type: string
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Заполнено, если филиал "удалён" (мягкое удаление, см. DELETE /branches/{id})
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+          required:
+            - code
+            - message
+      required:
+        - error

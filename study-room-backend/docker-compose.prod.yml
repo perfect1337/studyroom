@@ -1,0 +1,245 @@
+# ============================================================
+# Production docker-compose
+# Запускать: docker compose -f docker-compose.prod.yml up -d
+# Обязателен файл .env.prod в той же директории
+# ============================================================
+services:
+  # ---------- User Service ----------
+  postgres-users:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: study_room_users
+      POSTGRES_USER: user_service
+      POSTGRES_PASSWORD: ${USERS_DB_PASSWORD}
+    volumes:
+      - postgres_users_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user_service -d study_room_users"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - studyroom-network
+    restart: unless-stopped
+
+  user-service:
+    build:
+      context: ./user-service
+    environment:
+      PORT: 8081
+      DATABASE_URL: postgres://user_service:${USERS_DB_PASSWORD}@postgres-users:5432/study_room_users?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET}
+      NATS_URL: nats://nats:4222
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES}
+      COOKIE_SECURE: ${COOKIE_SECURE}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN}
+    depends_on:
+      postgres-users:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    networks:
+      - studyroom-network
+    restart: unless-stopped
+
+  # ---------- NATS ----------
+  nats:
+    image: nats:2-alpine
+    networks:
+      - studyroom-network
+
+  # ---------- Notification Service ----------
+  postgres-notifications:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: study_room_notifications
+      POSTGRES_USER: notification_service
+      POSTGRES_PASSWORD: ${NOTIFICATIONS_DB_PASSWORD}
+    volumes:
+      - postgres_notifications_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notification_service -d study_room_notifications"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - studyroom-network
+    restart: unless-stopped
+
+  notification-service:
+    build:
+      context: ./notification-service
+    environment:
+      PORT: 8085
+      DATABASE_URL: postgres://notification_service:${NOTIFICATIONS_DB_PASSWORD}@postgres-notifications:5432/study_room_notifications?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET}
+      SERVICE_TOKEN: ${NOTIFICATIONS_SERVICE_TOKEN}
+      NATS_URL: nats://nats:4222
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM: ${SMTP_FROM}
+      
+      # Мессенджеры — заполните в .env.prod перед запуском
+      # Документация: notification-service/MESSENGER_KEYS_GUIDE.md
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      MAX_API_URL: ${MAX_API_URL}
+      MAX_APP_TOKEN: ${MAX_APP_TOKEN}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+    depends_on:
+      postgres-notifications:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    networks:
+      - studyroom-network
+    restart: unless-stopped
+
+  # ---------- Academic Service ----------
+  postgres-academic:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: study_room_academic
+      POSTGRES_USER: academic_service
+      POSTGRES_PASSWORD: ${ACADEMIC_DB_PASSWORD}
+    volumes:
+      - postgres_academic_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U academic_service -d study_room_academic"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - studyroom-network
+    restart: unless-stopped
+
+  academic-service:
+    build:
+      context: ./academic-service
+    environment:
+      PORT: 8082
+      DATABASE_URL: postgres://academic_service:${ACADEMIC_DB_PASSWORD}@postgres-academic:5432/study_room_academic?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET}
+      NATS_URL: nats://nats:4222
+      USER_SERVICE_URL: http://user-service:8081
+    depends_on:
+      postgres-academic:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      user-service:
+        condition: service_started
+    networks:
+      - studyroom-network
+    restart: unless-stopped
+
+  # ---------- Contracts Service ----------
+  postgres-contracts:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: study_room_contracts
+      POSTGRES_USER: contracts_service
+      POSTGRES_PASSWORD: ${CONTRACTS_DB_PASSWORD}
+    volumes:
+      - postgres_contracts_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contracts_service -d study_room_contracts"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - studyroom-network
+    restart: unless-stopped
+
+  contracts-service:
+    build:
+      context: ./contracts-service
+    environment:
+      PORT: 8083
+      DATABASE_URL: postgres://contracts_service:${CONTRACTS_DB_PASSWORD}@postgres-contracts:5432/study_room_contracts?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET}
+      NATS_URL: nats://nats:4222
+      USER_SERVICE_URL: http://user-service:8081
+    depends_on:
+      postgres-contracts:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      user-service:
+        condition: service_started
+    networks:
+      - studyroom-network
+    restart: unless-stopped
+
+  # ---------- CRM Service ----------
+  postgres-crm:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: study_room_crm
+      POSTGRES_USER: crm_service
+      POSTGRES_PASSWORD: ${CRM_DB_PASSWORD}
+    volumes:
+      - postgres_crm_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crm_service -d study_room_crm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - studyroom-network
+    restart: unless-stopped
+
+  crm-service:
+    build:
+      context: ./crm-service
+    environment:
+      PORT: 8084
+      DATABASE_URL: postgres://crm_service:${CRM_DB_PASSWORD}@postgres-crm:5432/study_room_crm?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET}
+      NATS_URL: nats://nats:4222
+      TILDA_WEBHOOK_SECRET: ${TILDA_WEBHOOK_SECRET}
+    depends_on:
+      postgres-crm:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    networks:
+      - studyroom-network
+    restart: unless-stopped
+
+  # ---------- Nginx Gateway ----------
+  nginx:
+    build:
+      context: ..
+      dockerfile: study-room-backend/nginx/Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      user-service:
+        condition: service_started
+      academic-service:
+        condition: service_started
+      contracts-service:
+        condition: service_started
+      crm-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+    networks:
+      - studyroom-network
+    restart: unless-stopped
+
+networks:
+  studyroom-network:
+    driver: bridge
+
+volumes:
+  postgres_users_data:
+  postgres_notifications_data:
+  postgres_academic_data:
+  postgres_crm_data:
+  postgres_contracts_data:

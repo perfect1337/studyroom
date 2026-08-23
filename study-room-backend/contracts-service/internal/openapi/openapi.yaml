@@ -1,0 +1,192 @@
+openapi: 3.1.0
+info:
+  title: Contracts Service API
+  version: 1.0.0
+  description: API for managing contracts, contract expiry checks, and contract lifecycle status.
+servers:
+  - url: /api/v1/contracts
+security:
+  - bearerAuth: []
+paths:
+  /:
+    get:
+      summary: List contracts
+      parameters:
+        - name: branch_id
+          in: query
+          schema:
+            type: integer
+        - name: student_id
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Contracts list
+    post:
+      summary: Create a contract
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateContractRequest'
+      responses:
+        '201':
+          description: Contract created
+  /{id}:
+    get:
+      summary: Get contract by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Contract details
+        '404':
+          description: Contract not found
+    patch:
+      summary: Update contract fields
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateContractRequest'
+      responses:
+        '200':
+          description: Contract updated
+    delete:
+      summary: Delete a contract
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Contract deleted
+  /{id}/expiry:
+    get:
+      summary: Get contract expiry for branch owners and parents
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Contract expiry information
+        '403':
+          description: Forbidden
+  /{id}/status:
+    patch:
+      summary: Update contract status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStatusRequest'
+      responses:
+        '200':
+          description: Status updated
+  /{id}/payment-status:
+    patch:
+      summary: Update payment status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePaymentStatusRequest'
+      responses:
+        '200':
+          description: Payment status updated
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    CreateContractRequest:
+      type: object
+      properties:
+        student_id:
+          type: integer
+        parent_id:
+          type: integer
+        course_id:
+          type: integer
+        branch_id:
+          type: integer
+        amount:
+          type: number
+          format: float
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+      required:
+        - student_id
+        - parent_id
+        - course_id
+        - branch_id
+        - amount
+        - start_date
+        - end_date
+    UpdateContractRequest:
+      type: object
+      properties:
+        end_date:
+          type: string
+          format: date
+        amount:
+          type: number
+          format: float
+    UpdateStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [active, completed, terminated]
+      required:
+        - status
+    UpdatePaymentStatusRequest:
+      type: object
+      properties:
+        payment_status:
+          type: string
+          enum: [unpaid, paid]
+      required:
+        - payment_status
