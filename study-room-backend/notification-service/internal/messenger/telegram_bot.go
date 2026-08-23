@@ -24,21 +24,49 @@ type TelegramBot struct {
 	stopCh         chan struct{}
 }
 
-// NewTelegramBot создаёт бота без запуска polling.
+// NewTelegramBot создаёт бота без запуска polling с retry при ошибке.
 func NewTelegramBot(token string, userRefRepo *repository.UserRefRepository, telegramUserRepo *repository.TelegramUserRepository) (*TelegramBot, error) {
-	bot, err := tgbotapi.NewBotAPI(token)
+	var bot *tgbotapi.BotAPI
+	var err error
+
+	// Retry loop — Telegram API может быть временно недоступен при старте
+	for attempt := 0; attempt < 5; attempt++ {
+		bot, err = tgbotapi.NewBotAPI(token)
+		if err == nil {
+			break
+		}
+		if attempt < 4 {
+			log.Printf("telegram: bot init attempt %d/%d failed: %v, retrying in 3s...", attempt+1, 5, err)
+			time.Sleep(3 * time.Second)
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("telegram bot init: %w", err)
 	}
 
-	bot.Debug = false
-	log.Println("telegram: bot initialized successfully")
+	// Проверка соединения — getMe
+	var me tgbotapi.User
+	for attempt := 0; attempt < 5; attempt++ {
+		me, err = bot.GetMe()
+		if err == nil {
+			break
+		}
+		if attempt < 4 {
+			log.Printf("telegram: getMe attempt %d/%d failed: %v, retrying in 3s...", attempt+1, 5, err)
+			time.Sleep(3 * time.Second)
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("telegram bot getMe: %w", err)
+	}
+
+	log.Printf("telegram: bot initialized successfully as @%s (chat_id=%d)", me.UserName, me.ID)
 	return &TelegramBot{
 		bot:              bot,
 		token:            token,
 		userRefRepo:      userRefRepo,
 		telegramUserRepo: telegramUserRepo,
-		botName:          "StudyRoomNotificationBot",
+		botName:          me.UserName,
 		stopCh:           make(chan struct{}),
 	}, nil
 }
