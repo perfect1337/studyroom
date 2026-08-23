@@ -16,10 +16,8 @@ import (
 // при XSS — сама браузерная модель безопасности cookie этого не позволяет.
 const refreshCookieName = "sr_refresh_token"
 
-// refreshCookiePath — cookie отправляется браузером только на этот префикс
-// пути (минимизация экспозиции: остальным эндпоинтам refresh-токен не нужен
-// и они его даже не увидят).
-const refreshCookiePath = "/api/v1/auth"
+// refreshCookiePath — cookie отправляется браузером на все запросы к API.
+const refreshCookiePath = "/"
 
 // cookieSettings — параметры cookie, приходят из config.Config (см. main.go).
 type cookieSettings struct {
