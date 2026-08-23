@@ -7,9 +7,10 @@ import { fetchParentChildren } from "../../api/users.js";
 import { fetchEnrollments, fetchCourses, fetchLessons, fetchTests } from "../../api/academic.js";
 import { fetchMyContracts } from "../../api/contracts.js";
 import { createInternalApplication } from "../../api/crm.js";
-import { fetchNotificationSettings, updateNotificationSettings } from "../../api/notifications.js";
+import { fetchNotificationSettings, updateNotificationSettings, fetchTelegramStatus } from "../../api/notifications.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import { sanitizePhoneInput, isValidPhone } from "../../utils/phone.js";
+import { useTelegramStatus } from "../../hooks/useTelegramStatus.js";
 
 const SUBJECT_OPTIONS = ["Математика", "Физика", "Английский язык", "Информатика", "Русский язык", "История"];
 
@@ -40,6 +41,7 @@ function daysUntil(endDateStr) {
 export default function ParentOverview() {
   const { user } = useAuth();
 
+  const { status: tgStatus, refresh: refreshTg } = useTelegramStatus();
   const [children, setChildren] = useState([]);
   const [courses, setCourses] = useState([]);
   const [enrollmentsByChild, setEnrollmentsByChild] = useState({});
@@ -201,6 +203,11 @@ export default function ParentOverview() {
     setNotif(next);
     try {
       await updateNotificationSettings(next);
+      if (key === "telegram_enabled" && next.telegram_enabled) {
+        try {
+          await refreshTg();
+        } catch {}
+      }
     } catch {
       setNotif(notif); // откатываем при ошибке
     }
@@ -231,6 +238,29 @@ export default function ParentOverview() {
   return (
     <DashboardShell role="parent" user={toSidebarUser(user)} searchPlaceholder="Поиск..." userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
       <div className="space-y-stack-lg pb-stack-lg">
+        {notif?.telegram_enabled && tgStatus && !tgStatus.connected && (
+          <div className="bg-surface-container-low border border-outline-variant rounded-xl p-4 flex items-start gap-3 shadow-sm">
+            <span className="material-symbols-outlined text-primary text-[22px] mt-0.5">telegram</span>
+            <div className="flex-1 min-w-0">
+              <p className="font-label-md text-on-surface font-bold mb-1">Подключите Telegram для уведомлений</p>
+              <p className="text-sm text-on-surface-variant mb-3">
+                Перейдите в бота <strong>Study Room</strong>, нажмите <code className="bg-surface-container px-1.5 py-0.5 rounded text-xs font-mono">/start</code> и введите ваш email.
+              </p>
+              <a
+                href="https://t.me/StudyRoomNotificationBot"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md font-bold hover:opacity-90 transition-opacity"
+              >
+                <span className="material-symbols-outlined text-[18px]">open_in_new</span>
+                Открыть бота
+              </a>
+            </div>
+          </div>
+        )}
+        {error && (
+          <div className="p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
+        )}
         <div className="relative mt-4">
           {/* Лента-закладка — тот же приём, что и в шапке /student, для
               единого визуального языка "карточки профиля" по всему кабинету. */}
@@ -459,6 +489,14 @@ export default function ParentOverview() {
                         className="w-5 h-5 rounded text-primary focus:ring-primary border-outline-variant"
                       />
                       <span className="text-sm text-on-surface font-medium">{ch.label}</span>
+                      {ch.key === "telegram_enabled" && notif.telegram_enabled && tgStatus && (
+                        <span className={`ml-auto flex items-center gap-1 text-[11px] font-bold uppercase ${
+                          tgStatus.connected ? "text-primary" : "text-warning"
+                        }`}>
+                          <span className={`w-2 h-2 rounded-full ${tgStatus.connected ? "bg-primary" : "bg-warning"}`}></span>
+                          {tgStatus.connected ? "Подключено" : "Не подключено"}
+                        </span>
+                      )}
                     </label>
                   ))
                 ) : (

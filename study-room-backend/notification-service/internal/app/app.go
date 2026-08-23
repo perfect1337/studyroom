@@ -28,6 +28,7 @@ type Deps struct {
 	Notifications *repository.NotificationRepository
 	Settings      *repository.SettingsRepository
 	UsersRef      *repository.UserRefRepository
+	TelegramUser  *repository.TelegramUserRepository
 
 	Notifier     *notifier.Notifier
 	TokenManager *auth.TokenManager
@@ -42,22 +43,24 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, serviceToken string, mai
 	notificationsRepo := repository.NewNotificationRepository(pool)
 	settingsRepo := repository.NewSettingsRepository(pool)
 	usersRefRepo := repository.NewUserRefRepository(pool)
+	telegramUserRepo := repository.NewTelegramUserRepository(pool)
 
 	return &Deps{
-		Pool:          pool,
-		Notifications: notificationsRepo,
-		Settings:      settingsRepo,
-		UsersRef:      usersRefRepo,
-		Notifier:      notifier.New(notificationsRepo, settingsRepo, usersRefRepo, mail, factory),
-		TokenManager:  tm,
-		ServiceToken:  serviceToken,
+		Pool:           pool,
+		Notifications:  notificationsRepo,
+		Settings:       settingsRepo,
+		UsersRef:       usersRefRepo,
+		TelegramUser:   telegramUserRepo,
+		Notifier:       notifier.New(notificationsRepo, settingsRepo, usersRefRepo, mail, factory),
+		TokenManager:   tm,
+		ServiceToken:   serviceToken,
 	}
 }
 
 // NewRouter строит chi.Router со всеми эндпоинтами сервиса — идентично тому,
 // что раньше строилось прямо в main().
 func NewRouter(d *Deps) http.Handler {
-	notificationHandler := handlers.NewNotificationHandler(d.Notifications, d.Settings)
+	notificationHandler := handlers.NewNotificationHandler(d.Notifications, d.Settings, d.TelegramUser)
 	internalHandler := handlers.NewInternalHandler(d.Notifier, d.UsersRef)
 
 	r := chi.NewRouter()
@@ -76,6 +79,7 @@ func NewRouter(d *Deps) http.Handler {
 			r.Patch("/notifications/{id}/read", notificationHandler.MarkRead)
 			r.Get("/notifications/settings", notificationHandler.GetSettings)
 			r.Patch("/notifications/settings", notificationHandler.UpdateSettings)
+			r.Get("/notifications/telegram/status", notificationHandler.GetTelegramStatus)
 		})
 
 		// --- Только service-to-service (X-Service-Token) ---

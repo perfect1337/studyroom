@@ -51,6 +51,18 @@ func main() {
 	factory := messenger.NewFactory(messengerCfg)
 	deps := app.NewDeps(pool, tm, cfg.ServiceToken, mail, factory)
 
+	// Запускаем Telegram Bot polling (только если есть токен)
+	if cfg.TelegramBotToken != "" {
+		bot, err := messenger.NewTelegramBot(cfg.TelegramBotToken, deps.UsersRef, deps.TelegramUser)
+		if err != nil {
+			log.Printf("telegram: bot init failed: %v (continuing without bot polling)", err)
+		} else {
+			bot.StartPolling(ctx)
+		}
+	} else {
+		log.Println("telegram: TELEGRAM_BOT_TOKEN not set, skipping bot polling")
+	}
+
 	// Подписка на NATS — best effort. Если брокер недоступен при старте,
 	// сервис всё равно поднимается и работает через HTTP API.
 	if natsURL := os.Getenv("NATS_URL"); natsURL != "" {

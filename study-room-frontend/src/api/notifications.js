@@ -22,3 +22,8 @@ export function fetchNotificationSettings() {
 export function updateNotificationSettings(patch) {
   return notificationsApi("/settings", { method: "PATCH", body: patch });
 }
+
+// 5.5 Проверить статус подключения Telegram
+export function fetchTelegramStatus() {
+  return notificationsApi("/telegram/status");
+}

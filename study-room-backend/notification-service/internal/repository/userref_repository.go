@@ -55,7 +55,7 @@ func (r *UserRefRepository) GetByID(ctx context.Context, id int64) (*models.User
 
 func (r *UserRefRepository) GetByEmail(ctx context.Context, email string) (*models.UserRef, error) {
 	row := r.pool.QueryRow(ctx,
-		`SELECT id, email, first_name, last_name, parent_id, phone, telegram_id, whatsapp_id FROM users_ref WHERE email = $1`, email)
+		`SELECT id, email, first_name, last_name, parent_id, phone, telegram_id, whatsapp_id FROM users_ref WHERE LOWER(email) = LOWER($1)`, email)
 
 	var u models.UserRef
 	err := row.Scan(&u.ID, &u.Email, &u.FirstName, &u.LastName, &u.ParentID, &u.Phone, &u.TelegramID, &u.WhatsAppID)

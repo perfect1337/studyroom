@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { updateMe, changePassword } from "../../api/auth.js";
+import { fetchNotificationSettings, updateNotificationSettings } from "../../api/notifications.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+import { useTelegramStatus } from "../../hooks/useTelegramStatus.js";
 
 // role из JWT/контекста -> роль для сайдбара (у owner отдельный визуальный раздел "admin")
 const SIDEBAR_ROLE = {
@@ -78,6 +80,43 @@ function resizeImageFile(file) {
  */
 export default function SettingsPage({ role }) {
   const { user, updateUser } = useAuth();
+
+  const { status: tgStatus, loading: tgLoading, refresh: refreshTg } = useTelegramStatus();
+
+  const [notifSettings, setNotifSettings] = useState(null);
+  const [notifLoading, setNotifLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const settings = await fetchNotificationSettings();
+        if (!cancelled) setNotifSettings(settings);
+      } catch (e) {
+        console.error("Failed to load notification settings:", e);
+      }
+      if (!cancelled) setNotifLoading(false);
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  async function handleNotifToggle(key) {
+    if (!notifSettings) return;
+    const updated = { ...notifSettings, [key]: !notifSettings[key] };
+    if (updated.telegram_enabled) updated.preferred_messenger = "telegram";
+    setNotifSettings(updated);
+    try {
+      await updateNotificationSettings(updated);
+      if (key === "telegram_enabled" && updated.telegram_enabled) {
+        try {
+          await refreshTg();
+        } catch {}
+      }
+    } catch (e) {
+      setNotifSettings(notifSettings);
+    }
+  }
 
   const isStudent = role === "student";
   const [profileForm, setProfileForm] = useState({
@@ -438,6 +477,100 @@ export default function SettingsPage({ role }) {
               </button>
             </div>
           </form>
+        </section>
+
+        {/* Notifications */}
+        <section className="bg-surface-container-lowest rounded-xl p-stack-md shadow-[0_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant">
+          <div className="flex items-center gap-3 mb-stack-lg">
+            <span className="material-symbols-outlined text-warning">notifications</span>
+            <h3 className="font-headline-sm text-[20px] text-on-surface">Уведомления</h3>
+          </div>
+
+          {notifLoading ? (
+            <p className="text-sm text-on-surface-variant">Загрузка настроек...</p>
+          ) : (
+            <div className="space-y-stack-md">
+              {/* Telegram */}
+              <div className="bg-surface rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="material-symbols-outlined text-primary">telegram</span>
+                    <div>
+                      <p className="font-label-md font-bold text-on-surface">Telegram</p>
+                      <p className="text-xs text-on-surface-variant">Уведомления о занятиях, оценках и платежах</p>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!notifSettings?.telegram_enabled}
+                      onChange={() => handleNotifToggle("telegram_enabled")}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
+                </div>
+
+                {tgStatus !== null && (
+                  <div className={`flex items-center gap-2 text-xs font-bold ${
+                    tgStatus.connected ? "text-primary" : "text-warning"
+                  }`}>
+                    <span className={`w-2 h-2 rounded-full ${tgStatus.connected ? "bg-primary" : "bg-warning"}`}></span>
+                    {tgStatus.connected ? "Подключено" : "Не подключено"}
+                  </div>
+                )}
+
+                {tgLoading ? (
+                  <p className="text-xs text-on-surface-variant">Проверка статуса...</p>
+                ) : !tgStatus?.connected && notifSettings?.telegram_enabled ? (
+                  <div className="bg-surface-container-low border border-outline-variant rounded-lg p-3 space-y-2">
+                    <p className="text-xs font-bold text-on-surface">👋 Для подключения:</p>
+                    <ol className="text-xs text-on-surface-variant space-y-1 list-decimal list-inside">
+                      <li>Откройте бота <strong>Study Room</strong></li>
+                      <li>Нажмите <code className="bg-surface px-1 rounded text-[10px] font-mono">/start</code></li>
+                      <li>Введите email, указанный при регистрации</li>
+                    </ol>
+                    <a
+                      href="https://t.me/StudyRoomNotificationBot"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 bg-primary text-on-primary px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-90 transition-opacity"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                      Открыть бота
+                    </a>
+                  </div>
+                ) : tgStatus?.connected ? (
+                  <div className="bg-primary/10 border border-primary/30 rounded-lg p-2 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-[16px]">check_circle</span>
+                    <p className="text-xs text-primary font-medium">
+                      {tgStatus.telegram_username ? `Подключено как @${tgStatus.telegram_username}` : "Telegram подключён"}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+
+              {/* Email */}
+              <div className="flex items-center justify-between bg-surface rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-primary">email</span>
+                  <div>
+                    <p className="font-label-md font-bold text-on-surface">Почта</p>
+                    <p className="text-xs text-on-surface-variant">Email-уведомления</p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!notifSettings?.email_enabled}
+                    onChange={() => handleNotifToggle("email_enabled")}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                </label>
+              </div>
+            </div>
+          )}
         </section>
       </div>
     </DashboardShell>

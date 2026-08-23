@@ -57,3 +57,13 @@ type UserRef struct {
 	// Нужен, чтобы резолвить получателя attendance.marked_absent локально.
 	ParentID *int64 `json:"parent_id,omitempty"`
 }
+
+// TelegramUser — связка Telegram chat_id с user_id в системе.
+type TelegramUser struct {
+	ID              int64     `json:"id"`
+	TelegramChatID  int64     `json:"telegram_chat_id"`
+	TelegramUsername string    `json:"telegram_username,omitempty"`
+	UserID          int64     `json:"user_id"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}

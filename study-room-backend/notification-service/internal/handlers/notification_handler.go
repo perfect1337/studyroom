@@ -13,15 +13,17 @@ import (
 )
 
 type NotificationHandler struct {
-	notifications *repository.NotificationRepository
-	settings      *repository.SettingsRepository
+	notifications  *repository.NotificationRepository
+	settings       *repository.SettingsRepository
+	telegramUser   *repository.TelegramUserRepository
 }
 
 func NewNotificationHandler(
 	notifications *repository.NotificationRepository,
 	settings *repository.SettingsRepository,
+	telegramUser *repository.TelegramUserRepository,
 ) *NotificationHandler {
-	return &NotificationHandler{notifications: notifications, settings: settings}
+	return &NotificationHandler{notifications: notifications, settings: settings, telegramUser: telegramUser}
 }
 
 // GET /notifications?unread_only=true
@@ -117,4 +119,31 @@ func (h *NotificationHandler) UpdateSettings(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, updated)
+}
+
+// GET /notifications/telegram/status
+func (h *NotificationHandler) GetTelegramStatus(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.FromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "no auth context")
+		return
+	}
+
+	tu, err := h.telegramUser.GetByUserID(r.Context(), claims.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check telegram status")
+		return
+	}
+
+	if tu != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"connected":      true,
+			"telegram_chat_id": tu.TelegramChatID,
+			"telegram_username": tu.TelegramUsername,
+		})
+	} else {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"connected": false,
+		})
+	}
 }
