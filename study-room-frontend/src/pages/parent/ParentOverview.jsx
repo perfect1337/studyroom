@@ -255,8 +255,8 @@ export default function ParentOverview() {
                 <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-tertiary/70 mb-1">
                   Личный кабинет · Родитель
                 </p>
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <h2 className="font-display-academic text-[28px] sm:text-[34px] leading-[1.1] font-semibold text-on-surface truncate">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <h2 className="font-display-academic text-[28px] sm:text-[34px] leading-[1.1] font-semibold text-on-surface min-w-0 truncate">
                     {fullName(user)}
                   </h2>
                 </div>
@@ -334,9 +334,9 @@ export default function ParentOverview() {
                   <div key={child.id} className="bg-surface-container-lowest rounded-xl p-5 shadow-sm border border-outline-variant flex flex-col gap-5">
                     <div className="flex flex-col md:flex-row gap-5 items-start">
                       <Avatar src={child.avatar_url} name={fullName(child)} size="lg" className="shadow-sm ring-2 ring-tertiary-fixed/60" />
-                      <div className="flex-1 w-full">
-                        <div className="flex justify-between items-center w-full">
-                          <h4 className="font-display-academic text-xl font-semibold text-on-surface mb-1">{fullName(child)}</h4>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-center w-full gap-2">
+                          <h4 className="font-display-academic text-xl font-semibold text-on-surface mb-1 min-w-0 truncate">{fullName(child)}</h4>
                           <Link to={`/parent/children/${child.id}`} className="text-primary hover:bg-surface-container-low p-2 rounded-full transition-colors">
                             <span className="material-symbols-outlined">chevron_right</span>
                           </Link>
