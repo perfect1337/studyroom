@@ -6,7 +6,9 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/mail"
 	"strconv"
+	"strings"
 
 	"studyroom/user-service/internal/auth"
 	"studyroom/user-service/internal/events"
@@ -64,6 +66,7 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		LastName   *string `json:"last_name"`
 		Patronymic *string `json:"patronymic"`
 		AvatarURL  *string `json:"avatar_url"`
+		Email      *string `json:"email"`
 		// ClassInfo/School — «Класс» и «Школа» из student_profiles. Хранятся
 		// отдельно от users (см. schema), поэтому обновляются через
 		// StudentProfileRepository, а не через h.users.Update. Разрешено
@@ -80,6 +83,13 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "only a student can edit class/school")
 		return
 	}
+	// У ученика поле email — это сгенерированный логин (транслитерация ФИО),
+	// а не настоящая почта (см. комментарий в CreateStudent), и он не должен
+	// меняться самим учеником — иначе он потеряет доступ к своему логину.
+	if body.Email != nil && claims.Role == models.RoleStudent {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "student login cannot be changed here")
+		return
+	}
 
 	fields := map[string]any{}
 	if body.FirstName != nil {
@@ -94,13 +104,29 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	if body.AvatarURL != nil {
 		fields["avatar_url"] = *body.AvatarURL
 	}
+	if body.Email != nil {
+		normalized := strings.ToLower(strings.TrimSpace(*body.Email))
+		if _, err := mail.ParseAddress(normalized); err != nil {
+			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid email")
+			return
+		}
+		fields["email"] = normalized
+	}
 	if len(fields) > 0 {
 		if _, err := h.users.Update(r.Context(), claims.UserID, fields); err != nil {
+			if errors.Is(err, repository.ErrDuplicate) {
+				writeError(w, http.StatusConflict, "ALREADY_EXISTS", "email or phone already registered")
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
 			return
 		}
 	}
 
+	if body.ClassInfo != nil && !models.IsValidGrade(*body.ClassInfo) {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "class_info must be a number from 1 to 11")
+		return
+	}
 	if body.ClassInfo != nil || body.School != nil {
 		// Upsert перезаписывает оба поля разом, поэтому подставляем текущее
 		// значение для того из них, что не пришло в запросе, — иначе оно
@@ -553,10 +579,16 @@ type createStudentRequest struct {
 	LastName   string  `json:"last_name"`
 	FirstName  string  `json:"first_name"`
 	Patronymic *string `json:"patronymic"`
-	ClassInfo  *string `json:"class_info"`
-	School     *string `json:"school"`
-	BranchID   *int64  `json:"branch_id"`
-	ParentID   int64   `json:"parent_id"`
+	// ClassInfo — класс ученика (1-11), обязателен: используется ежегодным
+	// job'ом автоповышения класса (см. internal/promotion) и подтягивается
+	// в заявки на запись на курс через user_refs в CRM Service. Раньше было
+	// необязательным свободным текстом — теперь строго число 1..11 для
+	// ЛЮБОЙ роли, создающей ученика (owner/parent/branch_owner идут через
+	// этот же обработчик, см. роут в app.go).
+	ClassInfo *string `json:"class_info"`
+	School    *string `json:"school"`
+	BranchID  *int64  `json:"branch_id"`
+	ParentID  int64   `json:"parent_id"`
 }
 
 func (h *UserHandler) CreateStudent(w http.ResponseWriter, r *http.Request) {
@@ -568,6 +600,10 @@ func (h *UserHandler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.LastName == "" || req.FirstName == "" || req.ParentID == 0 {
 		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "last_name, first_name, parent_id required")
+		return
+	}
+	if req.ClassInfo == nil || !models.IsValidGrade(*req.ClassInfo) {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "class_info is required and must be a number from 1 to 11")
 		return
 	}
 
@@ -672,7 +708,7 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid body")
 		return
 	}
-	allowed := map[string]bool{"first_name": true, "last_name": true, "patronymic": true, "avatar_url": true}
+	allowed := map[string]bool{"first_name": true, "last_name": true, "patronymic": true, "avatar_url": true, "email": true}
 	fields := map[string]any{}
 	for k, v := range body {
 		if allowed[k] {
@@ -680,8 +716,33 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// У ученика email — это сгенерированный логин, а не настоящая почта (см.
+	// комментарий в CreateStudent) — его правит только сброс учётных данных,
+	// а не этот общий эндпоинт, иначе можно случайно увести ученика в дубликат.
+	if _, ok := fields["email"]; ok && target.Role == models.RoleStudent {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "student login cannot be changed here")
+		return
+	}
+	if rawEmail, ok := fields["email"]; ok {
+		emailStr, ok := rawEmail.(string)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid email")
+			return
+		}
+		normalized := strings.ToLower(strings.TrimSpace(emailStr))
+		if _, err := mail.ParseAddress(normalized); err != nil {
+			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid email")
+			return
+		}
+		fields["email"] = normalized
+	}
+
 	updated, err := h.users.Update(r.Context(), id, fields)
 	if err != nil {
+		if errors.Is(err, repository.ErrDuplicate) {
+			writeError(w, http.StatusConflict, "ALREADY_EXISTS", "email or phone already registered")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
 		return
 	}

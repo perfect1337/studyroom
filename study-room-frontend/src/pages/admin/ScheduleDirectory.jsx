@@ -345,47 +345,56 @@ export default function ScheduleDirectory({ role }) {
       {/* Фильтры */}
       <div className="flex flex-wrap gap-3 mb-4">
         {isOwner && (
+          <div className="relative">
+            <select
+              value={branchFilter}
+              onChange={(e) => setBranchFilter(e.target.value)}
+              className="appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+            >
+              <option value="">Все филиалы</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name || b.city}
+                </option>
+              ))}
+            </select>
+            <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
+          </div>
+        )}
+
+        <div className="relative">
           <select
-            value={branchFilter}
-            onChange={(e) => setBranchFilter(e.target.value)}
-            className="bg-surface-container-lowest border border-outline-variant rounded-lg px-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+            value={tutorFilter}
+            onChange={(e) => setTutorFilter(e.target.value)}
+            disabled={peopleLoading}
+            className="appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none disabled:opacity-60"
           >
-            <option value="">Все филиалы</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name || b.city}
+            <option value="">Все преподаватели</option>
+            {people.tutors.map((t) => (
+              <option key={t.id} value={t.id}>
+                {fullName(t)}
               </option>
             ))}
           </select>
-        )}
+          <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
+        </div>
 
-        <select
-          value={tutorFilter}
-          onChange={(e) => setTutorFilter(e.target.value)}
-          disabled={peopleLoading}
-          className="bg-surface-container-lowest border border-outline-variant rounded-lg px-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none disabled:opacity-60"
-        >
-          <option value="">Все преподаватели</option>
-          {people.tutors.map((t) => (
-            <option key={t.id} value={t.id}>
-              {fullName(t)}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={studentFilter}
-          onChange={(e) => setStudentFilter(e.target.value)}
-          disabled={peopleLoading}
-          className="bg-surface-container-lowest border border-outline-variant rounded-lg px-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none disabled:opacity-60"
-        >
-          <option value="">Все ученики</option>
-          {people.students.map((s) => (
-            <option key={s.id} value={s.id}>
-              {fullName(s)}
-            </option>
-          ))}
-        </select>
+        <div className="relative">
+          <select
+            value={studentFilter}
+            onChange={(e) => setStudentFilter(e.target.value)}
+            disabled={peopleLoading}
+            className="appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none disabled:opacity-60"
+          >
+            <option value="">Все ученики</option>
+            {people.students.map((s) => (
+              <option key={s.id} value={s.id}>
+                {fullName(s)}
+              </option>
+            ))}
+          </select>
+          <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
+        </div>
 
         {(branchFilter || tutorFilter || studentFilter) && (
           <button

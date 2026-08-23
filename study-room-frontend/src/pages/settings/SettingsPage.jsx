@@ -68,10 +68,13 @@ function resizeImageFile(file) {
 
 /**
  * Раздел "Настройки" — общий для всех ролей (см. п.1.7 / 1.8 api-contracts.md):
- * - PATCH /users/me — редактирование имени/фамилии/отчества/аватара (по ссылке, т.к.
- *   отдельного эндпоинта загрузки файла в контракте нет — только строка avatar_url).
+ * - PATCH /users/me — редактирование имени/фамилии/отчества/аватара/email (по ссылке
+ *   на аватар, т.к. отдельного эндпоинта загрузки файла в контракте нет — только
+ *   строка avatar_url).
  * - POST /users/me/change-password — смена пароля.
- * Email и телефон бэкенд через эти эндпоинты не меняет, поэтому показываем их только для чтения.
+ * Email редактируем для всех ролей, КРОМЕ ученика: у ученика это поле — сгенерированный
+ * логин (транслитерация ФИО), а не настоящая почта, поэтому оно остаётся только для чтения.
+ * Телефон бэкенд через эти эндпоинты не меняет, поэтому в форме его нет вовсе.
  */
 export default function SettingsPage({ role }) {
   const { user, updateUser } = useAuth();
@@ -84,11 +87,16 @@ export default function SettingsPage({ role }) {
     avatar_url: user?.avatar_url ?? "",
     class_info: user?.class_info ?? "",
     school: user?.school ?? "",
+    email: user?.email ?? "",
   });
   const [profileStatus, setProfileStatus] = useState("");
   const [profileError, setProfileError] = useState("");
   const [avatarError, setAvatarError] = useState("");
   const [avatarLoading, setAvatarLoading] = useState(false);
+  // Текущий пароль запрашиваем отдельно от остальной формы профиля — это
+  // разовое подтверждение личности для смены email, а не поле профиля,
+  // которое нужно было бы предзаполнять/хранить между сохранениями.
+  const [emailPassword, setEmailPassword] = useState("");
 
   async function handleAvatarFile(e) {
     const file = e.target.files?.[0];
@@ -112,6 +120,15 @@ export default function SettingsPage({ role }) {
 
   async function handleProfileSubmit(e) {
     e.preventDefault();
+    // Email считается изменённым, если новое значение отличается от того,
+    // что реально сохранено на сервере (user?.email) — не от начального
+    // значения формы при монтировании, так как пользователь мог сначала
+    // ввести email, потом стереть и вернуть обратно то же значение.
+    const emailChanged = !isStudent && profileForm.email.trim() !== (user?.email ?? "");
+    if (emailChanged && !emailPassword) {
+      setProfileError("Чтобы сменить email, введите текущий пароль.");
+      return;
+    }
     setProfileStatus("saving");
     setProfileError("");
     try {
@@ -127,9 +144,18 @@ export default function SettingsPage({ role }) {
               class_info: profileForm.class_info || undefined,
               school: profileForm.school || undefined,
             }
-          : {}),
+          : {
+              // У ученика email — это сгенерированный логин, бэкенд отклонит
+              // попытку изменить его с 403, поэтому не отправляем поле вовсе.
+              email: profileForm.email || undefined,
+              // current_password отправляем, только когда email реально
+              // меняется — бэкенд требует его именно в этом случае (см.
+              // UpdateMe), не стоит гонять пароль по сети без нужды.
+              ...(emailChanged ? { current_password: emailPassword } : {}),
+            }),
       });
       updateUser(updated ?? profileForm);
+      setEmailPassword("");
       setProfileStatus("done");
       setTimeout(() => setProfileStatus(""), 2000);
     } catch (err) {
@@ -275,13 +301,19 @@ export default function SettingsPage({ role }) {
                 </div>
                 <div className="space-y-stack-sm">
                   <label className="font-label-md text-on-surface-variant ml-1">Класс</label>
-                  <input
-                    value={profileForm.class_info}
-                    onChange={(e) => setProfileForm((f) => ({ ...f, class_info: e.target.value }))}
-                    placeholder="Например, 10А"
-                    className="w-full bg-surface border border-outline-variant rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-on-surface"
-                    type="text"
-                  />
+                  <div className="relative">
+                    <select
+                      value={profileForm.class_info}
+                      onChange={(e) => setProfileForm((f) => ({ ...f, class_info: e.target.value }))}
+                      className="w-full appearance-none bg-surface border border-outline-variant rounded-lg pl-4 pr-9 py-3 focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-on-surface"
+                    >
+                      <option value="">Не указан</option>
+                      {Array.from({ length: 11 }, (_, i) => i + 1).map((n) => (
+                        <option key={n} value={String(n)}>{n} класс</option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
+                  </div>
                 </div>
               </div>
             )}
@@ -289,15 +321,45 @@ export default function SettingsPage({ role }) {
               <label className="font-label-md text-on-surface-variant ml-1">Адрес электронной почты</label>
               <div className="relative">
                 <input
-                  value={user?.email ?? ""}
-                  disabled
-                  className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-4 py-3 outline-none text-on-surface-variant cursor-not-allowed"
+                  value={isStudent ? (user?.email ?? "") : profileForm.email}
+                  onChange={isStudent ? undefined : (e) => setProfileForm((f) => ({ ...f, email: e.target.value }))}
+                  disabled={isStudent}
+                  required={!isStudent}
+                  className={`w-full border border-outline-variant rounded-lg px-4 py-3 outline-none transition-all ${
+                    isStudent
+                      ? "bg-surface-container-low text-on-surface-variant cursor-not-allowed"
+                      : "bg-surface text-on-surface focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  }`}
                   type="email"
                 />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-primary material-symbols-outlined">verified</span>
+                {isStudent && (
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-primary material-symbols-outlined">verified</span>
+                )}
               </div>
-              <p className="text-[12px] text-on-surface-variant ml-1">Смена email в этой версии недоступна — обратитесь в поддержку.</p>
+              <p className="text-[12px] text-on-surface-variant ml-1">
+                {isStudent
+                  ? "Это логин ученика для входа — его меняет только преподаватель/администратор через сброс учётных данных."
+                  : "Используется для входа и уведомлений. После смены снова понадобится текущий email для входа, пока вы не выйдете и не зайдёте заново."}
+              </p>
             </div>
+
+            {!isStudent && profileForm.email.trim() !== (user?.email ?? "") && (
+              <div className="space-y-stack-sm">
+                <label className="font-label-md text-on-surface-variant ml-1">Текущий пароль</label>
+                <input
+                  value={emailPassword}
+                  onChange={(e) => setEmailPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                  className="w-full bg-surface border border-outline-variant rounded-lg px-4 py-3 outline-none transition-all focus:ring-2 focus:ring-primary/20 focus:border-primary text-on-surface"
+                  type="password"
+                  placeholder="Введите пароль, чтобы подтвердить смену email"
+                />
+                <p className="text-[12px] text-on-surface-variant ml-1">
+                  Требуется для подтверждения — email одновременно служит логином для входа.
+                </p>
+              </div>
+            )}
 
             {profileError && <p className="text-sm text-error">{profileError}</p>}
 

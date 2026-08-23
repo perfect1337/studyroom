@@ -39,7 +39,14 @@ const EMPTY_CHILD_FORM = {
   first_name: "",
   patronymic: "",
   branch_id: "",
+  class_info: "",
 };
+
+// Класс ученика (student_profiles.class_info). Бэкенд ожидает число от 1 до
+// 11 (см. ответ POST /users/students: "class_info is required and must be
+// a number from 1 to 11") — в select показываем человекочитаемую подпись
+// "N класс", а в запрос уходит само число.
+const CLASS_OPTIONS = Array.from({ length: 11 }, (_, i) => i + 1);
 
 function initials(person) {
   if (!person) return "?";
@@ -295,7 +302,7 @@ export default function PeopleDirectory({ role }) {
 
   async function handleAddChild(e) {
     e.preventDefault();
-    if (!addForm.last_name || !addForm.first_name || !addForm.branch_id) return;
+    if (!addForm.last_name || !addForm.first_name || !addForm.branch_id || !addForm.class_info) return;
     setAddStatus("saving");
     try {
       await createStudent({
@@ -303,6 +310,7 @@ export default function PeopleDirectory({ role }) {
         first_name: addForm.first_name,
         patronymic: addForm.patronymic || undefined,
         branch_id: Number(addForm.branch_id),
+        class_info: String(addForm.class_info),
         parent_id: user.id,
       });
       setAddStatus("done");
@@ -633,6 +641,22 @@ export default function PeopleDirectory({ role }) {
                       Ребёнок появится в списках только тех репетиторов и руководителей, которые относятся к этому филиалу.
                     </p>
                   </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Класс *</label>
+                    <select
+                      required
+                      value={addForm.class_info}
+                      onChange={(e) => setAddForm((f) => ({ ...f, class_info: e.target.value }))}
+                      className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    >
+                      <option value="">Выберите класс</option>
+                      {CLASS_OPTIONS.map((c) => (
+                        <option key={c} value={c}>
+                          {c} класс
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 {addStatus && addStatus !== "saving" && addStatus !== "done" && (
@@ -641,7 +665,7 @@ export default function PeopleDirectory({ role }) {
 
                 <button
                   type="submit"
-                  disabled={addStatus === "saving" || !addForm.last_name || !addForm.first_name || !addForm.branch_id}
+                  disabled={addStatus === "saving" || !addForm.last_name || !addForm.first_name || !addForm.branch_id || !addForm.class_info}
                   className="w-full bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60"
                 >
                   {addStatus === "saving" ? "Сохранение…" : "Добавить ребёнка"}

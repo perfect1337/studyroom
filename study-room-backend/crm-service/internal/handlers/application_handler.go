@@ -127,11 +127,20 @@ func (h *ApplicationHandler) CreateInternal(w http.ResponseWriter, r *http.Reque
 
 	studentName := ""
 	branchID := claims.BranchID
+	var classInfo *string
 	if ref, err := h.userRefs.GetByID(r.Context(), req.StudentID); err == nil {
 		studentName = ref.FullName
 		if ref.BranchID != nil {
 			branchID = ref.BranchID
 		}
+		// Класс подтягивается автоматически из локальной копии профиля
+		// ученика (user_refs, наполняется событиями user.* из User
+		// Service) — родитель его не вводит и не может подделать. Если
+		// событие ещё не дошло (ref не найден) или класс ещё не задан,
+		// заявка всё равно создаётся, просто без класса — не блокируем
+		// родителя из-за задержки доставки события (тот же принцип, что и
+		// с studentName ниже).
+		classInfo = ref.ClassInfo
 	}
 	if studentName == "" {
 		studentName = studentPlaceholder(req.StudentID)
@@ -147,7 +156,7 @@ func (h *ApplicationHandler) CreateInternal(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	app, err := h.repo.CreateInternal(r.Context(), studentName, req.StudentID, req.SubjectInterest, req.Format, branchID, parentName, req.Phone)
+	app, err := h.repo.CreateInternal(r.Context(), studentName, req.StudentID, req.SubjectInterest, req.Format, branchID, parentName, req.Phone, classInfo)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to create application")
 		return

@@ -14,6 +14,7 @@ import (
 const (
 	SubjectUserCreated            = "user.created"
 	SubjectUserUpdated            = "user.updated"
+	SubjectUserDeleted            = "user.deleted"
 	SubjectPasswordResetRequested = "password_reset_requested"
 	SubjectUserCredentialsReset   = "user.credentials_reset"
 )
@@ -22,12 +23,39 @@ const (
 type Publisher interface {
 	UserCreated(u *models.User, tempPassword, notifyEmail string, parentID *int64)
 	UserUpdated(u *models.User)
+	// UserDeleted — пользователь физически удалён из БД User Service (пока
+	// единственный источник — ежегодное автоудаление выпускников 11 класса,
+	// см. internal/promotion). Другие сервисы (Academic/Contracts/CRM)
+	// хранят student_id БЕЗ настоящего FK на User Service (разные БД, см.
+	// комментарий в crm-service/.../0001_init.up.sql), поэтому сами не
+	// узнают об удалении без этого события — они могут подписаться на
+	// user.deleted, чтобы почистить/заморозить свои записи по этому id.
+	// На момент написания ни один из них ещё не подписан — это отдельная
+	// доработка вне рамок текущей задачи (см. итоговое сообщение).
+	UserDeleted(u DeletedUserInfo)
 	PasswordResetRequested(userID int64, email, resetToken, resetURL string, expiresAt time.Time)
 	// CredentialsReset — логин/пароль пользователя принудительно сброшены
 	// (например, родитель или owner сбросил доступ ребёнку — см. ResetStudentCredentials).
 	// В отличие от UserCreated, письмо должно говорить "обновлены", а не "созданы".
 	CredentialsReset(u *models.User, tempPassword, notifyEmail string, parentID *int64)
 	Close()
+}
+
+// DeletedUserInfo — снимок данных удаляемого пользователя, который нужно
+// собрать ДО DELETE (после удаления строки в БД уже не будет). Отдельный
+// тип, а не *models.User, потому что промоушен-джобу не нужен весь профиль —
+// только то, что реально уходит в событие.
+type DeletedUserInfo struct {
+	ID        int64
+	Email     string
+	FirstName string
+	LastName  string
+	Role      models.Role
+	BranchID  *int64
+	// ParentIDs — id всех родителей удаляемого ученика (parent_student),
+	// чтобы Notification Service мог, если понадобится, разослать им
+	// уведомление о выпуске — см. UserDeletedEvent.
+	ParentIDs []int64
 }
 
 type UserEvent struct {
@@ -49,6 +77,13 @@ type UserEvent struct {
 	// (is_active=false) и отвязывать его от курсов/учеников локально, не
 	// дёргая User Service синхронно — см. academic-service/internal/events/subscriber.go.
 	IsActive bool `json:"is_active"`
+	// ClassInfo — класс ученика (только для role=student), из
+	// student_profiles.class_info. Добавлено, чтобы CRM Service мог
+	// показывать класс прямо в заявке на запись на курс, резолвя его
+	// локально из user_refs, не дёргая User Service синхронно на каждую
+	// заявку — см. crm-service/internal/events/subscriber.go и
+	// application_handler.go CreateInternal.
+	ClassInfo *string `json:"class_info,omitempty"`
 }
 
 type PasswordResetEvent struct {
@@ -57,6 +92,16 @@ type PasswordResetEvent struct {
 	ResetToken string `json:"reset_token"`
 	ResetURL   string `json:"reset_url"`
 	ExpiresAt  string `json:"expires_at"`
+}
+
+type UserDeletedEvent struct {
+	ID        int64   `json:"id"`
+	Email     string  `json:"email"`
+	FirstName string  `json:"first_name"`
+	LastName  string  `json:"last_name"`
+	Role      string  `json:"role"`
+	BranchID  *int64  `json:"branch_id,omitempty"`
+	ParentIDs []int64 `json:"parent_ids,omitempty"`
 }
 
 type NATSPublisher struct {
@@ -94,7 +139,7 @@ func (p *NATSPublisher) UserCreated(u *models.User, tempPassword, notifyEmail st
 		ID: u.ID, Email: u.Email, FirstName: u.FirstName, LastName: u.LastName,
 		Role: string(u.Role), BranchID: u.BranchID,
 		TempPassword: tempPassword, NotifyEmail: notifyEmail,
-		ParentID: parentID, IsActive: u.IsActive,
+		ParentID: parentID, IsActive: u.IsActive, ClassInfo: u.ClassInfo,
 	})
 }
 
@@ -106,7 +151,7 @@ func (p *NATSPublisher) CredentialsReset(u *models.User, tempPassword, notifyEma
 		ID: u.ID, Email: u.Email, FirstName: u.FirstName, LastName: u.LastName,
 		Role: string(u.Role), BranchID: u.BranchID,
 		TempPassword: tempPassword, NotifyEmail: notifyEmail,
-		ParentID: parentID, IsActive: u.IsActive,
+		ParentID: parentID, IsActive: u.IsActive, ClassInfo: u.ClassInfo,
 	})
 }
 
@@ -116,7 +161,14 @@ func (p *NATSPublisher) UserUpdated(u *models.User) {
 	}
 	p.publish(SubjectUserUpdated, UserEvent{
 		ID: u.ID, Email: u.Email, FirstName: u.FirstName, LastName: u.LastName,
-		Role: string(u.Role), BranchID: u.BranchID, IsActive: u.IsActive,
+		Role: string(u.Role), BranchID: u.BranchID, IsActive: u.IsActive, ClassInfo: u.ClassInfo,
+	})
+}
+
+func (p *NATSPublisher) UserDeleted(u DeletedUserInfo) {
+	p.publish(SubjectUserDeleted, UserDeletedEvent{
+		ID: u.ID, Email: u.Email, FirstName: u.FirstName, LastName: u.LastName,
+		Role: string(u.Role), BranchID: u.BranchID, ParentIDs: u.ParentIDs,
 	})
 }
 
@@ -139,6 +191,7 @@ type NoopPublisher struct{}
 
 func (NoopPublisher) UserCreated(*models.User, string, string, *int64)                {}
 func (NoopPublisher) UserUpdated(*models.User)                                        {}
+func (NoopPublisher) UserDeleted(DeletedUserInfo)                                     {}
 func (NoopPublisher) PasswordResetRequested(int64, string, string, string, time.Time) {}
 func (NoopPublisher) CredentialsReset(*models.User, string, string, *int64)           {}
 func (NoopPublisher) Close()                                                          {}

@@ -2,6 +2,28 @@ package models
 
 import "time"
 
+// IsValidGrade — класс ученика должен быть чистым числом от 1 до 11 (без
+// букв/литер вроде "10А"). Используется и при регистрации ученика
+// (CreateStudent/UpdateMe), и в ежегодном job'е автоповышения класса
+// (см. internal/promotion), поэтому вынесено в общий пакет моделей, а не
+// продублировано в обоих местах.
+func IsValidGrade(s string) bool {
+	if len(s) == 0 || len(s) > 2 {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	switch s {
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11":
+		return true
+	default:
+		return false
+	}
+}
+
 type Role string
 
 const (

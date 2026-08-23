@@ -284,6 +284,20 @@ func (r *EnrollmentRepository) ResumeOrphanedForCourse(ctx context.Context, cour
 	return err
 }
 
+// DeleteByStudent — физически удаляет ВСЕ записи о зачислении ученика на
+// курсы. В отличие от UnassignTutorEverywhere (у репетитора отвязка, а не
+// удаление — enrollment это данные ученика), тут ученик сам перестаёт
+// существовать (выпустился/удалён в User Service, см. user.deleted в
+// internal/events/subscriber.go), поэтому его записи о зачислении удаляются
+// целиком, а не переводятся в какой-то статус.
+func (r *EnrollmentRepository) DeleteByStudent(ctx context.Context, studentID int64) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM enrollments WHERE student_id = $1`, studentID)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (r *EnrollmentRepository) UpdateProgress(ctx context.Context, id int64, fields map[string]any) (*models.Enrollment, error) {
 	if len(fields) == 0 {
 		return r.GetByID(ctx, id)

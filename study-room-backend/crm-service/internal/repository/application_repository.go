@@ -17,13 +17,13 @@ func NewApplicationRepository(pool *pgxpool.Pool) *ApplicationRepository {
 	return &ApplicationRepository{pool: pool}
 }
 
-const applicationColumns = `id, source, status, name, age, phone, subject_interest, parent_name, student_id, format, branch_id, handled_by, created_at`
+const applicationColumns = `id, source, status, name, age, phone, subject_interest, parent_name, student_id, format, branch_id, handled_by, class_info, created_at`
 
 func scanApplication(row pgx.Row) (*models.Application, error) {
 	var a models.Application
 	err := row.Scan(
 		&a.ID, &a.Source, &a.Status, &a.Name, &a.Age, &a.Phone, &a.SubjectInterest,
-		&a.ParentName, &a.StudentID, &a.Format, &a.BranchID, &a.HandledBy, &a.CreatedAt,
+		&a.ParentName, &a.StudentID, &a.Format, &a.BranchID, &a.HandledBy, &a.ClassInfo, &a.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -48,10 +48,10 @@ func (r *ApplicationRepository) CreateFromWebhook(ctx context.Context, name stri
 // см. api-contracts.md 4.2. source=internal, status=new.
 // parentName/phone — контактные данные родителя, оформившего заявку (может
 // быть nil, если фронт/кэш user_refs их не передали — см. application_handler.go).
-func (r *ApplicationRepository) CreateInternal(ctx context.Context, name string, studentID int64, subjectInterest, format *string, branchID *int64, parentName, phone *string) (*models.Application, error) {
-	query := `INSERT INTO applications (source, status, name, subject_interest, student_id, format, branch_id, parent_name, phone)
-		VALUES ('internal', 'new', $1, $2, $3, $4, $5, $6, $7) RETURNING ` + applicationColumns
-	row := r.pool.QueryRow(ctx, query, name, subjectInterest, studentID, format, branchID, parentName, phone)
+func (r *ApplicationRepository) CreateInternal(ctx context.Context, name string, studentID int64, subjectInterest, format *string, branchID *int64, parentName, phone, classInfo *string) (*models.Application, error) {
+	query := `INSERT INTO applications (source, status, name, subject_interest, student_id, format, branch_id, parent_name, phone, class_info)
+		VALUES ('internal', 'new', $1, $2, $3, $4, $5, $6, $7, $8) RETURNING ` + applicationColumns
+	row := r.pool.QueryRow(ctx, query, name, subjectInterest, studentID, format, branchID, parentName, phone, classInfo)
 	return scanApplication(row)
 }
 

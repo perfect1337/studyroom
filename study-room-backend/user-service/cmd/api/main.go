@@ -17,6 +17,7 @@ import (
 	"studyroom/user-service/internal/handlers"
 	"studyroom/user-service/internal/middleware"
 	"studyroom/user-service/internal/migrate"
+	"studyroom/user-service/internal/promotion"
 )
 
 func main() {
@@ -84,6 +85,13 @@ func main() {
 			log.Fatalf("server error: %v", err)
 		}
 	}()
+
+	// Ежегодное повышение класса / выпуск учеников — см. internal/promotion.
+	// Отдельный контекст, отменяемый при shutdown ниже, чтобы фоновый тикер
+	// не пережил остановку сервера.
+	promotionCtx, cancelPromotion := context.WithCancel(context.Background())
+	defer cancelPromotion()
+	go promotion.NewService(pool, pub).StartScheduler(promotionCtx)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
