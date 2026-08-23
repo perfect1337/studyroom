@@ -244,11 +244,11 @@ export default function ParentOverview() {
           <header className="relative bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div className="bg-notebook-grid absolute inset-0 text-tertiary opacity-[0.035] pointer-events-none" aria-hidden="true" />
 
-            <div className="relative flex items-center gap-6 z-10 min-w-0 p-6 pt-10">
+            <div className="relative flex items-center gap-4 sm:gap-6 z-10 min-w-0 p-4 sm:p-6 pt-10">
               <Avatar
                 src={user?.avatar_url}
                 name={fullName(user)}
-                size="xl"
+                size="lg"
                 className="ring-4 ring-tertiary-fixed shadow-sm"
               />
               <div className="min-w-0">
@@ -256,9 +256,11 @@ export default function ParentOverview() {
                   Личный кабинет · Родитель
                 </p>
                 <div className="flex flex-wrap items-center gap-2.5">
-                  <h2 className="font-display-academic text-[28px] sm:text-[34px] leading-[1.1] font-semibold text-on-surface truncate">
-                    {fullName(user)}
-                  </h2>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="font-display-academic text-2xl sm:text-[34px] leading-tight sm:leading-[1.1] font-semibold text-on-surface break-words">
+                      {fullName(user)}
+                    </h2>
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-on-surface-variant">
                   {user?.email && (
