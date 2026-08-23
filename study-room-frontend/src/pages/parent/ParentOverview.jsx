@@ -86,7 +86,21 @@ export default function ParentOverview() {
         const kids = childrenRes?.items ?? [];
         setChildren(kids);
         setCourses(coursesRes?.items ?? []);
-        setNotif(settingsRes ?? { email_enabled: true, sms_enabled: false, messenger_enabled: true });
+        // Нормализуем ответ бэкенда — он может вернуть старые поля (sms_enabled) или новые
+        const normalized = settingsRes ? {
+          email_enabled: settingsRes.email_enabled ?? false,
+          max_enabled: settingsRes.max_enabled ?? false,
+          telegram_enabled: settingsRes.telegram_enabled ?? false,
+          whatsapp_enabled: settingsRes.whatsapp_enabled ?? false,
+          preferred_messenger: settingsRes.preferred_messenger ?? "email",
+        } : {
+          email_enabled: true,
+          max_enabled: false,
+          telegram_enabled: false,
+          whatsapp_enabled: false,
+          preferred_messenger: "email",
+        };
+        setNotif(normalized);
         setContracts(contractsRes?.items ?? []);
         setTests(testsRes?.items ?? []);
         if (kids[0]) setApplyChildId(String(kids[0].id));
@@ -176,7 +190,14 @@ export default function ParentOverview() {
   );
 
   async function toggleNotif(key) {
+    if (!notif) return;
     const next = { ...notif, [key]: !notif[key] };
+    // При включении/выключении канала — обновляем preferred_messenger
+    if (next.telegram_enabled) next.preferred_messenger = "telegram";
+    else if (next.whatsapp_enabled) next.preferred_messenger = "whatsapp";
+    else if (next.max_enabled) next.preferred_messenger = "max";
+    else if (next.email_enabled) next.preferred_messenger = "email";
+
     setNotif(next);
     try {
       await updateNotificationSettings(next);
@@ -420,13 +441,13 @@ export default function ParentOverview() {
               <h4 className="font-label-md text-label-md font-bold text-on-surface mb-4 flex items-center gap-2">
                 <span className="material-symbols-outlined text-outline">notifications</span>Настройка уведомлений
               </h4>
-              <p className="text-sm text-on-surface-variant mb-3">Каналы для получения уведомлений:</p>
               <div className="space-y-3">
-                {notif &&
+                {notif ? (
                   [
                     { key: "email_enabled", label: "Почта" },
-                    { key: "sms_enabled", label: "SMS" },
-                    { key: "messenger_enabled", label: "Мессенджеры" },
+                    { key: "telegram_enabled", label: "Telegram" },
+                    { key: "whatsapp_enabled", label: "WhatsApp" },
+                    { key: "max_enabled", label: "MAX" },
                   ].map((ch) => (
                     <label key={ch.key} className="flex items-center gap-3 cursor-pointer">
                       <input
@@ -437,7 +458,10 @@ export default function ParentOverview() {
                       />
                       <span className="text-sm text-on-surface font-medium">{ch.label}</span>
                     </label>
-                  ))}
+                  ))
+                ) : (
+                  <p className="text-sm text-on-surface-variant">Загрузка...</p>
+                )}
               </div>
             </div>
           </div>

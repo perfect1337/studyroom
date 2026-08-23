@@ -136,65 +136,86 @@ components:
       type: object
       properties:
         id:
-          type: string
+          type: integer
         user_id:
+          type: integer
+        type:
           type: string
-        title:
+        channel:
           type: string
-        body:
+          enum: [email, max, telegram, whatsapp]
+        message:
           type: string
-        category:
+        status:
+          type: string
+          enum: [pending, sent, failed]
+        is_read:
+          type: boolean
+        error:
           type: string
           nullable: true
         created_at:
           type: string
           format: date-time
-        read:
-          type: boolean
       required:
         - id
         - user_id
-        - title
-        - body
+        - type
+        - channel
+        - message
+        - status
         - created_at
-        - read
     NotificationSettings:
       type: object
       properties:
-        email_notifications:
+        user_id:
+          type: integer
+        email_enabled:
           type: boolean
-        push_notifications:
+        max_enabled:
           type: boolean
-        weekly_summary:
+        telegram_enabled:
           type: boolean
+        whatsapp_enabled:
+          type: boolean
+        preferred_messenger:
+          type: string
+          enum: [null, "email", "max", "telegram", "whatsapp"]
+          nullable: true
       required:
-        - email_notifications
-        - push_notifications
-        - weekly_summary
+        - user_id
+        - email_enabled
+        - max_enabled
+        - telegram_enabled
+        - whatsapp_enabled
     UpdateNotificationSettingsRequest:
       type: object
       properties:
-        email_notifications:
+        email_enabled:
           type: boolean
-        push_notifications:
+        max_enabled:
           type: boolean
-        weekly_summary:
+        telegram_enabled:
           type: boolean
+        whatsapp_enabled:
+          type: boolean
+        preferred_messenger:
+          type: string
+          enum: [null, "email", "max", "telegram", "whatsapp"]
+          nullable: true
     SendNotificationRequest:
       type: object
       properties:
         user_id:
+          type: integer
+        type:
           type: string
-        title:
-          type: string
-        body:
-          type: string
-        category:
+        message:
           type: string
       required:
         - user_id
-        - title
-        - body
+        - type
+        - message
   responses:
     BadRequest:
       description: Bad request.

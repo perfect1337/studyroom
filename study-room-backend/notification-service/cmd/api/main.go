@@ -15,6 +15,7 @@ import (
 	"studyroom/notification-service/internal/db"
 	"studyroom/notification-service/internal/events"
 	"studyroom/notification-service/internal/mailer"
+	"studyroom/notification-service/internal/messenger"
 	"studyroom/notification-service/internal/migrate"
 )
 
@@ -40,7 +41,15 @@ func main() {
 
 	mail := mailer.New(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPassword, cfg.SMTPFrom)
 	tm := auth.NewTokenManager(cfg.JWTSecret)
-	deps := app.NewDeps(pool, tm, cfg.ServiceToken, mail)
+	messengerCfg := messenger.Config{
+		TelegramBotToken:    cfg.TelegramBotToken,
+		MaxAPIURL:           cfg.MaxAPIURL,
+		MaxAppToken:         cfg.MaxAppToken,
+		WhatsAppPhoneID:     cfg.WhatsAppPhoneID,
+		WhatsAppAccessToken: cfg.WhatsAppAccessToken,
+	}
+	factory := messenger.NewFactory(messengerCfg)
+	deps := app.NewDeps(pool, tm, cfg.ServiceToken, mail, factory)
 
 	// Подписка на NATS — best effort. Если брокер недоступен при старте,
 	// сервис всё равно поднимается и работает через HTTP API.

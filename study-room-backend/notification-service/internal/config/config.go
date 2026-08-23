@@ -29,6 +29,18 @@ type Config struct {
 	SMTPUser     string
 	SMTPPassword string
 	SMTPFrom     string // "Study Room <no-reply@yourdomain.ru>" или просто email
+
+	// --- Мессенджеры ---
+	// Telegram Bot API
+	TelegramBotToken string // токен от @BotFather (например, 123456789:ABCdefGHIjklMNOpqrsTUVwxyz)
+
+	// MAX (MaxCore Solutions)
+	MaxAPIURL    string // URL MAX API (например, https://max.example.com/api/v1)
+	MaxAppToken  string // токен приложения для авторизации MAX
+
+	// WhatsApp Cloud API (Meta)
+	WhatsAppPhoneID    string // ID номера телефона из WhatsApp Business API (например, 1234567890)
+	WhatsAppAccessToken string // access token из Meta Developer Console
 }
 
 func Load() (*Config, error) {
@@ -43,6 +55,13 @@ func Load() (*Config, error) {
 		SMTPUser:     getEnv("SMTP_USER", ""),
 		SMTPPassword: getEnv("SMTP_PASSWORD", ""),
 		SMTPFrom:     getEnv("SMTP_FROM", ""),
+
+		// Мессенджеры (не обязательны для запуска — проверяются при первой отправке)
+		TelegramBotToken:    getEnv("TELEGRAM_BOT_TOKEN", ""),
+		MaxAPIURL:           getEnv("MAX_API_URL", ""),
+		MaxAppToken:         getEnv("MAX_APP_TOKEN", ""),
+		WhatsAppPhoneID:     getEnv("WHATSAPP_PHONE_NUMBER_ID", ""),
+		WhatsAppAccessToken: getEnv("WHATSAPP_ACCESS_TOKEN", ""),
 	}
 
 	if cfg.DatabaseURL == "" {

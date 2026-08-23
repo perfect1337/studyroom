@@ -88,6 +88,14 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      
+      # Мессенджеры (заполните после получения API ключей)
+      # Инструкция: notification-service/MESSENGER_KEYS_GUIDE.md
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      MAX_API_URL: ${MAX_API_URL:-}
+      MAX_APP_TOKEN: ${MAX_APP_TOKEN:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
     ports:
       - "8085:8085"
     depends_on:

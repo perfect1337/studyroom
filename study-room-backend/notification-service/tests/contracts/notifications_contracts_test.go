@@ -139,14 +139,15 @@ func TestContract_5_2_MarkRead_InvalidID(t *testing.T) {
 	}
 }
 
-// 5.3. Получить настройки каналов (дефолт: email включён, остальное выключено)
+// 5.3. Получить настройки каналов (дефолт: email включён, мессенджеры выключены)
 func TestContract_5_3_GetSettings_Default(t *testing.T) {
 	e := getEnv(t)
 	e.seedUserRef(1, "user1@example.com", "A", "A")
 
 	res := e.do("GET", "/api/v1/notifications/settings", nil, e.accessToken(1))
 	e.mustOK(res, 200)
-	if res.Body["email_enabled"] != true || res.Body["sms_enabled"] != false || res.Body["messenger_enabled"] != false {
+	if res.Body["email_enabled"] != true || res.Body["max_enabled"] != false ||
+		res.Body["telegram_enabled"] != false || res.Body["whatsapp_enabled"] != false {
 		t.Fatalf("unexpected default settings: %v", res.Body)
 	}
 }
@@ -158,36 +159,36 @@ func TestContract_5_4_UpdateSettings(t *testing.T) {
 	token := e.accessToken(1)
 
 	res := e.do("PATCH", "/api/v1/notifications/settings", map[string]any{
-		"email_enabled": false, "sms_enabled": true, "messenger_enabled": true,
+		"email_enabled": true, "max_enabled": true, "telegram_enabled": true, "whatsapp_enabled": true,
 	}, token)
 	e.mustOK(res, 200)
-	if res.Body["email_enabled"] != false || res.Body["sms_enabled"] != true || res.Body["messenger_enabled"] != true {
+	if res.Body["email_enabled"] != true || res.Body["max_enabled"] != true ||
+		res.Body["telegram_enabled"] != true || res.Body["whatsapp_enabled"] != true {
 		t.Fatalf("unexpected updated settings: %v", res.Body)
 	}
 
 	// сохранилось — повторный GET отдаёт то же самое
 	get := e.do("GET", "/api/v1/notifications/settings", nil, token)
 	e.mustOK(get, 200)
-	if get.Body["email_enabled"] != false || get.Body["sms_enabled"] != true {
+	if get.Body["email_enabled"] != true || get.Body["telegram_enabled"] != true {
 		t.Fatalf("settings not persisted: %v", get.Body)
 	}
 }
 
-// Отключённый email-канал должен помечать уведомление failed и не звать SMTP.
+// Отключённый email-канал должен помечать уведомление failed.
 func TestContract_5_4_EmailDisabled_BlocksSend(t *testing.T) {
 	e := getEnv(t)
 	e.seedUserRef(1, "user1@example.com", "A", "A")
 	token := e.accessToken(1)
 
 	e.mustOK(e.do("PATCH", "/api/v1/notifications/settings", map[string]any{
-		"email_enabled": false, "sms_enabled": false, "messenger_enabled": false,
+		"email_enabled": false, "max_enabled": false, "telegram_enabled": false, "whatsapp_enabled": false,
 	}, token), 200)
 
 	send := e.doInternal("POST", "/api/v1/internal/notifications/send", map[string]any{
 		"user_id": 1, "type": "lesson_reminder", "message": "не должно уйти",
 	}, testServiceToken)
-	// notifier.Send теперь возвращает ошибку, когда канал отключён —
-	// internal-хендлер отвечает 500, но уведомление в БД помечается failed.
+	// notifier.Send теперь возвращает ошибку когда нет включённых каналов
 	if send.Status != 200 && send.Status != 500 {
 		t.Fatalf("unexpected status %d", send.Status)
 	}
@@ -200,5 +201,37 @@ func TestContract_5_4_EmailDisabled_BlocksSend(t *testing.T) {
 	items := asSlice(list.Body["items"])
 	if len(items) != 1 || items[0].(map[string]any)["status"] != "failed" {
 		t.Fatalf("expected 1 failed notification, got %v", items)
+	}
+}
+
+// Тест: отправка через Telegram работает при включённом канале
+func TestContract_5_5_TelegramChannel(t *testing.T) {
+	e := getEnv(t)
+	// seed с telegram_id
+	e.pool.Exec(e.ctx,
+		`INSERT INTO users_ref (id, email, first_name, last_name, telegram_id, updated_at)
+		 VALUES (1, 'user1@example.com', 'A', 'A', '987654321', now())
+		 ON CONFLICT DO NOTHING`,
+	)
+
+	token := e.accessToken(1)
+
+	// Включаем telegram канал
+	e.mustOK(e.do("PATCH", "/api/v1/notifications/settings", map[string]any{
+		"email_enabled": false, "telegram_enabled": true,
+	}, token), 200)
+
+	// Отправляем
+	send := e.doInternal("POST", "/api/v1/internal/notifications/send", map[string]any{
+		"user_id": 1, "type": "lesson_reminder", "message": "Завтра занятие",
+	}, testServiceToken)
+	e.mustOK(send, 200)
+
+	// Проверить что создалась запись telegram канала
+	list := e.do("GET", "/api/v1/notifications?unread_only=false", nil, token)
+	e.mustOK(list, 200)
+	items := asSlice(list.Body["items"])
+	if len(items) != 1 {
+		t.Fatalf("expected 1 telegram notification, got %d", len(items))
 	}
 }

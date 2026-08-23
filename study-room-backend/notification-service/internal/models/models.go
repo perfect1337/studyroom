@@ -5,9 +5,10 @@ import "time"
 type Channel string
 
 const (
-	ChannelEmail     Channel = "email"
-	ChannelSMS       Channel = "sms"
-	ChannelMessenger Channel = "messenger"
+	ChannelEmail    Channel = "email"
+	ChannelMax      Channel = "max"
+	ChannelTelegram Channel = "telegram"
+	ChannelWhatsApp Channel = "whatsapp"
 )
 
 type Status string
@@ -33,19 +34,25 @@ type Notification struct {
 
 // Settings — соответствует таблице notification_settings.
 type Settings struct {
-	UserID           int64 `json:"-"`
-	EmailEnabled     bool  `json:"email_enabled"`
-	SMSEnabled       bool  `json:"sms_enabled"`
-	MessengerEnabled bool  `json:"messenger_enabled"`
+	UserID             int64  `json:"-"`
+	EmailEnabled       bool   `json:"email_enabled"`
+	MaxEnabled         bool   `json:"max_enabled"`
+	TelegramEnabled    bool   `json:"telegram_enabled"`
+	WhatsAppEnabled    bool   `json:"whatsapp_enabled"`
+	PreferredMessenger string `json:"preferred_messenger"`
 }
 
-// UserRef — облегчённая копия пользователя (users_ref), нужна только
-// чтобы знать, на какой email слать письма.
+// UserRef — облегчённая копия пользователя (users_ref), нужна для
+// резолва контактов (email, phone, telegram, whatsapp) при отправке
+// уведомлений через разные каналы.
 type UserRef struct {
-	ID        int64  `json:"id"`
-	Email     string `json:"email"`
-	FirstName string `json:"first_name,omitempty"`
-	LastName  string `json:"last_name,omitempty"`
+	ID           int64  `json:"id"`
+	Email        string `json:"email"`
+	FirstName    string `json:"first_name,omitempty"`
+	LastName     string `json:"last_name,omitempty"`
+	Phone        string `json:"phone,omitempty"`
+	TelegramID   string `json:"telegram_id,omitempty"`
+	WhatsAppID   string `json:"whatsapp_id,omitempty"`
 	// ParentID — id родителя, если этот UserRef — ученик (из user.created.parent_id).
 	// Нужен, чтобы резолвить получателя attendance.marked_absent локально.
 	ParentID *int64 `json:"parent_id,omitempty"`

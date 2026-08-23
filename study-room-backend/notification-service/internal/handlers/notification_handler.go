@@ -84,9 +84,11 @@ func (h *NotificationHandler) GetSettings(w http.ResponseWriter, r *http.Request
 }
 
 type updateSettingsRequest struct {
-	EmailEnabled     bool `json:"email_enabled"`
-	SMSEnabled       bool `json:"sms_enabled"`
-	MessengerEnabled bool `json:"messenger_enabled"`
+	EmailEnabled       bool   `json:"email_enabled"`
+	MaxEnabled         bool   `json:"max_enabled"`
+	TelegramEnabled    bool   `json:"telegram_enabled"`
+	WhatsAppEnabled    bool   `json:"whatsapp_enabled"`
+	PreferredMessenger string `json:"preferred_messenger"`
 }
 
 // PATCH /notifications/settings
@@ -103,10 +105,12 @@ func (h *NotificationHandler) UpdateSettings(w http.ResponseWriter, r *http.Requ
 	}
 
 	updated, err := h.settings.Upsert(r.Context(), &models.Settings{
-		UserID:           claims.UserID,
-		EmailEnabled:     req.EmailEnabled,
-		SMSEnabled:       req.SMSEnabled,
-		MessengerEnabled: req.MessengerEnabled,
+		UserID:             claims.UserID,
+		EmailEnabled:       req.EmailEnabled,
+		MaxEnabled:         req.MaxEnabled,
+		TelegramEnabled:    req.TelegramEnabled,
+		WhatsAppEnabled:    req.WhatsAppEnabled,
+		PreferredMessenger: req.PreferredMessenger,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to update settings")

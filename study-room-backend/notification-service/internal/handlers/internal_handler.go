@@ -51,14 +51,17 @@ func (h *InternalHandler) Send(w http.ResponseWriter, r *http.Request) {
 }
 
 type syncUserRequest struct {
-	ID        int64  `json:"id"`
-	Email     string `json:"email"`
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
+	ID           int64  `json:"id"`
+	Email        string `json:"email"`
+	FirstName    string `json:"first_name"`
+	LastName     string `json:"last_name"`
+	Phone        string `json:"phone,omitempty"`
+	TelegramID   string `json:"telegram_id,omitempty"`
+	WhatsAppID   string `json:"whatsapp_id,omitempty"`
 }
 
-// POST /internal/users/sync — временный ручной способ наполнить users_ref,
-// пока постоянный подписчик на user.created/user.updated не поднят везде.
+// POST /internal/users/sync — наполняет users_ref данными пользователя,
+// включая контакты для мессенджеров (phone, telegram_id, whatsapp_id).
 // В целевой архитектуре это должно приходить только через события NATS.
 func (h *InternalHandler) SyncUser(w http.ResponseWriter, r *http.Request) {
 	var req syncUserRequest
@@ -73,6 +76,7 @@ func (h *InternalHandler) SyncUser(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.usersRef.Upsert(r.Context(), &models.UserRef{
 		ID: req.ID, Email: req.Email, FirstName: req.FirstName, LastName: req.LastName,
+		Phone: req.Phone, TelegramID: req.TelegramID, WhatsAppID: req.WhatsAppID,
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to sync user")
 		return

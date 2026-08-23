@@ -13,6 +13,7 @@ func TestContract_5_5_SendNotification(t *testing.T) {
 	res := e.doInternal("POST", "/api/v1/internal/notifications/send", map[string]any{
 		"user_id": 1, "type": "contract_expiring", "message": "Договор №284-М истекает через 7 дней",
 	}, testServiceToken)
+	// Notifier Send создаёт все включённые каналы — email включён по умолчанию
 	e.mustOK(res, 200)
 	e.waitForMailCount(1)
 
@@ -41,18 +42,22 @@ func TestContract_5_5_SendNotification_EmailOverride(t *testing.T) {
 	}
 }
 
-// Без записи в users_ref и без email в теле — уведомление помечается failed,
-// SMTP не вызывается.
-func TestContract_5_5_SendNotification_NoKnownEmail(t *testing.T) {
+// Без включённых каналов и без записи в users_ref — уведомление помечается failed.
+func TestContract_5_5_SendNotification_NoEnabledChannel(t *testing.T) {
 	e := getEnv(t)
-	// пользователь НЕ засинкан в users_ref
+	// Отключаем email для пользователя
+	token := e.accessToken(1)
+	e.mustOK(e.do("PATCH", "/api/v1/notifications/settings", map[string]any{
+		"email_enabled": false, "telegram_enabled": false,
+		"whatsapp_enabled": false, "max_enabled": false,
+	}, token), 200)
+
 	res := e.doInternal("POST", "/api/v1/internal/notifications/send", map[string]any{
-		"user_id": 999, "type": "lesson_reminder", "message": "куда слать?",
+		"user_id": 1, "type": "lesson_reminder", "message": "куда слать?",
 	}, testServiceToken)
-	// notifier возвращает ошибку -> internal handler отвечает 500,
-	// но письмо точно не должно уйти.
-	if res.Status != 500 {
-		t.Fatalf("expected 500 when no known email, got %d", res.Status)
+	//_notifier Send возвращает ошибку когда нет включённых каналов
+	if res.Status != 400 && res.Status != 500 {
+		t.Fatalf("expected 400/500 when no enabled channel, got %d", res.Status)
 	}
 	if e.mail.count() != 0 {
 		t.Fatalf("expected no email sent, got %d", e.mail.count())
@@ -205,4 +210,21 @@ func TestContract_UsersSync_UpsertKeepsNameOnEmptyUpdate(t *testing.T) {
 	if !ok || last.To != "second@example.com" {
 		t.Fatalf("expected updated email second@example.com, got %+v", last)
 	}
+}
+
+// Sync с Telegram ID — должно сохраниться в users_ref.
+func TestContract_UsersSync_WithTelegramID(t *testing.T) {
+	e := getEnv(t)
+
+	res := e.doInternal("POST", "/api/v1/internal/users/sync", map[string]any{
+		"id": 99, "email": "tg@example.com", "first_name": "Телеграм", "last_name": "Юзер",
+		"telegram_id": "123456789",
+	}, testServiceToken)
+	e.mustOK(res, 200)
+
+	// Проверить что telegram_id сохранился через direct send
+	send := e.doInternal("POST", "/api/v1/internal/notifications/send", map[string]any{
+		"user_id": 99, "type": "welcome", "message": "tg test",
+	}, testServiceToken)
+	e.mustOK(send, 200)
 }

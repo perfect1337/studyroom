@@ -14,6 +14,7 @@ import (
 	"studyroom/notification-service/internal/auth"
 	"studyroom/notification-service/internal/handlers"
 	"studyroom/notification-service/internal/mailer"
+	"studyroom/notification-service/internal/messenger"
 	"studyroom/notification-service/internal/middleware"
 	"studyroom/notification-service/internal/notifier"
 	"studyroom/notification-service/internal/openapi"
@@ -36,7 +37,8 @@ type Deps struct {
 // NewDeps собирает Deps из пула соединений и внешних зависимостей.
 // mail — mailer.Sender, чтобы в тестах можно было подставить фейковый отправитель
 // вместо реального SMTP.
-func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, serviceToken string, mail mailer.Sender) *Deps {
+// factory — messenger.Factory для отправки через мессенджеры.
+func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, serviceToken string, mail mailer.Sender, factory *messenger.Factory) *Deps {
 	notificationsRepo := repository.NewNotificationRepository(pool)
 	settingsRepo := repository.NewSettingsRepository(pool)
 	usersRefRepo := repository.NewUserRefRepository(pool)
@@ -46,7 +48,7 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, serviceToken string, mai
 		Notifications: notificationsRepo,
 		Settings:      settingsRepo,
 		UsersRef:      usersRefRepo,
-		Notifier:      notifier.New(notificationsRepo, settingsRepo, usersRefRepo, mail),
+		Notifier:      notifier.New(notificationsRepo, settingsRepo, usersRefRepo, mail, factory),
 		TokenManager:  tm,
 		ServiceToken:  serviceToken,
 	}

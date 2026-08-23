@@ -21,6 +21,7 @@ import (
 
 	"studyroom/notification-service/internal/app"
 	"studyroom/notification-service/internal/auth"
+	"studyroom/notification-service/internal/messenger"
 	"studyroom/notification-service/internal/migrate"
 	"studyroom/notification-service/internal/models"
 )
@@ -167,7 +168,9 @@ func getEnv(t *testing.T) *env {
 
 		tm := auth.NewTokenManager(testJWTSecret)
 		mail := newFakeMailer()
-		deps := app.NewDeps(pool, tm, testServiceToken, mail)
+		messengerCfg := messenger.Config{}
+		factory := messenger.NewFactory(messengerCfg)
+		deps := app.NewDeps(pool, tm, testServiceToken, mail, factory)
 
 		shared = &env{
 			pool:   pool,

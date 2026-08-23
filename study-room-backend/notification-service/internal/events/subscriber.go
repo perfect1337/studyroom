@@ -53,6 +53,9 @@ type userEvent struct {
 	TempPassword string `json:"temp_password"`
 	NotifyEmail  string `json:"notify_email"`
 	ParentID     *int64 `json:"parent_id"`
+	Phone        string `json:"phone,omitempty"`
+	TelegramID   string `json:"telegram_id,omitempty"`
+	WhatsAppID   string `json:"whatsapp_id,omitempty"`
 }
 
 type passwordResetEvent struct {
@@ -253,7 +256,7 @@ func (s *Subscriber) upsertUserRef(evt userEvent) bool {
 	}
 	if err := s.usersRef.Upsert(context.Background(), &models.UserRef{
 		ID: evt.ID, Email: evt.Email, FirstName: evt.FirstName, LastName: evt.LastName,
-		ParentID: evt.ParentID,
+		ParentID: evt.ParentID, Phone: evt.Phone, TelegramID: evt.TelegramID, WhatsAppID: evt.WhatsAppID,
 	}); err != nil {
 		log.Printf("events: upsert users_ref failed: %v", err)
 		return false
