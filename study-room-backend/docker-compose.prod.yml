@@ -32,9 +32,9 @@ services:
       NATS_URL: nats://nats:4222
       APP_PUBLIC_URL: ${APP_PUBLIC_URL}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES}
-      COOKIE_SECURE: ${COOKIE_SECURE}
-      COOKIE_SAMESITE: ${COOKIE_SAMESITE}
-      COOKIE_DOMAIN: ${COOKIE_DOMAIN}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-Lax}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
     depends_on:
       postgres-users:
         condition: service_healthy
@@ -218,6 +218,9 @@ services:
       dockerfile: study-room-backend/nginx/Dockerfile
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       user-service:
         condition: service_started
