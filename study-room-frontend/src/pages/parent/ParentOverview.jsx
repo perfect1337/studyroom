@@ -12,8 +12,6 @@ import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import { sanitizePhoneInput, isValidPhone } from "../../utils/phone.js";
 import { useTelegramStatus } from "../../hooks/useTelegramStatus.js";
 
-const SUBJECT_OPTIONS = ["Математика", "Физика", "Английский язык", "Информатика", "Русский язык", "История"];
-
 function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -54,7 +52,7 @@ export default function ParentOverview() {
 
   const [format, setFormat] = useState("group");
   const [applyChildId, setApplyChildId] = useState("");
-  const [applySubject, setApplySubject] = useState(SUBJECT_OPTIONS[0]);
+  const [applySubject, setApplySubject] = useState("");
   const [applyStatus, setApplyStatus] = useState("");
   // Контакты родителя для заявки — по умолчанию берём из профиля (ФИО, телефон),
   // но даём поправить перед отправкой (например, если удобнее указать другой номер).
@@ -76,8 +74,8 @@ export default function ParentOverview() {
       setError("");
       try {
         const [childrenRes, coursesRes, settingsRes, contractsRes, testsRes] = await Promise.all([
-          fetchParentChildren(user.id),
-          fetchCourses(),
+          fetchParentChildren(user.id).catch(() => ({ items: [] })),
+          fetchCourses().catch(() => ({ items: [] })),
           fetchNotificationSettings().catch(() => null),
           fetchMyContracts().catch(() => ({ items: [] })),
           // Бэкенд сам сужает список тестов до детей текущего родителя.
@@ -147,6 +145,26 @@ export default function ParentOverview() {
     return map;
   }, [courses]);
 
+  // Реальные предметы из уже загруженных курсов (а не выдуманный статический
+  // список) — родитель может подать заявку только на то, что действительно
+  // преподаётся в учебном центре.
+  const availableSubjects = useMemo(() => {
+    const set = new Set();
+    courses.forEach((c) => {
+      const s = (c.subject || c.title || "").trim();
+      if (s) set.add(s);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
+  }, [courses]);
+
+  // Как только курсы подгрузились — выставляем первый реальный предмет по
+  // умолчанию (пока список не готов, applySubject остаётся пустым).
+  useEffect(() => {
+    if (availableSubjects.length && !applySubject) {
+      setApplySubject(availableSubjects[0]);
+    }
+  }, [availableSubjects, applySubject]);
+
   const childrenById = useMemo(() => {
     const map = {};
     children.forEach((c) => (map[c.id] = c));
@@ -215,7 +233,7 @@ export default function ParentOverview() {
 
   async function handleApply(e) {
     e.preventDefault();
-    if (!applyChildId) return;
+    if (!applyChildId || !applySubject) return;
     if (!isValidPhone(applyPhone)) {
       setApplyStatus("Введите телефон в формате из 10-15 цифр (можно с +)");
       return;
@@ -604,12 +622,17 @@ export default function ParentOverview() {
                 <div>
                   <label className="block font-label-md text-label-md text-on-surface mb-2">Предмет</label>
                   <select
+                    required
+                    disabled={!availableSubjects.length}
                     value={applySubject}
                     onChange={(e) => setApplySubject(e.target.value)}
-                    className="w-full rounded-lg border-outline-variant bg-surface-container-lowest text-on-surface focus:ring-primary"
+                    className="w-full rounded-lg border-outline-variant bg-surface-container-lowest text-on-surface focus:ring-primary disabled:opacity-60"
                   >
-                    {SUBJECT_OPTIONS.map((s) => (
-                      <option key={s}>{s}</option>
+                    {!availableSubjects.length && (
+                      <option value="">Нет доступных курсов</option>
+                    )}
+                    {availableSubjects.map((s) => (
+                      <option key={s} value={s}>{s}</option>
                     ))}
                   </select>
                 </div>
@@ -662,7 +685,7 @@ export default function ParentOverview() {
                 </div>
                 <button
                   type="submit"
-                  disabled={!applyChildId}
+                  disabled={!applyChildId || !applySubject}
                   className="w-full bg-primary text-on-primary py-3 rounded-lg font-label-md text-label-md hover:bg-primary-container transition-all mt-2 disabled:opacity-60"
                 >
                   Отправить заявку
