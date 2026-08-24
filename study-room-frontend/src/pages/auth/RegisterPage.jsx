@@ -185,7 +185,14 @@ export default function RegisterPage() {
                 <div className="ml-3 text-sm">
                   <label className="font-body-md text-body-md text-on-surface-variant text-[14px]" htmlFor="terms">
                     Я соглашаюсь с <a className="text-primary hover:underline font-label-md" href="#">Условиями использования</a> и{" "}
-                    <a className="text-primary hover:underline font-label-md" href="#">Политикой конфиденциальности</a>
+                    <a
+                      className="text-primary hover:underline font-label-md"
+                      href="https://studyroom64.ru/privacy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Политикой конфиденциальности
+                    </a>
                   </label>
                 </div>
               </div>
