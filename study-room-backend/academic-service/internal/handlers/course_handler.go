@@ -24,7 +24,17 @@ func NewCourseHandler(repo *repository.CourseRepository, userRefs *repository.Us
 
 // List — GET /courses?subject=&tutor_id= (api-contracts.md 2.1). Курсы не
 // привязаны к филиалу — весь каталог курсов общий для всей сети, виден
-// всем ролям одинаково (кроме родителя, см. ниже).
+// всем ролям одинаково, включая родителя (roles: "любая" в контракте).
+//
+// Раньше для parent тут была отдельная ветка, которая возвращала только
+// курсы, на которые уже есть enrollments у его детей. Это ломало форму
+// "Записаться на новый курс" на фронте (ParentOverview) — она использует
+// этот же список для выбора предмета при подаче заявки на новый курс, и
+// с той логикой список всегда был пустым, пока ребёнка не запишут хоть
+// куда-то вручную (замкнутый круг: чтобы записаться, нужно быть уже
+// записанным). Контракт 2.1 такого ограничения не предполагает, поэтому
+// родитель просто идёт по общей ветке ниже, как owner/branch_owner/tutor/
+// student.
 //
 // tutor_id — опциональный доп.фильтр "только курсы, которые ведёт этот
 // преподаватель" (через course_tutors). Tutor может передать только
@@ -35,49 +45,6 @@ func (h *CourseHandler) List(w http.ResponseWriter, r *http.Request) {
     claims, _ := middleware.FromContext(r.Context())
     filter := repository.CourseFilter{Subject: r.URL.Query().Get("subject")}
 
-    // ---- Родитель: видит курсы, на которые записаны его дети ----
-    if claims.Role == models.RoleParent {
-        children, err := h.userClient.Children(r.Context(), bearerToken(r), claims.UserID)
-        if err != nil {
-            writeError(w, http.StatusBadGateway, "UPSTREAM_ERROR", "failed to resolve children")
-            return
-        }
-        if len(children) == 0 {
-            writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
-            return
-        }
-        // Получаем все энролменты для этих детей
-        enrollFilter := repository.EnrollmentFilter{StudentIDs: children}
-        enrollments, err := h.enrollRepo.List(r.Context(), enrollFilter)
-        if err != nil {
-            writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to get enrollments")
-            return
-        }
-        // Извлекаем уникальные course_id
-        courseIDSet := map[int64]bool{}
-        for _, e := range enrollments {
-            courseIDSet[e.CourseID] = true
-        }
-        if len(courseIDSet) == 0 {
-            writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
-            return
-        }
-        // Превращаем в слайс
-        courseIDs := make([]int64, 0, len(courseIDSet))
-        for id := range courseIDSet {
-            courseIDs = append(courseIDs, id)
-        }
-        // Вызываем метод репозитория для получения курсов по списку ID
-        courses, err := h.repo.List(r.Context(), repository.CourseFilter{IDs: courseIDs})
-		if err != nil {
-    		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list courses")
-    		return
-		}		
-        writeJSON(w, http.StatusOK, map[string]any{"items": nonNilCourses(courses)})
-        return
-    }
-
-    // ---- Остальные роли (owner, branch_owner, tutor, student) — общий каталог курсов ----
     if v, ok := parseIntQuery(r, "tutor_id"); ok && v != nil {
         if claims.Role == models.RoleTutor && *v != claims.UserID {
             writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor can only filter by their own tutor_id")
