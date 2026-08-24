@@ -74,8 +74,11 @@ function resizeImageFile(file) {
  *   на аватар, т.к. отдельного эндпоинта загрузки файла в контракте нет — только
  *   строка avatar_url).
  * - POST /users/me/change-password — смена пароля.
- * Email редактируем для всех ролей, КРОМЕ ученика: у ученика это поле — сгенерированный
- * логин (транслитерация ФИО), а не настоящая почта, поэтому оно остаётся только для чтения.
+ * Email редактируем для всех ролей, включая ученика: у ученика это поле одновременно
+ * служит логином для входа (сгенерировано при создании аккаунта из ФИО), но ученик
+ * теперь может сам заменить его на свою настоящую почту — так же, как остальные роли,
+ * с тем же подтверждением текущим паролем (см. UpdateMe на бэкенде). Заодно эта же
+ * почта используется для email-уведомлений (см. блок "Уведомления" ниже).
  * Телефон бэкенд через эти эндпоинты не меняет, поэтому в форме его нет вовсе.
  */
 export default function SettingsPage({ role }) {
@@ -163,7 +166,8 @@ export default function SettingsPage({ role }) {
     // что реально сохранено на сервере (user?.email) — не от начального
     // значения формы при монтировании, так как пользователь мог сначала
     // ввести email, потом стереть и вернуть обратно то же значение.
-    const emailChanged = !isStudent && profileForm.email.trim() !== (user?.email ?? "");
+    // Это касается и ученика — он теперь тоже может сменить свой email.
+    const emailChanged = profileForm.email.trim() !== (user?.email ?? "");
     if (emailChanged && !emailPassword) {
       setProfileError("Чтобы сменить email, введите текущий пароль.");
       return;
@@ -183,15 +187,13 @@ export default function SettingsPage({ role }) {
               class_info: profileForm.class_info || undefined,
               school: profileForm.school || undefined,
             }
-          : {
-              // У ученика email — это сгенерированный логин, бэкенд отклонит
-              // попытку изменить его с 403, поэтому не отправляем поле вовсе.
-              email: profileForm.email || undefined,
-              // current_password отправляем, только когда email реально
-              // меняется — бэкенд требует его именно в этом случае (см.
-              // UpdateMe), не стоит гонять пароль по сети без нужды.
-              ...(emailChanged ? { current_password: emailPassword } : {}),
-            }),
+          : {}),
+        // Email редактируем для всех ролей, включая ученика.
+        email: profileForm.email || undefined,
+        // current_password отправляем, только когда email реально
+        // меняется — бэкенд требует его именно в этом случае (см.
+        // UpdateMe), не стоит гонять пароль по сети без нужды.
+        ...(emailChanged ? { current_password: emailPassword } : {}),
       });
       updateUser(updated ?? profileForm);
       setEmailPassword("");
@@ -360,29 +362,21 @@ export default function SettingsPage({ role }) {
               <label className="font-label-md text-on-surface-variant ml-1">Адрес электронной почты</label>
               <div className="relative">
                 <input
-                  value={isStudent ? (user?.email ?? "") : profileForm.email}
-                  onChange={isStudent ? undefined : (e) => setProfileForm((f) => ({ ...f, email: e.target.value }))}
-                  disabled={isStudent}
-                  required={!isStudent}
-                  className={`w-full border border-outline-variant rounded-lg px-4 py-3 outline-none transition-all ${
-                    isStudent
-                      ? "bg-surface-container-low text-on-surface-variant cursor-not-allowed"
-                      : "bg-surface text-on-surface focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  }`}
+                  value={profileForm.email}
+                  onChange={(e) => setProfileForm((f) => ({ ...f, email: e.target.value }))}
+                  required
+                  className="w-full bg-surface border border-outline-variant rounded-lg px-4 py-3 outline-none transition-all text-on-surface focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   type="email"
                 />
-                {isStudent && (
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-primary material-symbols-outlined">verified</span>
-                )}
               </div>
               <p className="text-[12px] text-on-surface-variant ml-1">
                 {isStudent
-                  ? "Это логин ученика для входа — его меняет только преподаватель/администратор через сброс учётных данных."
+                  ? "Используется и как логин для входа, и для email-уведомлений. После смены снова понадобится текущий email для входа, пока вы не выйдете и не зайдёте заново."
                   : "Используется для входа и уведомлений. После смены снова понадобится текущий email для входа, пока вы не выйдете и не зайдёте заново."}
               </p>
             </div>
 
-            {!isStudent && profileForm.email.trim() !== (user?.email ?? "") && (
+            {profileForm.email.trim() !== (user?.email ?? "") && (
               <div className="space-y-stack-sm">
                 <label className="font-label-md text-on-surface-variant ml-1">Текущий пароль</label>
                 <input

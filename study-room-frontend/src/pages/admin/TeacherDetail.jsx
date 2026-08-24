@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
+import TutorStatusSelect from "../../components/ui/TutorStatusSelect.jsx";
 import Pagination from "../../components/ui/Pagination.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople, fetchBranches, setTutorStatus, setUserActive } from "../../api/users.js";
@@ -454,18 +455,13 @@ export default function TeacherDetail({ role = "owner" }) {
 
                     <div className="flex items-center gap-2 ml-0 md:ml-2">
                       <StatusBadge status={TUTOR_STATUS_LABEL[tutorStatus] ?? tutorStatus} />
-                      <select
+                      <TutorStatusSelect
                         value={tutorStatus}
+                        options={statusOptions}
+                        labelMap={TUTOR_STATUS_LABEL}
                         disabled={statusUpdating}
-                        onChange={(e) => handleStatusChange(e.target.value)}
-                        className="text-[12px] border border-outline-variant rounded-md px-2 py-1 bg-surface-container-lowest disabled:opacity-50"
-                      >
-                        {statusOptions.map((s) => (
-                          <option key={s} value={s}>
-                            {TUTOR_STATUS_LABEL[s]}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={handleStatusChange}
+                      />
                     </div>
                   </div>
                 </div>

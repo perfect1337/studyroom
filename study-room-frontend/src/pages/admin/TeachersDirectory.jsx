@@ -329,20 +329,23 @@ export default function TeachersDirectory({ role }) {
             />
           </div>
 
-          <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0">
-            {["all", "active", "vacation", "sick_leave", "inactive"].map((s) => (
-              <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
-                className={`px-4 py-2 rounded-full font-label-md text-label-md whitespace-nowrap transition-all ${
-                  statusFilter === s
-                    ? "bg-primary text-on-primary"
-                    : "bg-surface-container-highest text-on-surface-variant hover:bg-primary-container hover:text-on-primary-container"
-                }`}
-              >
-                {s === "all" ? "Все" : TUTOR_STATUS_LABEL[s]}
-              </button>
-            ))}
+          {/* Фильтр по статусу — раньше был рядом кнопок ("таблеток"), но при
+              4+ статусах он не помещался и уезжал в горизонтальный скролл
+              (особенно на узких экранах) — заменили на выпадающий список,
+              как и фильтр по филиалу чуть ниже. */}
+          <div className="relative w-full md:w-auto">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full md:w-auto appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+            >
+              {["all", "active", "vacation", "sick_leave", "inactive"].map((s) => (
+                <option key={s} value={s}>
+                  {s === "all" ? "Все статусы" : TUTOR_STATUS_LABEL[s]}
+                </option>
+              ))}
+            </select>
+            <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
           </div>
 
           {/* Выбор филиала — только у owner. branch_owner всегда видит только свой филиал. */}

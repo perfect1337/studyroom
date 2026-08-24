@@ -67,6 +67,11 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		Patronymic *string `json:"patronymic"`
 		AvatarURL  *string `json:"avatar_url"`
 		Email      *string `json:"email"`
+		// CurrentPassword — обязателен, когда Email реально меняется (email
+		// одновременно служит логином для входа, в т.ч. у ученика — см. ниже),
+		// подтверждает, что запрос отправляет владелец аккаунта, а не
+		// перехваченная сессия.
+		CurrentPassword string `json:"current_password"`
 		// ClassInfo/School — «Класс» и «Школа» из student_profiles. Хранятся
 		// отдельно от users (см. schema), поэтому обновляются через
 		// StudentProfileRepository, а не через h.users.Update. Разрешено
@@ -81,13 +86,6 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 	if (body.ClassInfo != nil || body.School != nil) && claims.Role != models.RoleStudent {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "only a student can edit class/school")
-		return
-	}
-	// У ученика поле email — это сгенерированный логин (транслитерация ФИО),
-	// а не настоящая почта (см. комментарий в CreateStudent), и он не должен
-	// меняться самим учеником — иначе он потеряет доступ к своему логину.
-	if body.Email != nil && claims.Role == models.RoleStudent {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "student login cannot be changed here")
 		return
 	}
 
@@ -109,6 +107,23 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		if _, err := mail.ParseAddress(normalized); err != nil {
 			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid email")
 			return
+		}
+		// Email одновременно служит логином для входа (в т.ч. у ученика —
+		// раньше это поле мог менять только тьютор/админ через сброс
+		// учётных данных, теперь ученик может и сам, наравне с остальными
+		// ролями). Значение реально меняется — требуем подтверждение
+		// текущим паролем, иначе кто угодно с перехваченной сессией мог бы
+		// тихо увести логин на свой адрес.
+		current, err := h.users.GetByID(r.Context(), claims.UserID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
+			return
+		}
+		if normalized != strings.ToLower(current.Email) {
+			if body.CurrentPassword == "" || !auth.CheckPassword(body.CurrentPassword, current.PasswordHash) {
+				writeError(w, http.StatusBadRequest, "INVALID_CREDENTIALS", "current password is required and must be correct to change email")
+				return
+			}
 		}
 		fields["email"] = normalized
 	}

@@ -49,6 +49,74 @@ func TestContract_1_7_UpdateMe(t *testing.T) {
 	}
 }
 
+// TestContract_1_7_UpdateMe_EmailRequiresPassword — email одновременно
+// служит логином, поэтому его смена требует текущий пароль. Без пароля или
+// с неверным паролем — 400, с верным — email обновляется и работает для
+// входа под новым значением.
+func TestContract_1_7_UpdateMe_EmailRequiresPassword(t *testing.T) {
+	e := getEnv(t)
+	u := e.seedUser(seedOpts{Email: "emailchange@example.com", Password: "oldpass123", Role: models.RoleTutor})
+	tok := e.accessToken(u)
+
+	noPassword := e.do("PATCH", "/api/v1/users/me", map[string]any{
+		"email": "newmail1@example.com",
+	}, tok)
+	e.mustOK(noPassword, 400)
+
+	wrongPassword := e.do("PATCH", "/api/v1/users/me", map[string]any{
+		"email": "newmail1@example.com", "current_password": "wrong",
+	}, tok)
+	e.mustOK(wrongPassword, 400)
+
+	ok := e.do("PATCH", "/api/v1/users/me", map[string]any{
+		"email": "newmail1@example.com", "current_password": "oldpass123",
+	}, tok)
+	e.mustOK(ok, 200)
+	if ok.Body["email"] != "newmail1@example.com" {
+		t.Fatalf("email=%v", ok.Body["email"])
+	}
+
+	login := e.do("POST", "/api/v1/auth/login", map[string]any{
+		"login": "newmail1@example.com", "password": "oldpass123",
+	}, "")
+	e.mustOK(login, 200)
+
+	// Значения, не менявшиеся относительно текущих (в т.ч. просто отправка
+	// прежнего email обратно), не должны требовать пароль.
+	noop := e.do("PATCH", "/api/v1/users/me", map[string]any{
+		"email": "newmail1@example.com", "first_name": "Пётр",
+	}, tok)
+	e.mustOK(noop, 200)
+}
+
+// TestContract_1_7_UpdateMe_StudentCanChangeEmail — ученик тоже может сам
+// сменить свой email (раньше это поле было read-only для роли student, т.к.
+// оно совпадает с логином; теперь разрешено наравне с остальными ролями,
+// с тем же требованием текущего пароля).
+func TestContract_1_7_UpdateMe_StudentCanChangeEmail(t *testing.T) {
+	e := getEnv(t)
+	st := e.seedUser(seedOpts{Email: "ivanov.andrey@studyroom.internal", Password: "studpass123", Role: models.RoleStudent})
+	tok := e.accessToken(st)
+
+	forbiddenNoPassword := e.do("PATCH", "/api/v1/users/me", map[string]any{
+		"email": "andrey.real@example.com",
+	}, tok)
+	e.mustOK(forbiddenNoPassword, 400)
+
+	ok := e.do("PATCH", "/api/v1/users/me", map[string]any{
+		"email": "andrey.real@example.com", "current_password": "studpass123",
+	}, tok)
+	e.mustOK(ok, 200)
+	if ok.Body["email"] != "andrey.real@example.com" {
+		t.Fatalf("email=%v", ok.Body["email"])
+	}
+
+	login := e.do("POST", "/api/v1/auth/login", map[string]any{
+		"login": "andrey.real@example.com", "password": "studpass123",
+	}, "")
+	e.mustOK(login, 200)
+}
+
 func TestContract_1_8_ChangePassword(t *testing.T) {
 	e := getEnv(t)
 	u := e.seedUser(seedOpts{Email: "chpwd@example.com", Password: "oldpass123", Role: models.RoleParent})
