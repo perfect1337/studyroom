@@ -17,7 +17,9 @@ import (
 	"studyroom/user-service/internal/handlers"
 	"studyroom/user-service/internal/middleware"
 	"studyroom/user-service/internal/migrate"
+	"studyroom/user-service/internal/models"
 	"studyroom/user-service/internal/promotion"
+	"studyroom/user-service/internal/repository"
 )
 
 func main() {
@@ -72,6 +74,21 @@ func main() {
 	deps := app.NewDeps(pool, tm, pub, cfg.AppPublicURL, cfg.AuthRateLimit, cookieOpts)
 	handler := app.NewRouter(deps)
 
+	// Пользователи, заведённые в обход обычного API (сидинг миграцией,
+	// 0005_seed_owner.up.sql — единственный owner, без которого некому
+	// войти в свежую БД) никогда не публиковали user.created/user.updated,
+	// поэтому локальные кэши других сервисов (crm-service.user_refs,
+	// notification-service.users_ref) ничего о них не знают: заявки не
+	// резолвятся в получателя (crm publisher.go — ownerUserID==0 => skip
+	// publish), уведомления никому не шлются. reconcileOwners переотправляет
+	// user.updated (не user.created — без побочных эффектов вида "письмо о
+	// регистрации") для всех текущих owner'ов при каждом старте сервиса —
+	// идемпотентно (только upsert в кэшах-подписчиках) и НЕ завязано на
+	// конкретный id (тот, что реально выдаст Postgres на INSERT), в отличие
+	// от вписывания id вручную через psql/curl при каждом пересоздании
+	// окружения.
+	reconcileOwners(ctx, deps.Users, pub)
+
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
 		Handler:      handler,
@@ -101,4 +118,23 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
+}
+
+// reconcileOwners переотправляет user.updated для всех пользователей с
+// role=owner. Best-effort и неблокирующий: ошибка чтения из БД или паблиша
+// в NATS (например, NoopPublisher, если NATS_URL не задан) только логируется
+// — сервис поднимается в любом случае, как и раньше.
+func reconcileOwners(ctx context.Context, users *repository.UserRepository, pub events.Publisher) {
+	role := models.RoleOwner
+	owners, err := users.ListAll(ctx, repository.ListFilter{Role: &role})
+	if err != nil {
+		log.Printf("reconcile: could not list owners: %v (skipping sync)", err)
+		return
+	}
+	for _, u := range owners {
+		pub.UserUpdated(u)
+	}
+	if len(owners) > 0 {
+		log.Printf("reconcile: re-published user.updated for %d owner(s) to sync downstream caches", len(owners))
+	}
 }
