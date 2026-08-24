@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { sanitizePhoneInput, isValidPhone } from "../../utils/phone.js";
+import TermsOfUseModal from "../../components/ui/TermsOfUseModal.jsx";
 
 const EMPTY_FORM = {
   last_name: "",
@@ -21,6 +22,7 @@ export default function RegisterPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [termsOpen, setTermsOpen] = useState(false);
 
   function update(field) {
     return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
@@ -184,7 +186,21 @@ export default function RegisterPage() {
                 </div>
                 <div className="ml-3 text-sm">
                   <label className="font-body-md text-body-md text-on-surface-variant text-[14px]" htmlFor="terms">
-                    Я соглашаюсь с <a className="text-primary hover:underline font-label-md" href="#">Условиями использования</a> и{" "}
+                    Я соглашаюсь с{" "}
+                    <button
+                      type="button"
+                      className="text-primary hover:underline font-label-md"
+                      onClick={(e) => {
+                        // Клик по ссылке-кнопке внутри <label> иначе триггерит клик по чекбоксу —
+                        // гасим его, чтобы открытие модалки не отмечало согласие "автоматом".
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setTermsOpen(true);
+                      }}
+                    >
+                      Условиями использования
+                    </button>{" "}
+                    и{" "}
                     <a
                       className="text-primary hover:underline font-label-md"
                       href="https://studyroom64.ru/privacy"
@@ -225,6 +241,8 @@ export default function RegisterPage() {
       <footer className="w-full py-stack-md text-center">
         <p className="font-body-md text-[14px] text-outline">© 2026 Study Room. Все права защищены.</p>
       </footer>
+
+      <TermsOfUseModal open={termsOpen} onClose={() => setTermsOpen(false)} />
     </div>
   );
 }
