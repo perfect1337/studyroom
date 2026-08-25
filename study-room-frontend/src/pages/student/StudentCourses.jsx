@@ -132,27 +132,26 @@ export default function StudentCourses() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex flex-col gap-3">
           <h2 className="font-headline-md text-headline-md text-on-background">Мои курсы</h2>
-          <div className="flex gap-2">
-            {[
-              ["all", "Все"],
-              ["Активен", "Активные"],
-              ["На паузе", "На паузе"],
-              ["Завершён", "Завершённые"],
-            ].map(([value, label]) => (
-              <button
-                key={value}
-                onClick={() => setStatusFilter(value)}
-                className={`px-4 py-2 rounded-full text-sm font-label-md transition-colors ${
-                  statusFilter === value
-                    ? "bg-primary text-on-primary"
-                    : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+          <div className="relative w-full sm:w-64">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-sm font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+            >
+              {[
+                ["all", "Все"],
+                ["Активен", "Активные"],
+                ["На паузе", "На паузе"],
+                ["Завершён", "Завершённые"],
+              ].map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
           </div>
         </div>
 
