@@ -292,7 +292,7 @@ export default function ParentOverview() {
           <header className="relative bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div className="bg-notebook-grid absolute inset-0 text-tertiary opacity-[0.035] pointer-events-none" aria-hidden="true" />
 
-            <div className="relative flex items-center gap-4 sm:gap-6 z-10 min-w-0 p-4 sm:p-6 pt-10">
+            <div className="relative flex items-center gap-4 sm:gap-6 z-10 min-w-0 w-full md:w-auto p-4 sm:p-6 pt-10">
               <Avatar
                 src={user?.avatar_url}
                 name={fullName(user)}
@@ -312,14 +312,14 @@ export default function ParentOverview() {
                 </div>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-on-surface-variant">
                   {user?.email && (
-                    <span className="inline-flex items-center gap-1.5 font-body-md text-body-md text-sm">
-                      <span className="material-symbols-outlined text-[16px]">mail</span>
+                    <span className="inline-flex items-center gap-1.5 font-body-md text-body-md text-sm min-w-0 max-w-full break-all">
+                      <span className="material-symbols-outlined text-[16px] shrink-0">mail</span>
                       {user.email}
                     </span>
                   )}
                   {user?.phone && (
-                    <span className="inline-flex items-center gap-1.5 font-body-md text-body-md text-sm">
-                      <span className="material-symbols-outlined text-[16px]">call</span>
+                    <span className="inline-flex items-center gap-1.5 font-body-md text-body-md text-sm min-w-0 max-w-full break-all">
+                      <span className="material-symbols-outlined text-[16px] shrink-0">call</span>
                       {user.phone}
                     </span>
                   )}
@@ -384,10 +384,10 @@ export default function ParentOverview() {
                   <div key={child.id} className="bg-surface-container-lowest rounded-xl p-5 shadow-sm border border-outline-variant flex flex-col gap-5">
                     <div className="flex flex-col md:flex-row gap-5 items-start">
                       <Avatar src={child.avatar_url} name={fullName(child)} size="lg" className="shadow-sm ring-2 ring-tertiary-fixed/60" />
-                      <div className="flex-1 w-full">
-                        <div className="flex justify-between items-center w-full">
-                          <h4 className="font-display-academic text-xl font-semibold text-on-surface mb-1">{fullName(child)}</h4>
-                          <Link to={`/parent/children/${child.id}`} className="text-primary hover:bg-surface-container-low p-2 rounded-full transition-colors">
+                      <div className="flex-1 w-full min-w-0">
+                        <div className="flex justify-between items-center w-full gap-2">
+                          <h4 className="min-w-0 flex-1 truncate font-display-academic text-xl font-semibold text-on-surface mb-1">{fullName(child)}</h4>
+                          <Link to={`/parent/children/${child.id}`} className="shrink-0 text-primary hover:bg-surface-container-low p-2 rounded-full transition-colors">
                             <span className="material-symbols-outlined">chevron_right</span>
                           </Link>
                         </div>
@@ -469,16 +469,16 @@ export default function ParentOverview() {
                 {upcomingLessons.map((l) => {
                   const course = coursesById[l.course_id];
                   return (
-                    <div key={`${l._childId}-${l.id}`} className="flex justify-between items-center bg-surface-container-lowest border border-outline-variant p-3 rounded-lg">
-                      <div>
-                        <p className="font-label-md text-on-surface font-bold">
+                    <div key={`${l._childId}-${l.id}`} className="flex justify-between items-center gap-3 bg-surface-container-lowest border border-outline-variant p-3 rounded-lg">
+                      <div className="min-w-0">
+                        <p className="font-label-md text-on-surface font-bold truncate">
                           {course?.title ?? course?.subject ?? l.topic} ({l._childName})
                         </p>
                         <p className="text-sm text-on-surface-variant flex items-center gap-1 mt-1">
                           <span className="material-symbols-outlined text-[16px]">schedule</span> {l.lesson_date}, {l.start_time} - {l.end_time}
                         </p>
                       </div>
-                      <span className="material-symbols-outlined text-primary bg-primary-container/10 p-2 rounded-full">
+                      <span className="shrink-0 material-symbols-outlined text-primary bg-primary-container/10 p-2 rounded-full">
                         {l.location_type === "remote" ? "video_camera_front" : "location_on"}
                       </span>
                     </div>
@@ -666,7 +666,7 @@ export default function ParentOverview() {
                     <button
                       type="button"
                       onClick={() => setFormat("group")}
-                      className={`p-2 border rounded-lg text-sm font-medium ${
+                      className={`p-2 border rounded-lg text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis ${
                         format === "group" ? "border-primary bg-primary-container/10 text-primary" : "border-outline-variant text-on-surface-variant hover:bg-surface-container-low"
                       }`}
                     >
@@ -675,7 +675,7 @@ export default function ParentOverview() {
                     <button
                       type="button"
                       onClick={() => setFormat("individual")}
-                      className={`p-2 border rounded-lg text-sm font-medium ${
+                      className={`p-2 border rounded-lg text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis ${
                         format === "individual" ? "border-primary bg-primary-container/10 text-primary" : "border-outline-variant text-on-surface-variant hover:bg-surface-container-low"
                       }`}
                     >

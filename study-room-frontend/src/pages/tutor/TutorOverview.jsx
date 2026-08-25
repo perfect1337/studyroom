@@ -163,7 +163,7 @@ export default function TutorOverview() {
                     <span className="font-label-md text-label-md text-on-surface-variant">{lesson.end_time}</span>
                   </div>
                   <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="bg-primary-container text-on-primary-container px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
                         {course?.subject ?? course?.title ?? "—"}
                       </span>

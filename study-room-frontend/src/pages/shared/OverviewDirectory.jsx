@@ -220,7 +220,7 @@ export default function OverviewDirectory({ role }) {
 
       <div className="pb-stack-lg">
         <section className="flex flex-col gap-stack-md">
-          <div className="flex justify-between items-end">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-3">
             <div>
               <h2 className="text-headline-sm font-headline-sm text-on-surface">Управление преподавателями</h2>
               <p className="text-on-surface-variant text-label-md font-label-md">
@@ -229,7 +229,7 @@ export default function OverviewDirectory({ role }) {
             </div>
             <Link
               to={`${base}/teachers`}
-              className="bg-primary text-on-primary px-6 py-2 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:bg-on-primary-fixed-variant transition-colors active:scale-95"
+              className="shrink-0 bg-primary text-on-primary px-6 py-2 rounded-lg font-label-md text-label-md flex items-center justify-center gap-2 hover:bg-on-primary-fixed-variant transition-colors active:scale-95 w-full sm:w-auto"
             >
               <span className="material-symbols-outlined">person_add</span>
               Добавить учителя
@@ -340,13 +340,13 @@ export default function OverviewDirectory({ role }) {
                   onClick={() => openApplicationModal(a)}
                   className="p-3 border border-outline-variant rounded-xl hover:bg-surface-container-low hover:border-primary/40 transition-colors cursor-pointer"
                 >
-                  <div className="flex justify-between items-start mb-1">
-                    <p className="font-bold text-label-md">{a.name} {a.age ? `(${a.age} лет)` : ""}</p>
-                    <span className="text-[10px] text-outline">
+                  <div className="flex justify-between items-start mb-1 gap-2">
+                    <p className="min-w-0 flex-1 truncate font-bold text-label-md">{a.name} {a.age ? `(${a.age} лет)` : ""}</p>
+                    <span className="shrink-0 text-[10px] text-outline whitespace-nowrap">
                       {a.created_at ? new Date(a.created_at).toLocaleDateString("ru-RU") : ""}
                     </span>
                   </div>
-                  <p className="text-[12px] text-on-surface-variant">
+                  <p className="text-[12px] text-on-surface-variant truncate">
                     Интерес: {a.subject_interest ?? a.course ?? "—"}
                     {a.class_info ? ` · ${a.class_info} класс` : ""}
                   </p>

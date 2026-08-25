@@ -90,7 +90,7 @@ export default function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 max-w-[90vw] bg-surface-container-lowest border border-outline-variant rounded-xl shadow-lg z-50 overflow-hidden">
+        <div className="fixed left-3 right-3 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80 max-w-none sm:max-w-[90vw] bg-surface-container-lowest border border-outline-variant rounded-xl shadow-lg z-50 overflow-hidden">
           <div className="px-4 py-3 border-b border-outline-variant flex items-center justify-between">
             <span className="font-label-md text-on-surface font-bold">Уведомления</span>
             {unreadCount > 0 && <span className="text-[12px] text-on-surface-variant">{unreadCount} новых</span>}
