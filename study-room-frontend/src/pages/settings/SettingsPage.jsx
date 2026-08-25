@@ -77,9 +77,10 @@ function resizeImageFile(file) {
  * Email редактируем для всех ролей, включая ученика: у ученика это поле одновременно
  * служит логином для входа (сгенерировано при создании аккаунта из ФИО), но ученик
  * теперь может сам заменить его на свою настоящую почту — так же, как остальные роли,
- * с тем же подтверждением текущим паролем (см. UpdateMe на бэкенде). Заодно эта же
- * почта используется для email-уведомлений (см. блок "Уведомления" ниже).
+ * с тем же подтверждением текущим паролем (см. UpdateMe на бэкенде).
  * Телефон бэкенд через эти эндпоинты не меняет, поэтому в форме его нет вовсе.
+ * Блок "Уведомления" (Telegram/email) — для всех ролей, КРОМЕ ученика: он не может
+ * сам подключать/отключать уведомления в своём профиле (см. ниже, isStudent).
  */
 export default function SettingsPage({ role }) {
   const { user, updateUser } = useAuth();
@@ -90,6 +91,13 @@ export default function SettingsPage({ role }) {
   const [notifLoading, setNotifLoading] = useState(true);
 
   useEffect(() => {
+    // Ученику подключение уведомлений недоступно (см. блок "Уведомления"
+    // ниже — он скрыт для role=student), поэтому и настройки для него не
+    // грузим — незачем дёргать API впустую.
+    if (role === "student") {
+      setNotifLoading(false);
+      return;
+    }
     let cancelled = false;
     async function load() {
       try {
@@ -102,7 +110,7 @@ export default function SettingsPage({ role }) {
     }
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [role]);
 
   async function handleNotifToggle(key) {
     if (!notifSettings) return;
@@ -473,7 +481,9 @@ export default function SettingsPage({ role }) {
           </form>
         </section>
 
-        {/* Notifications */}
+        {/* Notifications — недоступно ученику: он не может сам подключать
+            уведомления (ни Telegram, ни email) в своём профиле. */}
+        {!isStudent && (
         <section className="bg-surface-container-lowest rounded-xl p-stack-md shadow-[0_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant">
           <div className="flex items-center gap-3 mb-stack-lg">
             <span className="material-symbols-outlined text-warning">notifications</span>
@@ -566,6 +576,7 @@ export default function SettingsPage({ role }) {
             </div>
           )}
         </section>
+        )}
       </div>
     </DashboardShell>
   );
