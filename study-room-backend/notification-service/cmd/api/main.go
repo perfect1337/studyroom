@@ -51,14 +51,24 @@ func main() {
 	factory := messenger.NewFactory(messengerCfg)
 	deps := app.NewDeps(pool, tm, cfg.ServiceToken, mail, factory)
 
-	// Запускаем Telegram Bot polling (только если есть токен)
+	// Telegram bot polling запускаем в фоне, НЕ блокируя старт HTTP-сервера
+	// ниже. NewTelegramBot делает синхронный retry (до 5 попыток NewBotAPI
+	// + ещё до 5 попыток GetMe, с паузами по 3с между ними) — если сеть до
+	// Telegram API с сервера медленная или временно недоступна, это могло
+	// растягиваться на минуту-две, и всё это время HTTP-сервер вообще не
+	// слушал порт (он стартовал строго ПОСЛЕ этого блока) — снаружи это
+	// выглядело как "сервис не отвечает" (502 от nginx на /api/v1/notifications
+	// и любой другой путь этого сервиса), хотя сам процесс уже был запущен.
+	// Теперь сервер поднимается сразу, а бот донастраивается параллельно.
 	if cfg.TelegramBotToken != "" {
-		bot, err := messenger.NewTelegramBot(cfg.TelegramBotToken, deps.UsersRef, deps.TelegramUser)
-		if err != nil {
-			log.Printf("telegram: bot init failed: %v (continuing without bot polling)", err)
-		} else {
+		go func() {
+			bot, err := messenger.NewTelegramBot(cfg.TelegramBotToken, deps.UsersRef, deps.TelegramUser)
+			if err != nil {
+				log.Printf("telegram: bot init failed: %v (continuing without bot polling)", err)
+				return
+			}
 			bot.StartPolling(ctx)
-		}
+		}()
 	} else {
 		log.Println("telegram: TELEGRAM_BOT_TOKEN not set, skipping bot polling")
 	}

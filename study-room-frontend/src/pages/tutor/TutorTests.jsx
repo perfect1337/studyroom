@@ -175,21 +175,24 @@ export default function TutorTests() {
 
         <section className="bg-surface-container-lowest rounded-xl p-stack-md shadow-sm border border-outline-variant">
           <h3 className="font-headline-sm text-headline-sm text-on-background mb-stack-md">Выдать новый тест</h3>
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_1.2fr_auto] gap-stack-md items-end">
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_1.2fr_auto] gap-stack-md items-end">
             <div className="space-y-stack-sm">
               <label className="font-label-md text-on-surface-variant ml-1">Ученик</label>
-              <select
-                value={form.student_id}
-                onChange={(e) => setForm((f) => ({ ...f, student_id: e.target.value }))}
-                className="w-full bg-surface border border-outline-variant rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                <option value="">Выберите ученика</option>
-                {assignableStudents.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {fullName(s)}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={form.student_id}
+                  onChange={(e) => setForm((f) => ({ ...f, student_id: e.target.value }))}
+                  className="w-full appearance-none bg-surface border border-outline-variant rounded-lg pl-4 pr-9 py-3 outline-none focus:ring-2 focus:ring-primary/20 truncate"
+                >
+                  <option value="">Выберите ученика</option>
+                  {assignableStudents.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {fullName(s)}
+                    </option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
+              </div>
               {assignableStudents.length === 0 && (
                 <p className="text-xs text-on-surface-variant mt-1">
                   Нет учеников с назначенными занятиями. Сначала добавьте занятие в расписании.
@@ -198,18 +201,21 @@ export default function TutorTests() {
             </div>
             <div className="space-y-stack-sm">
               <label className="font-label-md text-on-surface-variant ml-1">Курс / предмет</label>
-              <select
-                value={form.course_id}
-                onChange={(e) => setForm((f) => ({ ...f, course_id: e.target.value }))}
-                className="w-full bg-surface border border-outline-variant rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                <option value="">Без привязки к курсу</option>
-                {courses.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.title} · {c.subject}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={form.course_id}
+                  onChange={(e) => setForm((f) => ({ ...f, course_id: e.target.value }))}
+                  className="w-full appearance-none bg-surface border border-outline-variant rounded-lg pl-4 pr-9 py-3 outline-none focus:ring-2 focus:ring-primary/20 truncate"
+                >
+                  <option value="">Без привязки к курсу</option>
+                  {courses.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.title} · {c.subject}
+                    </option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
+              </div>
             </div>
             <div className="space-y-stack-sm">
               <label className="font-label-md text-on-surface-variant ml-1">Название теста</label>
@@ -260,7 +266,7 @@ export default function TutorTests() {
                   className="bg-surface border border-outline-variant rounded-lg pl-9 pr-4 py-2 text-label-md font-label-md outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary w-full sm:w-64"
                 />
               </div>
-              <div className="relative flex-1 min-w-[140px] sm:flex-none">
+              <div className="relative w-full sm:w-48">
                 <select
                   value={studentFilter}
                   onChange={(e) => setStudentFilter(e.target.value)}
@@ -275,7 +281,7 @@ export default function TutorTests() {
                 </select>
                 <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
               </div>
-              <div className="relative flex-1 min-w-[140px] sm:flex-none">
+              <div className="relative w-full sm:w-48">
                 <select
                   value={courseFilter}
                   onChange={(e) => setCourseFilter(e.target.value)}
@@ -352,7 +358,7 @@ export default function TutorTests() {
                       </td>
                       <td className="px-6 py-5">
                         <span
-                          className={`text-xs font-bold px-3 py-1 rounded-full shrink-0 ${
+                          className={`text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap ${
                             isSubmitted ? "bg-surface-container-highest text-primary" : "bg-secondary-fixed text-on-secondary-container"
                           }`}
                         >

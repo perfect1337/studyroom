@@ -53,6 +53,9 @@ func NewRouter(d *Deps) http.Handler {
 	h := handlers.NewContractHandler(d.Contracts, d.UserRefs, d.UserClient, d.Events)
 
 	r := chi.NewRouter()
+	// Recoverer — первым, чтобы ловить паники даже из middleware ниже
+	// по цепочке (см. internal/middleware/recover.go).
+	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logging)
 

@@ -47,6 +47,9 @@ func NewRouter(d *Deps) http.Handler {
 	appHandler := handlers.NewApplicationHandler(d.Applications, d.UserRefs, d.Events, d.WebhookSecret)
 
 	r := chi.NewRouter()
+	// Recoverer — первым, чтобы ловить паники даже из middleware ниже
+	// по цепочке (см. internal/middleware/recover.go).
+	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logging)
 

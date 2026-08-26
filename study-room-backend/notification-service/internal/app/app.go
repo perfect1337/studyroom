@@ -64,6 +64,9 @@ func NewRouter(d *Deps) http.Handler {
 	internalHandler := handlers.NewInternalHandler(d.Notifier, d.UsersRef)
 
 	r := chi.NewRouter()
+	// Recoverer — первым, чтобы ловить паники даже из middleware ниже
+	// по цепочке (см. internal/middleware/recover.go).
+	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logging)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
