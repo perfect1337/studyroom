@@ -151,7 +151,6 @@ export default function StudentCourses() {
                 </option>
               ))}
             </select>
-            <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
           </div>
         </div>
 

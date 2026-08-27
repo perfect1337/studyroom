@@ -701,7 +701,6 @@ export default function FinanceDirectory({ role }) {
                               <option key={n} value={String(n)}>{n} класс</option>
                             ))}
                           </select>
-                          <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
                         </div>
                       </div>
                     </div>

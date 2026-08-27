@@ -191,7 +191,6 @@ export default function TutorTests() {
                     </option>
                   ))}
                 </select>
-                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
               </div>
               {assignableStudents.length === 0 && (
                 <p className="text-xs text-on-surface-variant mt-1">
@@ -214,7 +213,6 @@ export default function TutorTests() {
                     </option>
                   ))}
                 </select>
-                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
               </div>
             </div>
             <div className="space-y-stack-sm">
@@ -279,7 +277,6 @@ export default function TutorTests() {
                     </option>
                   ))}
                 </select>
-                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
               </div>
               <div className="relative w-full sm:w-48">
                 <select
@@ -294,7 +291,6 @@ export default function TutorTests() {
                     </option>
                   ))}
                 </select>
-                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
               </div>
               <div className="flex gap-1.5 flex-wrap">
                 {STATUS_FILTERS.map((f) => (

@@ -181,7 +181,6 @@ export default function StudentsDirectory({ role }) {
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
-                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
               </div>
               {/* Фильтр по филиалу — доступен только владельцу сети (видит все филиалы сразу) */}
               {isOwner && (
@@ -196,7 +195,6 @@ export default function StudentsDirectory({ role }) {
                       <option key={b.id} value={b.id}>{b.name || b.city}</option>
                     ))}
                   </select>
-                  <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
                 </div>
               )}
             </div>

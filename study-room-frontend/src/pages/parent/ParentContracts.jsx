@@ -250,7 +250,6 @@ export default function ParentContracts() {
                     <option key={c.id} value={String(c.id)}>{fullName(c)}</option>
                   ))}
                 </select>
-                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
               </div>
             )}
 
@@ -265,7 +264,6 @@ export default function ParentContracts() {
                 <option value="completed">Завершён</option>
                 <option value="terminated">Расторгнут</option>
               </select>
-              <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
             </div>
 
             <div className="relative">
@@ -278,7 +276,6 @@ export default function ParentContracts() {
                 <option value="paid">Оплачено</option>
                 <option value="unpaid">Ожидание оплаты</option>
               </select>
-              <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
             </div>
 
             <label className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-outline-variant bg-surface cursor-pointer select-none whitespace-nowrap">

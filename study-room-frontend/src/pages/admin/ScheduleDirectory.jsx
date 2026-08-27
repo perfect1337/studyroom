@@ -358,7 +358,6 @@ export default function ScheduleDirectory({ role }) {
                 </option>
               ))}
             </select>
-            <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
           </div>
         )}
 
@@ -376,7 +375,6 @@ export default function ScheduleDirectory({ role }) {
               </option>
             ))}
           </select>
-          <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
         </div>
 
         <div className="relative">
@@ -393,7 +391,6 @@ export default function ScheduleDirectory({ role }) {
               </option>
             ))}
           </select>
-          <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">expand_more</span>
         </div>
 
         {(branchFilter || tutorFilter || studentFilter) && (

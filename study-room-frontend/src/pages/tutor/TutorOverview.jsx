@@ -270,7 +270,6 @@ export default function TutorOverview() {
                       </option>
                     ))}
                   </select>
-                  <span className="material-symbols-outlined absolute right-3 top-3 text-on-surface-variant pointer-events-none">expand_more</span>
                 </div>
               </div>
               <div>
