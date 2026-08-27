@@ -210,7 +210,7 @@ export default function TutorOverview() {
           <section className="bg-surface-container-lowest rounded-xl p-6 shadow-[0px_10px_30px_rgba(0,0,0,0.05)]">
             <h2 className="font-headline-sm text-headline-sm text-on-background flex items-center gap-2 mb-4">
               <span className="material-symbols-outlined text-primary">person_search</span>
-              Мои ученики
+              Все ученики
             </h2>
             <div className="flex flex-col gap-3">
               {!loading && enrollments.length === 0 && (
@@ -245,7 +245,7 @@ export default function TutorOverview() {
               })}
             </div>
             <Link to="/tutor/students" className="mt-4 w-full block text-center text-primary font-label-md text-label-md hover:underline">
-              Все ученики
+              Смотреть весь список
             </Link>
           </section>
 

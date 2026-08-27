@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"math"
 	"strconv"
 
 	"studyroom/academic-service/internal/models"
@@ -298,11 +299,75 @@ func (r *EnrollmentRepository) DeleteByStudent(ctx context.Context, studentID in
 	return tag.RowsAffected(), nil
 }
 
+// RecalculateProgress — пересчитывает progress_pct ученика по конкретному
+// курсу автоматически, на основе занятий, которые ему реально ставит
+// преподаватель (таблицы lessons/lesson_participants), а не вручную.
+//
+// Прогресс = доля занятий этого ученика на курсе со статусом 'completed'
+// от всех НЕотменённых занятий этого ученика на курсе (запланированные +
+// проведённые). Отменённые (status='cancelled') занятия не участвуют ни в
+// числителе, ни в знаменателе — отменённое занятие не должно ни повышать,
+// ни занижать прогресс.
+//
+// Если у ученика по этому курсу вообще ещё нет занятий — прогресс 0
+// (не 100%, чтобы пустой курс не выглядел "пройденным").
+//
+// Вызывается из LessonHandler всякий раз, когда меняется набор занятий
+// ученика по курсу или их статус: создание занятия (см. LessonHandler.Create),
+// смена статуса, включая отметку "проведено" (см. LessonHandler.Update) и
+// отмена занятия (см. LessonHandler.Delete/Cancel) — то есть после любого
+// действия тьютора, которое может изменить числитель или знаменатель.
+//
+// Именно поэтому ручное выставление progress_pct через
+// PATCH /enrollments/{id} убрано из EnrollmentHandler.Update — эта функция
+// единственный источник изменения progress_pct, чтобы прогресс всегда
+// отражал реальное количество занятий, отмеченных преподавателем, а не
+// произвольное число.
+//
+// Возвращает (nil, nil), если у пары student_id+course_id ещё нет записи
+// enrollment (например, ученика отчислили ровно между созданием занятия и
+// пересчётом) — это не ошибка вызывающего кода, просто нечего обновлять.
+func (r *EnrollmentRepository) RecalculateProgress(ctx context.Context, studentID, courseID int64) (*models.Enrollment, error) {
+	var total, completed int
+	err := r.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE l.status <> 'cancelled') AS total,
+			COUNT(*) FILTER (WHERE l.status = 'completed') AS completed
+		FROM lesson_participants lp
+		JOIN lessons l ON l.id = lp.lesson_id
+		WHERE lp.student_id = $1 AND l.course_id = $2
+	`, studentID, courseID).Scan(&total, &completed)
+	if err != nil {
+		return nil, err
+	}
+
+	pct := 0
+	if total > 0 {
+		pct = int(math.Round(float64(completed) * 100 / float64(total)))
+	}
+
+	query := `UPDATE enrollments SET progress_pct = $1
+		WHERE student_id = $2 AND course_id = $3
+		RETURNING ` + enrollmentColumns
+	e, err := scanEnrollment(r.pool.QueryRow(ctx, query, pct, studentID, courseID))
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return e, nil
+}
+
 func (r *EnrollmentRepository) UpdateProgress(ctx context.Context, id int64, fields map[string]any) (*models.Enrollment, error) {
 	if len(fields) == 0 {
 		return r.GetByID(ctx, id)
 	}
-	allowedCols := map[string]bool{"progress_pct": true, "status": true, "start_date": true, "end_date": true}
+	// progress_pct сюда намеренно не входит: с введением автоматического
+	// подсчёта прогресса (см. RecalculateProgress выше) это поле больше не
+	// редактируется вручную через PATCH /enrollments/{id}, единственный
+	// путь его изменить — реальные занятия, отмеченные преподавателем.
+	allowedCols := map[string]bool{"status": true, "start_date": true, "end_date": true}
 	setClauses := ""
 	args := []any{}
 	i := 1

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -139,6 +140,18 @@ func (h *LessonHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": nonNilLessons(lessons)})
 }
 
+// recalculateProgress — пересчитывает progress_pct (см.
+// EnrollmentRepository.RecalculateProgress) для списка учеников по одному
+// курсу. Best-effort: ошибки пересчёта не прерывают основной запрос (создание
+// /изменение/отмену занятия) — прогресс в этом случае просто останется
+// прежним до следующего успешного пересчёта, вместо того чтобы ронять
+// действие тьютора над самим занятием из-за побочного эффекта.
+func (h *LessonHandler) recalculateProgress(ctx context.Context, courseID int64, studentIDs []int64) {
+	for _, studentID := range studentIDs {
+		_, _ = h.enrollments.RecalculateProgress(ctx, studentID, courseID)
+	}
+}
+
 func nonNilLessons(l []*models.Lesson) []*models.Lesson {
 	if l == nil {
 		return []*models.Lesson{}
@@ -267,6 +280,12 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.publisher.LessonCreated(lesson.ID, lesson.TutorID, studentID, lesson.Topic, req.LessonDate, req.StartTime)
 	}
 
+	// Новое занятие меняет знаменатель прогресса (см. RecalculateProgress) —
+	// пересчитываем progress_pct участников сразу, а не ждём, пока по
+	// занятию сменится статус. Best-effort: сбой пересчёта не должен
+	// откатывать уже созданное занятие, поэтому ошибку не возвращаем.
+	h.recalculateProgress(r.Context(), lesson.CourseID, participantIDs)
+
 	writeJSON(w, http.StatusCreated, lesson)
 }
 
@@ -375,6 +394,21 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to update lesson")
 		return
 	}
+
+	// Смена статуса занятия (в первую очередь — отметка "проведено",
+	// status='completed') меняет числитель/знаменатель прогресса ученика по
+	// этому курсу, поэтому пересчитываем progress_pct всех участников
+	// занятия. Именно этот путь — то, как тьютор фактически двигает
+	// прогресс ученика: раньше progress_pct правился отдельным ручным
+	// PATCH /enrollments/{id}, теперь единственный способ его изменить —
+	// отметить занятия проведёнными/отменёнными по конкретному курсу.
+	if req.Status != nil {
+		participants, pErr := h.lessons.Participants(r.Context(), id)
+		if pErr == nil {
+			h.recalculateProgress(r.Context(), lesson.CourseID, participants)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, lesson)
 }
 
@@ -388,7 +422,8 @@ func (h *LessonHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid lesson id")
 		return
 	}
-	if _, ok := h.checkLessonAccess(w, r, id); !ok {
+	lesson, ok := h.checkLessonAccess(w, r, id)
+	if !ok {
 		return
 	}
 	if err := h.lessons.Cancel(r.Context(), id); err != nil {
@@ -399,6 +434,14 @@ func (h *LessonHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to cancel lesson")
 		return
 	}
+
+	// Отменённое занятие исключается и из числителя, и из знаменателя
+	// прогресса (см. RecalculateProgress), поэтому после отмены прогресс
+	// участников нужно пересчитать точно так же, как при отметке "проведено".
+	if participants, pErr := h.lessons.Participants(r.Context(), id); pErr == nil {
+		h.recalculateProgress(r.Context(), lesson.CourseID, participants)
+	}
+
 	w.WriteHeader(http.StatusOK)
 }
 

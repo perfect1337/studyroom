@@ -228,14 +228,20 @@ func nonNilEnrollments(e []*models.Enrollment) []*models.Enrollment {
 }
 
 type updateEnrollmentRequest struct {
-	ProgressPct *int    `json:"progress_pct"`
-	Status      *string `json:"status"`
-	StartDate   *string `json:"start_date"`
-	EndDate     *string `json:"end_date"`
+	Status    *string `json:"status"`
+	StartDate *string `json:"start_date"`
+	EndDate   *string `json:"end_date"`
 }
 
 // Update — PATCH /enrollments/{id}. tutor (свои ученики), owner,
 // branch_owner (свой филиал) — см. api-contracts.md 2.6.
+//
+// progress_pct сюда больше не принимается: прогресс ученика по курсу
+// теперь считается автоматически, по количеству занятий, которые
+// преподаватель реально отметил как проведённые (status='completed') —
+// см. repository.EnrollmentRepository.RecalculateProgress, вызывается из
+// LessonHandler при создании/изменении/отмене занятия. Если в теле запроса
+// всё же придёт progress_pct, поле просто игнорируется.
 func (h *EnrollmentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	claims, _ := middleware.FromContext(r.Context())
 	id, err := parseIntPath(chi.URLParam(r, "id"))
@@ -292,9 +298,6 @@ func (h *EnrollmentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fields := map[string]any{}
-	if req.ProgressPct != nil {
-		fields["progress_pct"] = *req.ProgressPct
-	}
 	if req.Status != nil {
 		fields["status"] = *req.Status
 	}

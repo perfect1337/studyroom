@@ -94,8 +94,10 @@ func TestEnrollments_TutorStudents_BySameCourse(t *testing.T) {
 		t.Fatalf("tutor's student_id=%v want=100", first["student_id"])
 	}
 
-	// без ручного assign-tutor на энкоймент — доступ на PATCH прогресса всё
-	// равно есть, т.к. tutor ведёт курс этой записи.
+	// без ручного assign-tutor на энкоймент — доступ на PATCH записи всё
+	// равно есть, т.к. tutor ведёт курс этой записи. progress_pct теперь
+	// считается автоматически (см. RecalculateProgress) и через PATCH не
+	// выставляется, поэтому проверяем доступ на поле status.
 	enrollRes := e.do("GET", "/api/v1/academic/enrollments?course_id="+toPathID(float64(courseA)), nil, tutor)
 	e.mustOK(enrollRes, 200)
 	enrollItems := asSlice(enrollRes.Body["items"])
@@ -105,10 +107,10 @@ func TestEnrollments_TutorStudents_BySameCourse(t *testing.T) {
 	enrollmentID := toPathID(enrollItems[0].(map[string]any)["id"])
 
 	patchRes := e.do("PATCH", "/api/v1/academic/enrollments/"+enrollmentID,
-		map[string]any{"progress_pct": 42}, tutor)
+		map[string]any{"status": "paused"}, tutor)
 	e.mustOK(patchRes, 200)
-	if pct, _ := patchRes.Body["progress_pct"].(float64); pct != 42 {
-		t.Fatalf("progress_pct=%v want=42", patchRes.Body["progress_pct"])
+	if patchRes.Body["status"] != "paused" {
+		t.Fatalf("status=%v want=paused", patchRes.Body["status"])
 	}
 }
 

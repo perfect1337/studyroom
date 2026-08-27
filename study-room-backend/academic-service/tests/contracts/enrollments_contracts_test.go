@@ -156,7 +156,10 @@ func TestEnrollments_List_RoleScoping(t *testing.T) {
 }
 
 // TestEnrollments_Update_TutorOwnStudentsOnly — PATCH /enrollments/{id}:
-// tutor может менять прогресс только своих учеников (api-contracts.md 2.6).
+// tutor может менять запись только своих учеников (api-contracts.md 2.6).
+// progress_pct через этот эндпоинт больше не выставляется вручную (см.
+// EnrollmentHandler.Update) — прогресс считается автоматически по занятиям,
+// поэтому здесь проверяется доступ на примере поля status, а не progress_pct.
 func TestEnrollments_Update_TutorOwnStudentsOnly(t *testing.T) {
 	e := getEnv(t)
 	owner := e.accessToken(1, models.RoleOwner, nil)
@@ -169,7 +172,7 @@ func TestEnrollments_Update_TutorOwnStudentsOnly(t *testing.T) {
 	// tutor 15 ещё не назначен на эту запись -> 403
 	tutor15 := e.accessToken(15, models.RoleTutor, branchPtr(1))
 	res = e.do("PATCH", "/api/v1/academic/enrollments/"+enrollmentID,
-		map[string]any{"progress_pct": 50}, tutor15)
+		map[string]any{"status": "paused"}, tutor15)
 	if res.Status != 403 {
 		t.Fatalf("unassigned tutor update: status=%d want=403", res.Status)
 	}
@@ -188,9 +191,84 @@ func TestEnrollments_Update_TutorOwnStudentsOnly(t *testing.T) {
 	e.mustOK(assignRes, 200)
 
 	res = e.do("PATCH", "/api/v1/academic/enrollments/"+enrollmentID,
+		map[string]any{"status": "paused"}, tutor15)
+	e.mustOK(res, 200)
+	if res.Body["status"] != "paused" {
+		t.Fatalf("status=%v want=paused", res.Body["status"])
+	}
+
+	// Попытка выставить progress_pct вручную тихо игнорируется — значение
+	// не меняется этим PATCH (см. updateEnrollmentRequest без ProgressPct).
+	res = e.do("PATCH", "/api/v1/academic/enrollments/"+enrollmentID,
 		map[string]any{"progress_pct": 50}, tutor15)
 	e.mustOK(res, 200)
-	if pct, _ := res.Body["progress_pct"].(float64); pct != 50 {
-		t.Fatalf("progress_pct=%v want=50", res.Body["progress_pct"])
+	if pct, _ := res.Body["progress_pct"].(float64); pct != 0 {
+		t.Fatalf("progress_pct=%v want=0 (manual progress_pct must be ignored)", res.Body["progress_pct"])
+	}
+}
+
+// TestEnrollments_ProgressPct_AutoFromCompletedLessons — прогресс ученика по
+// курсу растёт автоматически по мере того, как преподаватель отмечает его
+// занятия проведёнными (status='completed'), и не может быть выставлен
+// вручную через PATCH /enrollments/{id} (см. EnrollmentRepository.
+// RecalculateProgress, вызывается из LessonHandler).
+func TestEnrollments_ProgressPct_AutoFromCompletedLessons(t *testing.T) {
+	e := getEnv(t)
+	owner := e.accessToken(1, models.RoleOwner, nil)
+	tutor := e.accessToken(15, models.RoleTutor, branchPtr(1))
+	courseID := e.seedCourse("Курс с занятиями", 1)
+	e.assignCourseTutor(courseID, 15)
+
+	res := e.do("POST", "/api/v1/academic/enrollments",
+		map[string]any{"student_id": 100, "course_id": courseID}, owner)
+	e.mustOK(res, 201)
+
+	createLesson := func(topic, date string) string {
+		res := e.do("POST", "/api/v1/academic/lessons", map[string]any{
+			"course_id": courseID, "tutor_id": 15, "student_id": 100,
+			"topic": topic, "lesson_date": date, "start_time": "10:00", "end_time": "11:00",
+		}, tutor)
+		e.mustOK(res, 201)
+		id, _ := res.Body["id"].(float64)
+		return toPathID(int64(id))
+	}
+
+	lesson1 := createLesson("Тема 1", "2025-01-01")
+	lesson2 := createLesson("Тема 2", "2025-01-08")
+
+	// Пока ни одно занятие не проведено — прогресс 0%.
+	getRes := e.do("GET", "/api/v1/academic/enrollments?student_id=100", nil, owner)
+	e.mustOK(getRes, 200)
+	items := asSlice(getRes.Body["items"])
+	if len(items) != 1 {
+		t.Fatalf("got %d enrollments, want 1", len(items))
+	}
+	if pct, _ := items[0].(map[string]any)["progress_pct"].(float64); pct != 0 {
+		t.Fatalf("initial progress_pct=%v want=0", pct)
+	}
+
+	// Отмечаем первое занятие проведённым -> прогресс должен стать 50%
+	// (1 из 2 неотменённых занятий).
+	res = e.do("PATCH", "/api/v1/academic/lessons/"+lesson1,
+		map[string]any{"status": "completed"}, tutor)
+	e.mustOK(res, 200)
+
+	getRes = e.do("GET", "/api/v1/academic/enrollments?student_id=100", nil, owner)
+	e.mustOK(getRes, 200)
+	items = asSlice(getRes.Body["items"])
+	if pct, _ := items[0].(map[string]any)["progress_pct"].(float64); pct != 50 {
+		t.Fatalf("progress_pct after 1/2 completed=%v want=50", pct)
+	}
+
+	// Отмечаем второе занятие проведённым -> прогресс 100%.
+	res = e.do("PATCH", "/api/v1/academic/lessons/"+lesson2,
+		map[string]any{"status": "completed"}, tutor)
+	e.mustOK(res, 200)
+
+	getRes = e.do("GET", "/api/v1/academic/enrollments?student_id=100", nil, owner)
+	e.mustOK(getRes, 200)
+	items = asSlice(getRes.Body["items"])
+	if pct, _ := items[0].(map[string]any)["progress_pct"].(float64); pct != 100 {
+		t.Fatalf("progress_pct after 2/2 completed=%v want=100", pct)
 	}
 }
