@@ -1,8 +1,9 @@
 import { Suspense } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext.jsx";
 import ProtectedRoute from "./components/routing/ProtectedRoute.jsx";
 import RouteFallback from "./components/routing/RouteFallback.jsx";
+import ErrorBoundary from "./components/routing/ErrorBoundary.jsx";
 
 // Логин/регистрация нужны всем при первом заходе — грузим сразу, без lazy,
 // чтобы не добавлять лишний сетевой скачок на самом первом экране приложения.
@@ -65,8 +66,23 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Suspense fallback={<RouteFallback />}>
-          <Routes>
+        <AppRoutes />
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
+
+// Вынесено в отдельный компонент, а не написано прямо в App: useLocation()
+// можно вызывать только внутри <BrowserRouter>, а сам App его и рендерит.
+// location.pathname используется как resetKey для ErrorBoundary — уход с
+// упавшей страницы на другой маршрут сбрасывает состояние ошибки, вместо
+// того чтобы навсегда держать всё приложение на экране "Что-то пошло не так".
+function AppRoutes() {
+  const location = useLocation();
+  return (
+    <ErrorBoundary resetKey={location.pathname}>
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
             {/* Точка входа — единая страница логина для всех ролей (см. ТЗ п.6.1) */}
             <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<LoginPage />} />
@@ -126,9 +142,8 @@ export default function App() {
 
             {/* 404 */}
             <Route path="*" element={<PlaceholderPage title="Страница не найдена" />} />
-          </Routes>
-        </Suspense>
-      </AuthProvider>
-    </BrowserRouter>
+        </Routes>
+      </Suspense>
+    </ErrorBoundary>
   );
 }
