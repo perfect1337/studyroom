@@ -31,9 +31,18 @@ function nowHHMM() {
 function isLessonPast(lesson, today) {
   const todayISO = toISODate(today.getFullYear(), today.getMonth(), today.getDate());
   if (!lesson.lesson_date) return false;
-  if (lesson.lesson_date < todayISO) return true;
-  if (lesson.lesson_date > todayISO) return false;
-  return (lesson.end_time ?? "23:59") <= nowHHMM();
+  // Бэкенд отдаёт lesson_date как полный timestamp (например, "2024-01-15T00:00:00Z"),
+  // а не как "YYYY-MM-DD". Сравнивать такую строку напрямую с todayISO нельзя: из-за
+  // суффикса "T00:00:00Z" строка с датой всегда оказывалась "больше" todayISO, и
+  // сегодняшние занятия никогда не помечались прошедшими. Берём только дату (первые
+  // 10 символов), как это уже делается в календаре (см. lesson.lesson_date?.slice(8, 10)).
+  const lessonDateOnly = String(lesson.lesson_date).slice(0, 10);
+  if (lessonDateOnly < todayISO) return true;
+  if (lessonDateOnly > todayISO) return false;
+  // end_time может приходить как "HH:MM:SS" (из Postgres TIME) — приводим к "HH:MM",
+  // чтобы корректно сравнивать с nowHHMM() и не залипать на последней минуте занятия.
+  const endTime = String(lesson.end_time ?? "23:59").slice(0, 5);
+  return endTime <= nowHHMM();
 }
 
 export default function StudentSchedule() {
