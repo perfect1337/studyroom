@@ -218,6 +218,52 @@ publisher'ом. Когда Contracts Service будет писаться — **�
 
 ---
 
+## v1.contract.terminated
+
+**Версия:** v1
+**Публикует:** Contracts Service, `internal/events/publisher.go` → `ContractTerminated` — ✅ реализован
+**Подписаны:** Academic Service, `internal/events/subscriber.go` → `handleContractTerminated`
+**Статус:** ✅ implemented — публикуется из `ContractHandler.UpdateStatus`
+(`PATCH /contracts/{id}/status`, api-contracts.md 3.5) сразу после того, как
+статус договора успешно меняется на `"terminated"`.
+
+```json
+{
+  "id": 77,
+  "student_id": 100,
+  "course_id": 12
+}
+```
+
+| Поле | Тип | Обязательное |
+|---|---|---|
+| `id` | int64 | да — id договора |
+| `student_id` | int64 | да |
+| `course_id` | int64 | да |
+
+Реакция на стороне Academic Service (по требованию: расторжение договора
+ученика отменяет ВСЕ его занятия по этому курсу вместе с активной записью
+на курс):
+
+1. `LessonRepository.CancelForStudentAndCourse(student_id, course_id)` —
+   отменяет (`status='cancelled'`) все ещё не проведённые (`status=
+   'scheduled'`) индивидуальные занятия этого ученика на этом курсе; если
+   занятие групповое (есть другие участники), ученика просто убирают из
+   `lesson_participants`, само занятие остаётся для остальных. Уже
+   проведённые (`status='completed'`) занятия не трогаются — это история.
+2. `EnrollmentRepository.TerminateForCourse(student_id, course_id)` —
+   переводит соответствующую запись `enrollments` (если она в статусе
+   `active`/`paused`) в `status='terminated'` — отдельное значение enum,
+   не переиспользующее `paused` (см. комментарий в
+   `0006_enrollment_terminated_status.up.sql` — иначе запись рисковала бы
+   "ожить" через `ResumeOrphanedForCourse` при назначении курсу нового
+   преподавателя).
+
+Обе операции best-effort и независимы: ошибка одной логируется и не
+блокирует другую.
+
+---
+
 ## v1.contract.expiring_soon
 
 **Версия:** v1

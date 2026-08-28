@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -53,6 +54,28 @@ func (r *ApplicationRepository) CreateInternal(ctx context.Context, name string,
 		VALUES ('internal', 'new', $1, $2, $3, $4, $5, $6, $7, $8) RETURNING ` + applicationColumns
 	row := r.pool.QueryRow(ctx, query, name, subjectInterest, studentID, format, branchID, parentName, phone, classInfo)
 	return scanApplication(row)
+}
+
+// HasRecentInternalApplication — true, если для этого ученика уже есть
+// заявка source='internal' ("Записаться на новый курс" из ЛК родителя),
+// созданная за последние `within`. Используется для анти-спам лимита в
+// ApplicationHandler.CreateInternal (api-contracts.md 4.2): не чаще одной
+// заявки на запись на курс в минуту на одного ученика — иначе двойной клик
+// или нервное повторное нажатие "Отправить" плодит дубликаты заявок в CRM.
+// Проверка через БД (а не in-memory счётчик в хендлере), потому что сервис
+// может быть развёрнут в нескольких экземплярах — in-memory лимитер в одном
+// инстансе не увидел бы запрос, обработанный другим.
+func (r *ApplicationRepository) HasRecentInternalApplication(ctx context.Context, studentID int64, within time.Duration) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM applications
+			WHERE student_id = $1 AND source = 'internal'
+			  AND created_at > now() - make_interval(secs => $2)
+		)`,
+		studentID, within.Seconds(),
+	).Scan(&exists)
+	return exists, err
 }
 
 func (r *ApplicationRepository) GetByID(ctx context.Context, id int64) (*models.Application, error) {

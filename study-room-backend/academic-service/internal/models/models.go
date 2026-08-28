@@ -65,6 +65,14 @@ const (
 	EnrollmentActive    EnrollmentStatus = "active"
 	EnrollmentCompleted EnrollmentStatus = "completed"
 	EnrollmentPaused    EnrollmentStatus = "paused"
+	// EnrollmentTerminated — договор на этот курс расторгнут (см.
+	// events/subscriber.go, handleContractTerminated). Намеренно отдельное
+	// значение, а не EnrollmentPaused: ResumeOrphanedForCourse автоматически
+	// снимает с паузы любую запись со status='paused' И tutor_id IS NULL при
+	// назначении курсу нового преподавателя — расторгнутая запись не должна
+	// случайно "ожить" вместе с легитимно осиротевшими после увольнения
+	// тьютора записями.
+	EnrollmentTerminated EnrollmentStatus = "terminated"
 )
 
 // Enrollment — соответствует таблице enrollments.

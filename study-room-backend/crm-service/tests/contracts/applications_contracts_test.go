@@ -100,6 +100,40 @@ func TestCreateInternal_MissingStudentID_Rejected(t *testing.T) {
 	e.mustOK(res, http.StatusBadRequest)
 }
 
+// TestCreateInternal_RateLimited_OnePerMinutePerStudent — анти-спам:
+// вторая заявка на того же ученика в течение минуты после первой отклоняется
+// 429/RATE_LIMITED (см. ApplicationRepository.HasRecentInternalApplication),
+// а заявка на другого ученика от того же родителя проходит нормально.
+func TestCreateInternal_RateLimited_OnePerMinutePerStudent(t *testing.T) {
+	e := getEnv(t)
+	branchID := int64(7)
+	e.seedUserRef(10, "Пётр Ученик", "student", &branchID)
+	e.seedUserRef(11, "Анна Ученица", "student", &branchID)
+	parentToken := e.accessToken(20, "parent", &branchID)
+
+	first := e.do(http.MethodPost, "/api/v1/crm/applications", map[string]any{
+		"student_id":       10,
+		"subject_interest": "Английский язык",
+	}, parentToken)
+	e.mustOK(first, http.StatusCreated)
+
+	second := e.do(http.MethodPost, "/api/v1/crm/applications", map[string]any{
+		"student_id":       10,
+		"subject_interest": "Английский язык",
+	}, parentToken)
+	e.mustOK(second, http.StatusTooManyRequests)
+	if errCode(second) != "RATE_LIMITED" {
+		t.Fatalf("expected RATE_LIMITED, got %s", errCode(second))
+	}
+
+	// другой ученик — свежий лимит, заявка проходит
+	otherStudent := e.do(http.MethodPost, "/api/v1/crm/applications", map[string]any{
+		"student_id":       11,
+		"subject_interest": "Английский язык",
+	}, parentToken)
+	e.mustOK(otherStudent, http.StatusCreated)
+}
+
 // --- 4.3. GET /applications ----------------------------------------------
 
 func TestListApplications_OwnerOnly(t *testing.T) {

@@ -13,17 +13,20 @@ import (
 const (
 	SubjectContractCreated      = "contract.created"
 	SubjectContractExpiringSoon = "contract.expiring_soon"
+	SubjectContractTerminated   = "contract.terminated"
 )
 
 type Publisher interface {
 	ContractCreated(id, studentID, courseID int64, tutorID *int64, startDate, endDate *string)
 	ContractExpiringSoon(userID int64, studentId int64, contractNumber, endDate string)
+	ContractTerminated(id, studentID, courseID int64)
 }
 
 type NoopPublisher struct{}
 
 func (NoopPublisher) ContractCreated(int64, int64, int64, *int64, *string, *string) {}
-func (NoopPublisher) ContractExpiringSoon(int64, int64, string, string)                     {}
+func (NoopPublisher) ContractExpiringSoon(int64, int64, string, string)             {}
+func (NoopPublisher) ContractTerminated(int64, int64, int64)                        {}
 
 type contractCreatedPayload struct {
 	ID        int64   `json:"id"`
@@ -39,6 +42,18 @@ type contractExpiringSoonPayload struct {
 	StudentID      int64  `json:"student_id"`
 	ContractNumber string `json:"contract_number"`
 	EndDate        string `json:"end_date"`
+}
+
+// contractTerminatedPayload — расторжение договора (PATCH /contracts/{id}/status
+// с status="terminated", api-contracts.md 3.5). Подписан Academic Service
+// (см. academic-service/internal/events/subscriber.go, handleContractTerminated):
+// отменяет все ещё не проведённые (status='scheduled') занятия ученика по
+// этому курсу и переводит саму запись enrollments в status='terminated' —
+// см. комментарий там же для полной картины и обоснования.
+type contractTerminatedPayload struct {
+	ID        int64 `json:"id"`
+	StudentID int64 `json:"student_id"`
+	CourseID  int64 `json:"course_id"`
 }
 
 type NATSPublisher struct {
@@ -82,5 +97,18 @@ func (p *NATSPublisher) ContractExpiringSoon(userID int64, studentID int64, cont
 	}
 	if err := p.nc.Publish(SubjectContractExpiringSoon, data); err != nil {
 		log.Printf("[events] publish contract.expiring_soon error: %v", err)
+	}
+}
+
+// ContractTerminated — публикуется из ContractHandler.UpdateStatus, когда
+// новый статус договора — "terminated" (см. api-contracts.md 3.5).
+func (p *NATSPublisher) ContractTerminated(id, studentID, courseID int64) {
+	data, err := json.Marshal(contractTerminatedPayload{ID: id, StudentID: studentID, CourseID: courseID})
+	if err != nil {
+		log.Printf("[events] marshal contract.terminated error: %v", err)
+		return
+	}
+	if err := p.nc.Publish(SubjectContractTerminated, data); err != nil {
+		log.Printf("[events] publish contract.terminated error: %v", err)
 	}
 }

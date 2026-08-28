@@ -552,6 +552,12 @@
 `auth`: true
 `roles`: `owner` **только**
 
+Расторжение (`status: "terminated"`) публикует событие `contract.terminated`
+(см. `event-schema.md`), на которое подписан Academic Service: у ученика
+отменяются все ещё не проведённые занятия по этому курсу, а сама запись
+на курс (`enrollments`) переводится в `status: "terminated"`. Уже
+проведённые занятия и полная история прогресса не трогаются.
+
 ## 3.6. Отметить оплату вручную
 `PATCH /contracts/{id}/payment-status`
 
@@ -596,6 +602,10 @@
 Тело ответа: созданная заявка (`source: "internal"`, `status: "new"`)
 `auth`: true
 `roles`: `parent`
+
+Анти-спам: не чаще одной заявки в минуту на одного и того же `student_id`
+(двойной клик/повторное нажатие "Отправить" не плодит дубликаты в CRM).
+При превышении — `429` с `{ "error": { "code": "RATE_LIMITED", "message": "..." } }`.
 
 ## 4.3. Список заявок
 `GET /applications?status=`

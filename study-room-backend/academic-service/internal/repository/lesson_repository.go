@@ -260,6 +260,147 @@ func (r *LessonRepository) RemoveStudentEverywhere(ctx context.Context, studentI
 	return tx.Commit(ctx)
 }
 
+// StudentCoursePair — пара (ученик, курс), для которой нужно пересчитать
+// progress_pct (см. EnrollmentRepository.RecalculateProgress). Используется
+// как возврат из AutoCompletePast — вызывающей стороне (фоновая джоба в
+// cmd/api/main.go) не нужно знать внутренности lesson_participants, чтобы
+// понять, кому именно пересчитать прогресс после авто-завершения занятий.
+type StudentCoursePair struct {
+	StudentID int64
+	CourseID  int64
+}
+
+// AutoCompletePast — переводит в status='completed' все ещё
+// "запланированные" (status='scheduled') занятия, которые уже фактически
+// закончились по дате и времени (lesson_date + end_time в прошлом), но
+// которые тьютор не отменил и не отметил вручную. Раньше пометка
+// "проведено" была ручным действием тьютора; теперь занятие считается
+// проведённым автоматически, как только время вышло, если оно не было
+// отменено — тьютору вообще не нужно ничего нажимать.
+//
+// Время сравнивается в часовом поясе Europe/Moscow: даты/время занятий
+// вводятся тьюторами в этом поясе (вся бизнес-логика расписания на нём
+// завязана), независимо от того, в каком часовом поясе физически
+// развёрнута сама БД (обычно UTC на сервере).
+//
+// Вызывается из фоновой джобы (см. cmd/api/main.go, startAutoCompleteJob) —
+// раз в минуту, best-effort. Возвращает пары (ученик, курс), которые нужно
+// пересчитать (см. StudentCoursePair) — по одному занятию может быть
+// несколько участников (групповое занятие), и один и тот же ученик может
+// одновременно завершить несколько занятий за один тик джобы, поэтому пары
+// дедуплицированы.
+func (r *LessonRepository) AutoCompletePast(ctx context.Context) ([]StudentCoursePair, error) {
+	rows, err := r.pool.Query(ctx, `
+		UPDATE lessons SET status = 'completed'
+		WHERE status = 'scheduled'
+		  AND (lesson_date + end_time::time) < (now() AT TIME ZONE 'Europe/Moscow')
+		RETURNING id, course_id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	lessonCourse := map[int64]int64{}
+	var lessonIDs []int64
+	for rows.Next() {
+		var id, courseID int64
+		if err := rows.Scan(&id, &courseID); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		lessonCourse[id] = courseID
+		lessonIDs = append(lessonIDs, id)
+	}
+	scanErr := rows.Err()
+	rows.Close()
+	if scanErr != nil {
+		return nil, scanErr
+	}
+	if len(lessonIDs) == 0 {
+		return nil, nil
+	}
+
+	prows, err := r.pool.Query(ctx,
+		`SELECT lesson_id, student_id FROM lesson_participants WHERE lesson_id = ANY($1)`,
+		lessonIDs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer prows.Close()
+
+	seen := map[StudentCoursePair]bool{}
+	var pairs []StudentCoursePair
+	for prows.Next() {
+		var lessonID, studentID int64
+		if err := prows.Scan(&lessonID, &studentID); err != nil {
+			return nil, err
+		}
+		pair := StudentCoursePair{StudentID: studentID, CourseID: lessonCourse[lessonID]}
+		if !seen[pair] {
+			seen[pair] = true
+			pairs = append(pairs, pair)
+		}
+	}
+	if err := prows.Err(); err != nil {
+		return nil, err
+	}
+	return pairs, nil
+}
+
+// CancelForStudentAndCourse — реакция на расторжение договора ученика по
+// конкретному курсу (см. events/subscriber.go, handleContractTerminated).
+// Отменяет только ещё НЕ проведённые занятия (status='scheduled') — уже
+// состоявшиеся (status='completed') остаются как есть: расторжение
+// договора не отменяет прошлое и не должно портить историю
+// посещаемости/прогресса (см. EnrollmentRepository.RecalculateProgress —
+// в её знаменатель и так не попадают отменённые занятия).
+//
+// Индивидуальные занятия (единственный участник — этот ученик) помечаются
+// status='cancelled' целиком, как при обычной ручной отмене (см. Cancel) —
+// видны в расписании со статусом "Отменено". Групповые занятия, где кроме
+// этого ученика есть другие участники, отменять для всей группы нельзя —
+// ученика просто убирают из lesson_participants (как при выпуске, см.
+// RemoveStudentEverywhere), а само занятие остаётся в расписании для
+// остальных участников.
+//
+// Возвращает количество занятий, реально помеченных отменёнными (для лога
+// в подписчике), не считая тех, откуда ученика просто тихо убрали.
+func (r *LessonRepository) CancelForStudentAndCourse(ctx context.Context, studentID, courseID int64) (int64, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+
+	tag, err := tx.Exec(ctx, `
+		UPDATE lessons SET status = 'cancelled'
+		WHERE course_id = $2 AND status = 'scheduled'
+		  AND id IN (SELECT lesson_id FROM lesson_participants WHERE student_id = $1)
+		  AND id IN (SELECT lesson_id FROM lesson_participants GROUP BY lesson_id HAVING COUNT(*) = 1)
+	`, studentID, courseID)
+	if err != nil {
+		return 0, err
+	}
+	cancelled := tag.RowsAffected()
+
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM lesson_participants
+		WHERE student_id = $1
+		  AND lesson_id IN (
+		    SELECT l.id FROM lessons l
+		    JOIN lesson_participants lp ON lp.lesson_id = l.id AND lp.student_id = $1
+		    WHERE l.course_id = $2 AND l.status = 'scheduled'
+		  )
+	`, studentID, courseID); err != nil {
+		return 0, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return cancelled, nil
+}
+
 // TutorBranchID — филиал преподавателя занятия, для проверки прав
 // branch_owner (курсы больше не привязаны к филиалу).
 func (r *LessonRepository) TutorBranchID(ctx context.Context, lessonID int64) (int64, error) {

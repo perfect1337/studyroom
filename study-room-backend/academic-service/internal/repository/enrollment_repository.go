@@ -299,6 +299,23 @@ func (r *EnrollmentRepository) DeleteByStudent(ctx context.Context, studentID in
 	return tag.RowsAffected(), nil
 }
 
+// TerminateForCourse — переводит enrollment(ы) ученика на конкретном курсе
+// в status='terminated' (см. events/subscriber.go, handleContractTerminated —
+// реакция на расторжение договора). Затрагивает только active/paused
+// записи: уже completed (курс пройден штатно) расторжением договора задним
+// числом не переписывается — это исторический факт, а не текущее состояние.
+// Возвращает количество затронутых строк (для лога в подписчике).
+func (r *EnrollmentRepository) TerminateForCourse(ctx context.Context, studentID, courseID int64) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE enrollments SET status = 'terminated'
+		WHERE student_id = $1 AND course_id = $2 AND status IN ('active', 'paused')
+	`, studentID, courseID)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 // RecalculateProgress — пересчитывает progress_pct ученика по конкретному
 // курсу автоматически, на основе занятий, которые ему реально ставит
 // преподаватель (таблицы lessons/lesson_participants), а не вручную.

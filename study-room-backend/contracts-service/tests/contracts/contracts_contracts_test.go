@@ -279,6 +279,37 @@ func TestUpdateContractStatus_Invalid(t *testing.T) {
 	e.mustOK(res, http.StatusBadRequest)
 }
 
+// TestTerminateContract_PublishesEventAndNotFound — расторжение
+// (status=terminated) публикует contract.terminated (см. events/publisher.go,
+// ContractTerminated) — сам факт публикации через NoopPublisher{} в этих
+// HTTP-тестах не проверить (нет реального брокера, см. setup_test.go), но
+// важно, что путь с доп. чтением договора (GetByID перед UpdateStatus, см.
+// ContractHandler.UpdateStatus) не ломает ни успешный сценарий, ни 404 для
+// несуществующего договора.
+func TestTerminateContract_PublishesEventAndNotFound(t *testing.T) {
+	e := getEnv(t)
+	ownerToken := e.accessToken(1, "owner", nil)
+	created := e.do(http.MethodPost, "/api/v1/contracts", createContractBody(100, 300, 12, 1), ownerToken)
+	e.mustOK(created, http.StatusCreated)
+	id := toPathID(created.Body["id"])
+
+	res := e.do(http.MethodPatch, "/api/v1/contracts/"+id+"/status", map[string]any{
+		"status": "terminated",
+	}, ownerToken)
+	e.mustOK(res, http.StatusOK)
+
+	get := e.do(http.MethodGet, "/api/v1/contracts/"+id, nil, ownerToken)
+	e.mustOK(get, http.StatusOK)
+	if get.Body["status"] != "terminated" {
+		t.Fatalf("expected status=terminated, got %+v", get.Body["status"])
+	}
+
+	notFound := e.do(http.MethodPatch, "/api/v1/contracts/999999/status", map[string]any{
+		"status": "terminated",
+	}, ownerToken)
+	e.mustOK(notFound, http.StatusNotFound)
+}
+
 // --- 3.6. PATCH /contracts/{id}/payment-status -----------------------------
 
 func TestUpdatePaymentStatus(t *testing.T) {

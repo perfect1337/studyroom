@@ -305,6 +305,15 @@ type updateStatusRequest struct {
 
 // UpdateStatus — PATCH /contracts/{id}/status (api-contracts.md 3.5), roles:
 // owner (любой договор), branch_owner (только договор своего филиала).
+//
+// Расторжение (status="terminated") публикует contract.terminated (см.
+// events/publisher.go) — на него подписан Academic Service и каскадно
+// отменяет ещё не проведённые занятия ученика по этому курсу и переводит
+// саму запись enrollments в status="terminated" (см.
+// academic-service/internal/events/subscriber.go, handleContractTerminated).
+// Событие публикуется best-effort уже ПОСЛЕ успешного обновления статуса
+// самого договора — сбой доставки не должен блокировать расторжение
+// договора как таковое, это asynchronous side-effect, а не часть транзакции.
 func (h *ContractHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	claims, _ := middleware.FromContext(r.Context())
 
@@ -326,6 +335,24 @@ func (h *ContractHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "status must be one of active/completed/terminated")
 		return
 	}
+
+	// Договор нужен ДО обновления статуса — student_id/course_id не
+	// меняются самим UpdateStatus, но GetByID после успешного апдейта не
+	// вернёт ничего нового и лишь добавляет ещё один запрос к БД впустую;
+	// читаем его один раз заранее.
+	var contract *models.Contract
+	if req.Status == string(models.StatusTerminated) {
+		contract, err = h.repo.GetByID(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "NOT_FOUND", "contract not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load contract")
+			return
+		}
+	}
+
 	if err := h.repo.UpdateStatus(r.Context(), id, req.Status); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "contract not found")
@@ -334,6 +361,11 @@ func (h *ContractHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to update status")
 		return
 	}
+
+	if contract != nil {
+		h.events.ContractTerminated(contract.ID, contract.StudentID, contract.CourseID)
+	}
+
 	w.WriteHeader(http.StatusOK)
 }
 

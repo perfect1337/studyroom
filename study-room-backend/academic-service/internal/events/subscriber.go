@@ -48,6 +48,16 @@ type ContractCreatedEvent struct {
 	EndDate    *string `json:"end_date"`
 }
 
+// ContractTerminatedEvent — расторжение договора (см.
+// contracts-service/internal/events/publisher.go, ContractTerminated —
+// ✅ реализован, форма зафиксирована и на публикующей, и на подписанной
+// стороне, см. event-schema.md v1.contract.terminated).
+type ContractTerminatedEvent struct {
+	ContractID int64 `json:"id"`
+	StudentID  int64 `json:"student_id"`
+	CourseID   int64 `json:"course_id"`
+}
+
 // UserDeletedEvent — соответствует events.UserDeletedEvent из User Service
 // (см. user-service/internal/events/publisher.go). Единственный источник на
 // момент написания — ежегодное автоудаление выпускников 11 класса (см.
@@ -100,6 +110,9 @@ func (s *Subscriber) Start(ctx context.Context) error {
 		return err
 	}
 	if _, err := s.nc.QueueSubscribe("contract.created", "academic-service", s.handleContractCreated(ctx)); err != nil {
+		return err
+	}
+	if _, err := s.nc.QueueSubscribe("contract.terminated", "academic-service", s.handleContractTerminated(ctx)); err != nil {
 		return err
 	}
 	if _, err := s.nc.QueueSubscribe("user.deleted", "academic-service", s.handleUserDeleted(ctx)); err != nil {
@@ -313,6 +326,52 @@ func (s *Subscriber) handleContractCreated(ctx context.Context) nats.MsgHandler 
 		}
 		if _, err := s.enrollRepo.CreateFromContract(ctx, ev.StudentID, ev.CourseID, ev.TutorID, ev.StartDate, ev.EndDate); err != nil {
 			log.Printf("[events] create enrollment from contract %d error: %v", ev.ContractID, err)
+		}
+	}
+}
+
+// handleContractTerminated — реакция на расторжение договора (см.
+// contracts-service/internal/handlers/contract_handler.go, UpdateStatus).
+// По требованию: расторжение договора ученика отменяет ВСЕ его занятия по
+// этому курсу вместе с самой активной записью (enrollment) на курс.
+//
+// Порядок важен: сначала отменяем занятия (LessonRepository.
+// CancelForStudentAndCourse — только ещё не проведённые, см. её комментарий),
+// ПОТОМ переводим enrollment в status='terminated'. Если бы enrollment
+// терминировался первым, а отмена занятий упала бы с ошибкой, ученик
+// остался бы с расторгнутым договором, но всё ещё активными занятиями в
+// расписании — заметно более странная незавершённость, чем наоборот (лишние
+// отменённые занятия при технически ещё не расторгнутом enrollment почти
+// незаметны и безвредны). Обе операции best-effort и независимы друг от
+// друга — ошибка одной не блокирует другую, только логируется.
+func (s *Subscriber) handleContractTerminated(ctx context.Context) nats.MsgHandler {
+	return func(msg *nats.Msg) {
+		var ev ContractTerminatedEvent
+		if err := json.Unmarshal(msg.Data, &ev); err != nil {
+			log.Printf("[events] contract.terminated unmarshal error: %v", err)
+			return
+		}
+		if ev.StudentID == 0 || ev.CourseID == 0 {
+			log.Printf("[events] contract.terminated: missing student_id/course_id, skip (contract_id=%d)", ev.ContractID)
+			return
+		}
+
+		if s.lessonRepo != nil {
+			if n, err := s.lessonRepo.CancelForStudentAndCourse(ctx, ev.StudentID, ev.CourseID); err != nil {
+				log.Printf("[events] contract %d terminated: cancel lessons for student %d/course %d error: %v",
+					ev.ContractID, ev.StudentID, ev.CourseID, err)
+			} else if n > 0 {
+				log.Printf("[events] contract %d terminated: cancelled %d lesson(s) for student %d/course %d",
+					ev.ContractID, n, ev.StudentID, ev.CourseID)
+			}
+		}
+
+		if n, err := s.enrollRepo.TerminateForCourse(ctx, ev.StudentID, ev.CourseID); err != nil {
+			log.Printf("[events] contract %d terminated: update enrollment for student %d/course %d error: %v",
+				ev.ContractID, ev.StudentID, ev.CourseID, err)
+		} else if n == 0 {
+			log.Printf("[events] contract %d terminated: no active/paused enrollment found for student %d/course %d",
+				ev.ContractID, ev.StudentID, ev.CourseID)
 		}
 	}
 }

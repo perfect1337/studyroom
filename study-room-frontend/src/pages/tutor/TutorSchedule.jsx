@@ -3,7 +3,7 @@ import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import EditLessonModal from "../../components/lessons/EditLessonModal.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchLessons, fetchCourses, fetchEnrollments, fetchAttendance } from "../../api/academic.js";
+import { fetchLessons, fetchCourses, fetchEnrollments, fetchAttendance, updateLesson } from "../../api/academic.js";
 import { fetchMyPeople } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import { subscribeQuery } from "../../api/queryCache.js";
@@ -72,6 +72,38 @@ export default function TutorSchedule() {
   // сервером по tutor_id = свой (см. fetchLessons({ tutor_id: user.id, ... })
   // выше), так что репетитор физически не может открыть чужое занятие.
   const [editingLesson, setEditingLesson] = useState(null);
+
+  // Отметка занятия проведённым — единственный способ реально сдвинуть
+  // прогресс ученика по курсу (см. progress_pct на бэкенде:
+  // EnrollmentRepository.RecalculateProgress считает его по фактическому
+  // количеству занятий со status='completed'). Раньше "Выполнено" в этой
+  // карточке было чисто визуальным — считалось по прошедшей дате
+  // (isLessonPast), но на бэкенде статус занятия оставался 'scheduled'
+  // навсегда, и прогресс никогда не менялся. Теперь дата/badge — это лишь
+  // подсказка "пора отметить", а фактическое изменение статуса — отдельное
+  // явное действие тьютора.
+  const [markingCompletedId, setMarkingCompletedId] = useState(null);
+  // { lessonId, message } — привязана к конкретному занятию, чтобы ошибка
+  // при отметке одного занятия не "размножалась" на все карточки в списке.
+  const [markCompletedError, setMarkCompletedError] = useState(null);
+
+  async function handleMarkCompleted(lesson) {
+    setMarkingCompletedId(lesson.id);
+    setMarkCompletedError(null);
+    try {
+      const updated = await updateLesson(lesson.id, { status: "completed" });
+      setLessons((prev) => prev.map((l) => (l.id === lesson.id ? { ...l, ...(updated ?? { status: "completed" }) } : l)));
+      // updateLesson уже инвалидировал кэш "lessons" (см. api/academic.js),
+      // на который эта страница подписана (см. subscribeQuery ниже) — та
+      // подписка сама перезапросит lessons И enrollments (load() тянет оба
+      // сразу), так что progress_pct на карточках учеников обновится без
+      // дополнительного кода здесь.
+    } catch (err) {
+      setMarkCompletedError({ lessonId: lesson.id, message: err.message || "Не удалось отметить занятие проведённым" });
+    } finally {
+      setMarkingCompletedId(null);
+    }
+  }
 
   function handleLessonSaved(updated) {
     setLessons((prev) => prev.map((l) => (l.id === updated.id ? { ...l, ...updated } : l)));
@@ -344,8 +376,9 @@ export default function TutorSchedule() {
                 const course = coursesById[lesson.course_id];
                 const color = courseColor[lesson.course_id] ?? "#004ac6";
                 const isCancelled = lesson.status === "cancelled";
+                const isCompletedInBackend = lesson.status === "completed";
                 const isDone =
-                  lesson.status === "completed" || lesson.status === "conducted" || (!isCancelled && isLessonPast(lesson, today));
+                  isCompletedInBackend || lesson.status === "conducted" || (!isCancelled && isLessonPast(lesson, today));
                 const roster = activeStudentsByCourse[lesson.course_id] ?? [];
                 const attendance = attendanceByLesson[lesson.id] ?? [];
                 const attendanceByStudent = {};
@@ -369,6 +402,17 @@ export default function TutorSchedule() {
                         </div>
                         <div className="flex flex-col items-end gap-2 shrink-0">
                           <StatusBadge status={isCancelled ? "Отменено" : isDone ? "Выполнено" : "Ожидание"} />
+                          {!isCancelled && !isCompletedInBackend && (
+                            <button
+                              type="button"
+                              onClick={() => handleMarkCompleted(lesson)}
+                              disabled={markingCompletedId === lesson.id}
+                              className="flex items-center gap-1 px-3 py-1 rounded-full font-label-md text-[12px] text-primary bg-primary-container/40 hover:bg-primary-container/70 transition-colors disabled:opacity-60"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">check_circle</span>
+                              {markingCompletedId === lesson.id ? "Отмечаем…" : "Отметить проведённым"}
+                            </button>
+                          )}
                           {!isCancelled && (
                             <button
                               type="button"
@@ -381,6 +425,9 @@ export default function TutorSchedule() {
                           )}
                         </div>
                       </div>
+                      {markCompletedError && markCompletedError.lessonId === lesson.id && (
+                        <p className="text-[12px] text-error -mt-2 mb-2">{markCompletedError.message}</p>
+                      )}
 
                       <div className="space-y-4">
                         {/* Карточка преподавателя занятия — по аналогии с карточкой

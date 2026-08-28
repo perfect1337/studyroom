@@ -65,6 +65,9 @@ func main() {
 	r := app.NewRouter(deps)
 	srv := app.NewServer(":"+cfg.Port, r)
 
+	stopAutoComplete := startAutoCompleteJob(ctx, deps)
+	defer stopAutoComplete()
+
 	go func() {
 		log.Printf("academic-service listening on :%s", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -81,4 +84,55 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	srv.Shutdown(shutdownCtx)
+}
+
+// autoCompleteInterval — как часто фоновая джоба проверяет, не закончились
+// ли по времени ещё не отменённые занятия. Раз в минуту — занятие не должно
+// висеть "запланированным" (и не учитываться в прогрессе) дольше минуты
+// после фактического окончания, но и не создаёт заметной нагрузки на БД
+// при масштабе этого проекта.
+const autoCompleteInterval = time.Minute
+
+// startAutoCompleteJob — фоновая замена ручной кнопки "Отметить проведённым":
+// раз в минуту переводит в status='completed' все занятия, которые уже
+// закончились по дате/времени (см. LessonRepository.AutoCompletePast) и не
+// были отменены, и пересчитывает progress_pct задетых пар ученик/курс (см.
+// EnrollmentRepository.RecalculateProgress) — именно так прогресс из задачи
+// "4 занятия, 1 прошло → 25%" двигается сам, без действий тьютора.
+func startAutoCompleteJob(ctx context.Context, deps *app.Deps) func() {
+	ticker := time.NewTicker(autoCompleteInterval)
+	done := make(chan struct{})
+
+	run := func() {
+		pairs, err := deps.Lessons.AutoCompletePast(ctx)
+		if err != nil {
+			log.Printf("[auto-complete-job] AutoCompletePast error: %v", err)
+			return
+		}
+		for _, p := range pairs {
+			if _, err := deps.Enrollments.RecalculateProgress(ctx, p.StudentID, p.CourseID); err != nil {
+				log.Printf("[auto-complete-job] recalc progress student=%d course=%d error: %v", p.StudentID, p.CourseID, err)
+			}
+		}
+		if len(pairs) > 0 {
+			log.Printf("[auto-complete-job] auto-completed lessons, recalculated progress for %d student/course pair(s)", len(pairs))
+		}
+	}
+
+	go func() {
+		run()
+		for {
+			select {
+			case <-ticker.C:
+				run()
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	return func() {
+		ticker.Stop()
+		close(done)
+	}
 }

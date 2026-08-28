@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"studyroom/crm-service/internal/auth"
@@ -107,11 +108,20 @@ type createInternalRequest struct {
 	Phone      *string `json:"phone"`
 }
 
+// applicationRateLimit — минимальный интервал между заявками "Записаться
+// на новый курс" от одного и того же ученика (см.
+// ApplicationRepository.HasRecentInternalApplication).
+const applicationRateLimit = time.Minute
+
 // CreateInternal — POST /applications (api-contracts.md 4.2), roles: parent
 // (проверяется в роутере). Имя заявки берётся из локального кэша
 // user_refs по student_id (наполняется событиями user.*) — если событие
 // ещё не дошло, используется заглушка "Ученик #id", заявка всё равно
 // создаётся (не блокируем родителя из-за задержки доставки события).
+//
+// Анти-спам: не чаще одной заявки в минуту на одного ученика (см.
+// applicationRateLimit) — защита от дублей при повторном/двойном клике по
+// кнопке "Отправить".
 func (h *ApplicationHandler) CreateInternal(w http.ResponseWriter, r *http.Request) {
 	var req createInternalRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -120,6 +130,16 @@ func (h *ApplicationHandler) CreateInternal(w http.ResponseWriter, r *http.Reque
 	}
 	if req.StudentID == 0 {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student_id is required")
+		return
+	}
+
+	recent, err := h.repo.HasRecentInternalApplication(r.Context(), req.StudentID, applicationRateLimit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check application rate limit")
+		return
+	}
+	if recent {
+		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Заявку на запись этого ученика можно отправлять не чаще одного раза в минуту")
 		return
 	}
 
