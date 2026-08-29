@@ -106,22 +106,46 @@ export default function ParentOverview() {
         if (kids[0]) setApplyChildId(String(kids[0].id));
 
         if (kids.length) {
-          const enrollResults = await Promise.all(
-            kids.map((c) => fetchEnrollments({ student_id: c.id }).catch(() => ({ items: [] })))
-          );
+          // ВАЖНО: бэкенд для роли parent игнорирует query-параметр
+          // student_id в GET /enrollments и GET /lessons и всегда отдаёт
+          // записи по ВСЕМ детям родителя разом (см. academic-service
+          // EnrollmentHandler.List/LessonHandler.List, case
+          // models.RoleParent: filter.StudentIDs = children). Раньше здесь
+          // делали отдельный запрос на каждого ребёнка и клали ответ "как
+          // есть" под его id — по факту под КАЖДЫМ ребёнком оказывался один
+          // и тот же полный список (записи/занятия всех детей), из-за чего
+          // прогресс и ближайшие занятия одного ребёнка "утекали" в карточку
+          // другого (и наоборот — у ребёнка без занятий показывались занятия
+          // первого). Теперь грузим один раз и фильтруем на фронте по
+          // конкретному ребёнку: по student_id для enrollments, по
+          // participant_ids (с фолбэком на курсы, на которые записан
+          // ребёнок) для lessons — тот же приём, что и в ParentSchedule.jsx.
+          const enrollRes = await fetchEnrollments().catch(() => ({ items: [] }));
+          const allEnrollments = enrollRes?.items ?? [];
+          const courseIdsByChild = {};
           if (!cancelled) {
             const map = {};
-            kids.forEach((c, i) => (map[c.id] = enrollResults[i]?.items ?? []));
+            kids.forEach((c) => {
+              const own = allEnrollments.filter((e) => e.student_id === c.id);
+              map[c.id] = own;
+              courseIdsByChild[c.id] = new Set(own.map((e) => e.course_id));
+            });
             setEnrollmentsByChild(map);
           }
 
-          const lessonResults = await Promise.all(
-            kids.map((c) => fetchLessons({ student_id: c.id, date_from: todayISO() }).catch(() => ({ items: [] })))
-          );
+          const lessonsRes = await fetchLessons({ date_from: todayISO() }).catch(() => ({ items: [] }));
+          const allLessons = lessonsRes?.items ?? [];
           if (!cancelled) {
-            const all = kids.flatMap((c, i) =>
-              (lessonResults[i]?.items ?? []).map((l) => ({ ...l, _childId: c.id, _childName: fullName(c) }))
-            );
+            const all = [];
+            kids.forEach((c) => {
+              const own = allLessons.filter((l) => {
+                if (Array.isArray(l.participant_ids) && l.participant_ids.length > 0) {
+                  return l.participant_ids.includes(c.id);
+                }
+                return courseIdsByChild[c.id]?.has(l.course_id) ?? false;
+              });
+              own.forEach((l) => all.push({ ...l, _childId: c.id, _childName: fullName(c) }));
+            });
             all.sort((a, b) => (a.lesson_date + a.start_time).localeCompare(b.lesson_date + b.start_time));
             setUpcomingLessons(all.slice(0, 5));
           }

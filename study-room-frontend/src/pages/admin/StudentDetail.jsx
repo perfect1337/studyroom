@@ -171,14 +171,41 @@ export default function StudentDetail({ role = "parent" }) {
         if (cancelled) return;
         setChild(childRes);
         const childIdNum = Number(childId);
-        setEnrollments((enrollRes?.items ?? []).filter((e) => e.student_id === childIdNum));
+        const childEnrollments = (enrollRes?.items ?? []).filter((e) => e.student_id === childIdNum);
+        setEnrollments(childEnrollments);
         setCourses(coursesRes?.items ?? []);
-        setHomework(homeworkRes?.items ?? []);
-        const lessonItems = lessonsRes?.items ?? [];
+
+        // ВАЖНО: query-параметр student_id, который мы передаём в
+        // fetchHomework/fetchLessons/fetchTests выше, бэкенд честно
+        // учитывает только для owner/branch_owner. Для parent он игнорируется
+        // целиком (см. academic-service *_handler.go, case models.RoleParent:
+        // filter.StudentIDs = <все дети родителя>), а для tutor фильтрует по
+        // created_by/tutor_id, а не по ученику (case models.RoleTutor) —
+        // в обоих случаях в ответе прилетают записи ПО ВСЕМ ученикам
+        // родителя/тьютора, а не только по этому childId. Раньше это
+        // складывали в state как есть, из-за чего при открытии карточки
+        // одного ребёнка/ученика показывались занятия, домашки и тесты
+        // другого (и наоборот — заходишь к ребёнку без занятий, а видишь
+        // расписание первого). Поэтому здесь дополнительно фильтруем на
+        // фронте по конкретному childId — безопасно и для ролей, где
+        // бэкенд и так фильтрует правильно (owner/branch_owner): фильтр
+        // просто ничего не отбросит лишнего.
+        setHomework((homeworkRes?.items ?? []).filter((h) => h.student_id === childIdNum));
+        setTests((testsRes?.items ?? []).filter((t) => t.student_id === childIdNum));
+
+        // Курсы, на которые записан именно этот ребёнок/ученик — фолбэк для
+        // занятий без participant_ids (не должно происходить в норме, см.
+        // LessonHandler.Create, но подстрахуемся, как и в ParentSchedule.jsx).
+        const ownCourseIds = new Set(childEnrollments.map((e) => e.course_id));
+        const lessonItems = (lessonsRes?.items ?? []).filter((l) => {
+          if (Array.isArray(l.participant_ids) && l.participant_ids.length > 0) {
+            return l.participant_ids.includes(childIdNum);
+          }
+          return ownCourseIds.has(l.course_id);
+        });
         setLessons(lessonItems);
         const myPeopleTutors = peopleRes?.tutors ?? [];
         setTutors(myPeopleTutors);
-        setTests(testsRes?.items ?? []);
 
         // Подтягиваем ФИО для tutor_id, которых не было в fetchMyPeople()
         // (см. комментарий у extraTutors выше) — актуально прежде всего для

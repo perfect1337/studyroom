@@ -96,23 +96,43 @@ export function fetchLessons({ tutor_id, student_id, branch_id, date_from, date_
 }
 
 // 2.8 Создать занятие
+//
+// ВАЖНО: создание занятия — это ещё и новый знаменатель прогресса ученика по
+// курсу (бэкенд сам пересчитывает progress_pct участников, см.
+// academic-service LessonHandler.Create -> recalculateProgress), но раньше
+// здесь инвалидировался только кэш "lessons" — кэш "enrollments" (где как
+// раз лежит progress_pct) оставался старым до истечения его собственного
+// staleTime. Из-за этого после создания занятия карточка ученика могла ещё
+// какое-то время показывать прежний процент прогресса.
 export function createLesson(payload) {
   return academicApi("/lessons", { method: "POST", body: payload }).then((res) => {
     invalidateQuery(["lessons"]);
+    invalidateQuery(["enrollments"]);
     return res;
   });
 }
 
 // 2.9 Обновить / отменить занятие
+//
+// ВАЖНО: то же самое для смены статуса занятия — в первую очередь для
+// отметки "проведено" (status='completed'), которая на бэкенде сразу
+// пересчитывает progress_pct (см. LessonHandler.Update). Без инвалидации
+// "enrollments" здесь тьютор мог нажать "Отметить проведённым", занятие
+// в календаре переходило в "Выполнено", а процент прогресса на карточке
+// ученика при этом визуально не менялся, пока не истечёт кэш enrollments
+// или не будет сделан полный релоад страницы — выглядело так, будто
+// прогресс "не считается" даже для явно проведённых занятий.
 export function updateLesson(id, patch) {
   return academicApi(`/lessons/${id}`, { method: "PATCH", body: patch }).then((res) => {
     invalidateQuery(["lessons"]);
+    invalidateQuery(["enrollments"]);
     return res;
   });
 }
 export function cancelLesson(id) {
   return academicApi(`/lessons/${id}`, { method: "DELETE" }).then((res) => {
     invalidateQuery(["lessons"]);
+    invalidateQuery(["enrollments"]);
     return res;
   });
 }
