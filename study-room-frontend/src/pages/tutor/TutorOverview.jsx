@@ -5,6 +5,8 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchLessons, fetchEnrollments, fetchCourses, fetchAttendance, assignHomework } from "../../api/academic.js";
 import { fetchMyPeople } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+import TelegramConnectBanner from "../../components/notifications/TelegramConnectBanner.jsx";
+import { useTelegramConnectPrompt } from "../../hooks/useTelegramConnectPrompt.js";
 
 function pad(n) {
   return String(n).padStart(2, "0");
@@ -25,6 +27,7 @@ function initials(person) {
 export default function TutorOverview() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const showTelegramPrompt = useTelegramConnectPrompt();
 
   const [todayLessons, setTodayLessons] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
@@ -295,6 +298,8 @@ export default function TutorOverview() {
           </section>
         </div>
       </div>
+
+      <TelegramConnectBanner show={showTelegramPrompt} />
     </DashboardShell>
   );
 }

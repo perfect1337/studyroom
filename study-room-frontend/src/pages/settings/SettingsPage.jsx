@@ -493,17 +493,19 @@ export default function SettingsPage({ role }) {
             <p className="text-sm text-on-surface-variant">Загрузка настроек...</p>
           ) : (
             <div className="space-y-stack-md">
-              {/* Telegram */}
-              <div className="bg-surface rounded-xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="material-symbols-outlined text-primary">telegram</span>
-                    <div>
+              {/* Telegram — адаптивно под любые экраны: на узких (мобильных)
+                  шапка блока переходит на две строки (текст сверху,
+                  переключатель под ним на всю ширину), на планшетах/десктопе
+                  остаётся в одну строку, как раньше. */}
+              <div className="bg-surface rounded-xl p-3 sm:p-4 space-y-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="min-w-0">
                       <p className="font-label-md font-bold text-on-surface">Telegram</p>
-                      <p className="text-xs text-on-surface-variant">Уведомления о занятиях, оценках и платежах</p>
+                      <p className="text-xs text-on-surface-variant break-words">Уведомления о занятиях, оценках и платежах</p>
                     </div>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
+                  <label className="relative inline-flex items-center cursor-pointer self-start shrink-0 sm:self-auto">
                     <input
                       type="checkbox"
                       checked={!!notifSettings?.telegram_enabled}
@@ -518,7 +520,7 @@ export default function SettingsPage({ role }) {
                   <div className={`flex items-center gap-2 text-xs font-bold ${
                     tgStatus.connected ? "text-primary" : "text-warning"
                   }`}>
-                    <span className={`w-2 h-2 rounded-full ${tgStatus.connected ? "bg-primary" : "bg-warning"}`}></span>
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${tgStatus.connected ? "bg-primary" : "bg-warning"}`}></span>
                     {tgStatus.connected ? "Подключено" : "Не подключено"}
                   </div>
                 )}
@@ -528,7 +530,7 @@ export default function SettingsPage({ role }) {
                 ) : !tgStatus?.connected && notifSettings?.telegram_enabled ? (
                   <div className="bg-surface-container-low border border-outline-variant rounded-lg p-3 space-y-2">
                     <p className="text-xs font-bold text-on-surface">👋 Для подключения:</p>
-                    <ol className="text-xs text-on-surface-variant space-y-1 list-decimal list-inside">
+                    <ol className="text-xs text-on-surface-variant space-y-1 list-decimal list-inside break-words">
                       <li>Откройте бота <strong>Study Room</strong></li>
                       <li>Нажмите <code className="bg-surface px-1 rounded text-[10px] font-mono">/start</code></li>
                       <li>Введите email, указанный при регистрации</li>
@@ -537,7 +539,7 @@ export default function SettingsPage({ role }) {
                       href="https://t.me/StudyRoomNotificationBot"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 bg-primary text-on-primary px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-90 transition-opacity"
+                      className="inline-flex items-center gap-1.5 bg-primary text-on-primary px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-90 transition-opacity w-full sm:w-auto justify-center"
                     >
                       <span className="material-symbols-outlined text-[14px]">open_in_new</span>
                       Открыть бота
@@ -545,8 +547,8 @@ export default function SettingsPage({ role }) {
                   </div>
                 ) : tgStatus?.connected ? (
                   <div className="bg-primary/10 border border-primary/30 rounded-lg p-2 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary text-[16px]">check_circle</span>
-                    <p className="text-xs text-primary font-medium">
+                    <span className="material-symbols-outlined text-primary text-[16px] shrink-0">check_circle</span>
+                    <p className="text-xs text-primary font-medium break-words">
                       {tgStatus.telegram_username ? `Подключено как @${tgStatus.telegram_username}` : "Telegram подключён"}
                     </p>
                   </div>

@@ -256,26 +256,6 @@ export default function ParentOverview() {
   return (
     <DashboardShell role="parent" user={toSidebarUser(user)} searchPlaceholder="Поиск..." userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
       <div className="space-y-stack-lg pb-stack-lg">
-        {notif?.telegram_enabled && tgStatus && !tgStatus.connected && (
-          <div className="bg-surface-container-low border border-outline-variant rounded-xl p-4 flex items-start gap-3 shadow-sm">
-            <span className="material-symbols-outlined text-primary text-[22px] mt-0.5">telegram</span>
-            <div className="flex-1 min-w-0">
-              <p className="font-label-md text-on-surface font-bold mb-1">Подключите Telegram для уведомлений</p>
-              <p className="text-sm text-on-surface-variant mb-3">
-                Перейдите в бота <strong>Study Room</strong>, нажмите <code className="bg-surface-container px-1.5 py-0.5 rounded text-xs font-mono">/start</code> и введите ваш email.
-              </p>
-              <a
-                href="https://t.me/StudyRoomNotificationBot"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md font-bold hover:opacity-90 transition-opacity"
-              >
-                <span className="material-symbols-outlined text-[18px]">open_in_new</span>
-                Открыть бота
-              </a>
-            </div>
-          </div>
-        )}
         {error && (
           <div className="p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
         )}
@@ -698,6 +678,29 @@ export default function ParentOverview() {
             </div>
           </div>
         </div>
+
+        {/* Баннер про подключение Telegram — снизу, как и остальные
+            уведомления/подсказки о настройках (см. блок "Уведомления" на
+            /settings), а не первым делом при входе на страницу. */}
+        {notif?.telegram_enabled && tgStatus && !tgStatus.connected && (
+          <div className="bg-surface-container-low border border-outline-variant rounded-xl p-4 flex items-start gap-3 shadow-sm">
+            <div className="flex-1 min-w-0">
+              <p className="font-label-md text-on-surface font-bold mb-1">Подключите Telegram для уведомлений</p>
+              <p className="text-sm text-on-surface-variant mb-3">
+                Перейдите в бота <strong>Study Room</strong>, нажмите <code className="bg-surface-container px-1.5 py-0.5 rounded text-xs font-mono">/start</code> и введите ваш email.
+              </p>
+              <a
+                href="https://t.me/StudyRoomNotificationBot"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md font-bold hover:opacity-90 transition-opacity"
+              >
+                <span className="material-symbols-outlined text-[18px]">open_in_new</span>
+                Открыть бота
+              </a>
+            </div>
+          </div>
+        )}
       </div>
     </DashboardShell>
   );

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -25,6 +26,54 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config error: %v", err)
+	}
+
+	// Кастомный DialContext: сначала пробуем все IPv6-адреса хоста, затем
+	// все IPv4 — и только если ни один не подключился, отдаём дело
+	// стандартному dial'у. Нужен, если сеть до внешних API (Telegram,
+	// SMTP и т.п.) нестабильна по одному из семейств адресов.
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			// Получаем все IP-адреса для хоста.
+			addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if err != nil {
+				return nil, err
+			}
+			var ipv6Addrs, ipv4Addrs []net.IP
+			for _, ip := range addrs {
+				if ip.IP.To4() == nil && ip.IP.To16() != nil {
+					ipv6Addrs = append(ipv6Addrs, ip.IP)
+				} else if ip.IP.To4() != nil {
+					ipv4Addrs = append(ipv4Addrs, ip.IP)
+				}
+			}
+			dialer := &net.Dialer{Timeout: 30 * time.Second}
+			// Сначала пробуем IPv6.
+			for _, ip := range ipv6Addrs {
+				conn, err := dialer.DialContext(ctx, "tcp6", net.JoinHostPort(ip.String(), port))
+				if err == nil {
+					return conn, nil
+				}
+			}
+			// Если IPv6 не сработал, пробуем IPv4.
+			for _, ip := range ipv4Addrs {
+				conn, err := dialer.DialContext(ctx, "tcp4", net.JoinHostPort(ip.String(), port))
+				if err == nil {
+					return conn, nil
+				}
+			}
+			// Если ничего не вышло — стандартный dial как запасной вариант.
+			return dialer.DialContext(ctx, network, addr)
+		},
+		ForceAttemptHTTP2: true,
+	}
+	http.DefaultClient = &http.Client{
+		Transport: transport,
+		Timeout:   30 * time.Second,
 	}
 
 	pool, err := db.NewPool(ctx, cfg.DatabaseURL)

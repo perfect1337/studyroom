@@ -33,6 +33,38 @@ function initials(person) {
   return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
 }
 
+// Бэкенд не хранит время принятия решения по заявке (updated_at/handled_at
+// нет ни в модели, ни в контракте — см. crm-service/internal/models),
+// только created_at. Поэтому история заявок без доп. данных сортировалась
+// по дате СОЗДАНИЯ заявки — и только что принятая/отклонённая, но поданная
+// раньше других, "проваливалась" вниз списка вместо появления в начале.
+// Чтобы owner/branch_owner сразу видели своё решение сверху, запоминаем
+// момент принятия решения на фронте (id заявки -> timestamp) и сохраняем
+// его в localStorage, чтобы порядок не сбрасывался при перезагрузке
+// страницы. Для заявок без такой метки (обработаны раньше, до этого
+// изменения, или в другой сессии/браузере) используется прежний фолбэк —
+// created_at.
+const DECISION_ORDER_STORAGE_KEY = "studyroom.crm.applicationDecisionOrder";
+
+function loadDecisionTimestamps() {
+  try {
+    const raw = localStorage.getItem(DECISION_ORDER_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveDecisionTimestamps(map) {
+  try {
+    localStorage.setItem(DECISION_ORDER_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    // localStorage недоступен (приватный режим и т.п.) — не критично,
+    // просто не запомним порядок между перезагрузками.
+  }
+}
+
 // OverviewDirectory — раздел "Обзор" (сводка + новые заявки + преподаватели).
 // Общий компонент для owner (/admin) и branch_owner (/branch): у руководителя
 // филиала — тот же функционал (выручка, новые заявки CRM, таблица
@@ -64,6 +96,11 @@ export default function OverviewDirectory({ role }) {
   const [historySearch, setHistorySearch] = useState("");
   const [historyFilter, setHistoryFilter] = useState("all"); // all | converted | rejected
   const [selectedHistoryApplication, setSelectedHistoryApplication] = useState(null);
+
+  // Момент принятия решения по заявке (id -> timestamp), см. комментарий
+  // у DECISION_ORDER_STORAGE_KEY выше — нужен, чтобы только что
+  // принятая/отклонённая заявка сразу оказывалась в начале истории.
+  const [decisionTimestamps, setDecisionTimestamps] = useState(() => loadDecisionTimestamps());
 
   async function load() {
     setLoading(true);
@@ -103,13 +140,21 @@ export default function OverviewDirectory({ role }) {
   const newApplications = useMemo(() => applications.filter((a) => a.status === "new"), [applications]);
 
   // История — уже принятые ("converted") или отклонённые ("rejected")
-  // заявки, отсортированные от самых свежих к старым.
+  // заявки. Сортируем не по дате подачи заявки, а по моменту решения:
+  // только что принятая/отклонённая заявка должна оказаться в начале
+  // списка, а не остаться внизу из-за старой даты создания. Если момент
+  // решения ещё не зафиксирован на этом фронте (заявка обработана раньше
+  // или в другом браузере) — используем created_at как раньше.
   const historyApplications = useMemo(
     () =>
       applications
         .filter((a) => a.status === "converted" || a.status === "rejected")
-        .sort((a, b) => new Date(b.created_at ?? 0) - new Date(a.created_at ?? 0)),
-    [applications]
+        .sort((a, b) => {
+          const aTime = decisionTimestamps[a.id] ?? new Date(a.created_at ?? 0).getTime();
+          const bTime = decisionTimestamps[b.id] ?? new Date(b.created_at ?? 0).getTime();
+          return bTime - aTime;
+        }),
+    [applications, decisionTimestamps]
   );
 
   const statsOwner = [
@@ -158,6 +203,13 @@ export default function OverviewDirectory({ role }) {
     try {
       await updateApplication(selectedApplication.id, { status });
       setApplicationActionStatus("done");
+      // Запоминаем момент решения — чтобы заявка сразу появилась в начале
+      // истории (см. historyApplications выше), а не по дате создания.
+      setDecisionTimestamps((prev) => {
+        const next = { ...prev, [selectedApplication.id]: Date.now() };
+        saveDecisionTimestamps(next);
+        return next;
+      });
       await load(); // заявка уйдёт из списка "new" сама, т.к. статус сменился
     } catch (err) {
       setApplicationActionStatus(err.message || "Не удалось обновить заявку");
