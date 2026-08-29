@@ -231,6 +231,15 @@ services:
 networks:
   studyroom-network:
     driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        # IPv4-подсеть не указываем явно — Docker выберет сам, как и раньше.
+        # ULA-диапазон (fd00::/8) для IPv6 внутри контейнерной сети: не
+        # маршрутизируется в интернет напрямую, но этого достаточно, чтобы
+        # у контейнеров появился IPv6-адрес и заработал NAT66/маскарадинг
+        # через хост (см. инструкцию по демону/ip6tables ниже, в PR/чате).
+        - subnet: fd00:dead:beef::/64
 
 volumes:
   postgres_users_data:

@@ -239,6 +239,10 @@ services:
 networks:
   studyroom-network:
     driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: fd00:dead:beef::/64
 
 volumes:
   postgres_users_data:
