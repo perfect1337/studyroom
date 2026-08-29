@@ -12,6 +12,14 @@ import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
 const TEACHERS_PAGE_SIZE = 5;
 const APPLICATIONS_PAGE_SIZE = 5;
+const HISTORY_PAGE_SIZE = 5;
+
+const APPLICATION_STATUS_LABEL = {
+  new: "Новая",
+  in_progress: "В работе",
+  converted: "Принята",
+  rejected: "Отклонена",
+};
 
 const TUTOR_STATUS_LABEL = {
   active: "Активен",
@@ -50,13 +58,24 @@ export default function OverviewDirectory({ role }) {
   const [selectedApplication, setSelectedApplication] = useState(null);
   const [applicationActionStatus, setApplicationActionStatus] = useState("");
 
+  // История заявок — те, что уже приняты или отклонены (см. п.4.4
+  // api-contracts.md, ApplicationHandler.UpdateStatus). Отдельный поиск и
+  // фильтр по решению, чтобы не путать с поиском по новым заявкам выше.
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyFilter, setHistoryFilter] = useState("all"); // all | converted | rejected
+  const [selectedHistoryApplication, setSelectedHistoryApplication] = useState(null);
+
   async function load() {
     setLoading(true);
     setError("");
     try {
       const [peopleRes, applicationsRes, contractsRes] = await Promise.all([
         fetchMyPeople(),
-        fetchApplications({ status: "new" }).catch(() => ({ items: [] })),
+        // Без фильтра status — тянем все заявки разом: раздел "Новые заявки"
+        // ниже сам отфильтрует status === "new", а "История заявок" —
+        // status === "converted" || "rejected" (см. newApplications /
+        // historyApplications).
+        fetchApplications().catch(() => ({ items: [] })),
         fetchContracts().catch(() => ({ items: [] })),
       ]);
       setStudents(peopleRes?.students ?? []);
@@ -80,25 +99,48 @@ export default function OverviewDirectory({ role }) {
     [contracts]
   );
 
+  // Новые заявки — те, что ещё не обработаны (см. api-contracts.md 4.2/4.4).
+  const newApplications = useMemo(() => applications.filter((a) => a.status === "new"), [applications]);
+
+  // История — уже принятые ("converted") или отклонённые ("rejected")
+  // заявки, отсортированные от самых свежих к старым.
+  const historyApplications = useMemo(
+    () =>
+      applications
+        .filter((a) => a.status === "converted" || a.status === "rejected")
+        .sort((a, b) => new Date(b.created_at ?? 0) - new Date(a.created_at ?? 0)),
+    [applications]
+  );
+
   const statsOwner = [
     { label: "Всего учеников", value: String(students.length), icon: "school" },
     { label: "Всего репетиторов", value: String(tutors.length), icon: "person_pin" },
     { label: "Выручка (оплачено)", value: `₽${totalRevenue.toLocaleString("ru-RU")}`, icon: "trending_up" },
-    { label: "Новые заявки", value: String(applications.length), icon: "assignment_ind" },
+    { label: "Новые заявки", value: String(newApplications.length), icon: "assignment_ind" },
   ];
 
    const statsBranchOwner = [
     { label: "Всего учеников", value: String(students.length), icon: "school" },
     { label: "Всего репетиторов", value: String(tutors.length), icon: "person_pin" },
-    { label: "Новые заявки", value: String(applications.length), icon: "assignment_ind" },
+    { label: "Новые заявки", value: String(newApplications.length), icon: "assignment_ind" },
   ];
 
   // Поиск по алфавиту среди заявок — фильтр по имени + сортировка А-Я.
   const visibleApplications = useMemo(() => {
     const q = applicationSearch.trim().toLowerCase();
-    const filtered = q ? applications.filter((a) => (a.name ?? "").toLowerCase().includes(q)) : applications;
+    const filtered = q ? newApplications.filter((a) => (a.name ?? "").toLowerCase().includes(q)) : newApplications;
     return [...filtered].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "ru"));
-  }, [applications, applicationSearch]);
+  }, [newApplications, applicationSearch]);
+
+  // История: поиск по имени + фильтр по решению (все/приняты/отклонены).
+  const visibleHistory = useMemo(() => {
+    const q = historySearch.trim().toLowerCase();
+    return historyApplications.filter((a) => {
+      if (historyFilter !== "all" && a.status !== historyFilter) return false;
+      if (q && !(a.name ?? "").toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [historyApplications, historySearch, historyFilter]);
 
   function openApplicationModal(app) {
     setSelectedApplication(app);
@@ -126,6 +168,10 @@ export default function OverviewDirectory({ role }) {
   const { page: applicationsPage, setPage: setApplicationsPage, pageItems: pagedApplications } = usePagination(
     visibleApplications,
     APPLICATIONS_PAGE_SIZE
+  );
+  const { page: historyPage, setPage: setHistoryPage, pageItems: pagedHistory } = usePagination(
+    visibleHistory,
+    HISTORY_PAGE_SIZE
   );
 
   // Поиск по ученикам и учителям сразу — объединяем оба списка и фильтруем по имени.
@@ -313,7 +359,7 @@ export default function OverviewDirectory({ role }) {
           <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant shadow-sm">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-headline-sm text-headline-sm">Новые заявки</h3>
-              <span className="bg-error text-white text-[10px] px-2 py-0.5 rounded-full">{applications.length} новых</span>
+              <span className="bg-error text-white text-[10px] px-2 py-0.5 rounded-full">{newApplications.length} новых</span>
             </div>
 
             <div className="relative mb-4">
@@ -359,6 +405,138 @@ export default function OverviewDirectory({ role }) {
               pageSize={APPLICATIONS_PAGE_SIZE}
               total={visibleApplications.length}
               onPageChange={setApplicationsPage}
+              itemLabel="заявок"
+            />
+          </div>
+        </section>
+
+        <section className="flex flex-col gap-stack-md mt-stack-lg">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-3">
+            <div>
+              <h2 className="text-headline-sm font-headline-sm text-on-surface">История заявок</h2>
+              <p className="text-on-surface-variant text-label-md font-label-md">
+                Заявки, которые уже приняты или отклонены
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden">
+            <div className="p-4 sm:p-6 border-b border-outline-variant flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+              <div className="relative flex-1 sm:max-w-xs">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[18px]">
+                  search
+                </span>
+                <input
+                  value={historySearch}
+                  onChange={(e) => setHistorySearch(e.target.value)}
+                  placeholder="Поиск по имени..."
+                  className="w-full bg-surface border border-outline-variant rounded-full pl-9 pr-4 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                />
+              </div>
+
+              <div className="flex gap-2 overflow-x-auto sm:overflow-visible">
+                {[
+                  { value: "all", label: "Все" },
+                  { value: "converted", label: "Принятые" },
+                  { value: "rejected", label: "Отклонённые" },
+                ].map((f) => (
+                  <button
+                    key={f.value}
+                    type="button"
+                    onClick={() => setHistoryFilter(f.value)}
+                    className={`shrink-0 px-4 py-2 rounded-full font-label-md text-label-md transition-colors ${
+                      historyFilter === f.value
+                        ? "bg-primary text-on-primary"
+                        : "bg-surface border border-outline-variant text-on-surface-variant hover:bg-surface-container-low"
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Десктоп: таблица */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left min-w-[640px]">
+                <thead className="bg-surface-container-low border-b border-outline-variant">
+                  <tr>
+                    <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Ребёнок</th>
+                    <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Предмет</th>
+                    <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Дата заявки</th>
+                    <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Решение</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outline-variant">
+                  {!loading && pagedHistory.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-8 text-center text-on-surface-variant">
+                        {historySearch || historyFilter !== "all" ? "Ничего не найдено." : "Обработанных заявок пока нет"}
+                      </td>
+                    </tr>
+                  )}
+                  {pagedHistory.map((a) => (
+                    <tr
+                      key={a.id}
+                      onClick={() => setSelectedHistoryApplication(a)}
+                      className="hover:bg-surface-container-low transition-colors cursor-pointer"
+                    >
+                      <td className="px-6 py-4">
+                        <p className="font-label-md text-label-md font-bold">{a.name}{a.age ? `, ${a.age} лет` : ""}</p>
+                        {a.class_info && <p className="text-[12px] text-outline">{a.class_info} класс</p>}
+                      </td>
+                      <td className="px-6 py-4 text-label-md font-label-md">{a.subject_interest ?? a.course ?? "—"}</td>
+                      <td className="px-6 py-4 text-label-md font-label-md">
+                        {a.created_at ? new Date(a.created_at).toLocaleDateString("ru-RU") : "—"}
+                      </td>
+                      <td className="px-6 py-4">
+                        <StatusBadge
+                          status={APPLICATION_STATUS_LABEL[a.status] ?? a.status}
+                          color={a.status === "converted" ? "green" : "red"}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Мобильный: карточки */}
+            <div className="md:hidden divide-y divide-outline-variant">
+              {!loading && pagedHistory.length === 0 && (
+                <div className="px-4 py-8 text-center text-on-surface-variant">
+                  {historySearch || historyFilter !== "all" ? "Ничего не найдено." : "Обработанных заявок пока нет"}
+                </div>
+              )}
+              {pagedHistory.map((a) => (
+                <div
+                  key={a.id}
+                  onClick={() => setSelectedHistoryApplication(a)}
+                  className="p-4 active:bg-surface-container-low cursor-pointer"
+                >
+                  <div className="flex justify-between items-start gap-2 mb-1">
+                    <p className="min-w-0 flex-1 truncate font-bold text-label-md">{a.name}{a.age ? `, ${a.age} лет` : ""}</p>
+                    <StatusBadge
+                      status={APPLICATION_STATUS_LABEL[a.status] ?? a.status}
+                      color={a.status === "converted" ? "green" : "red"}
+                    />
+                  </div>
+                  <p className="text-[12px] text-on-surface-variant truncate">
+                    {a.subject_interest ?? a.course ?? "—"}
+                    {a.class_info ? ` · ${a.class_info} класс` : ""}
+                  </p>
+                  <p className="text-[11px] text-outline mt-1">
+                    {a.created_at ? new Date(a.created_at).toLocaleDateString("ru-RU") : ""}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <Pagination
+              page={historyPage}
+              pageSize={HISTORY_PAGE_SIZE}
+              total={visibleHistory.length}
+              onPageChange={setHistoryPage}
               itemLabel="заявок"
             />
           </div>
@@ -459,6 +637,98 @@ export default function OverviewDirectory({ role }) {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {selectedHistoryApplication && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setSelectedHistoryApplication(null)}
+        >
+          <div
+            className="bg-surface-container-lowest rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center">
+              <h3 className="font-headline-sm text-headline-sm text-on-surface">Заявка (история)</h3>
+              <button
+                onClick={() => setSelectedHistoryApplication(null)}
+                className="p-1 hover:bg-surface-container-high rounded-full"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <StatusBadge
+              status={APPLICATION_STATUS_LABEL[selectedHistoryApplication.status] ?? selectedHistoryApplication.status}
+              color={selectedHistoryApplication.status === "converted" ? "green" : "red"}
+            />
+
+            <div className="space-y-3">
+              <div>
+                <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-wide mb-0.5">Ребёнок</p>
+                <p className="text-label-md font-bold text-on-surface">
+                  {selectedHistoryApplication.name || "—"}
+                  {selectedHistoryApplication.age ? `, ${selectedHistoryApplication.age} лет` : ""}
+                </p>
+              </div>
+              {selectedHistoryApplication.class_info && (
+                <div>
+                  <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-wide mb-0.5">Класс</p>
+                  <p className="text-label-md text-on-surface">{selectedHistoryApplication.class_info} класс</p>
+                </div>
+              )}
+              <div>
+                <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-wide mb-0.5">Родитель</p>
+                <p className="text-label-md text-on-surface">{selectedHistoryApplication.parent_name || "Не указан"}</p>
+              </div>
+              <div>
+                <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-wide mb-0.5">Предмет</p>
+                <p className="text-label-md text-on-surface">
+                  {selectedHistoryApplication.subject_interest ?? selectedHistoryApplication.course ?? "Не указан"}
+                </p>
+              </div>
+              {selectedHistoryApplication.phone && (
+                <div>
+                  <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-wide mb-0.5">Телефон</p>
+                  <p className="text-label-md text-on-surface">{selectedHistoryApplication.phone}</p>
+                </div>
+              )}
+              {selectedHistoryApplication.format && (
+                <div>
+                  <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-wide mb-0.5">Формат</p>
+                  <p className="text-label-md text-on-surface">
+                    {selectedHistoryApplication.format === "individual"
+                      ? "Индивидуально"
+                      : selectedHistoryApplication.format === "group"
+                      ? "Группа"
+                      : selectedHistoryApplication.format}
+                  </p>
+                </div>
+              )}
+              <div>
+                <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-wide mb-0.5">Дата заявки</p>
+                <p className="text-label-md text-on-surface">
+                  {selectedHistoryApplication.created_at
+                    ? new Date(selectedHistoryApplication.created_at).toLocaleDateString("ru-RU")
+                    : "—"}
+                </p>
+              </div>
+              {selectedHistoryApplication.handled_by && (
+                <div>
+                  <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-wide mb-0.5">Обработал</p>
+                  <p className="text-label-md text-on-surface">ID {selectedHistoryApplication.handled_by}</p>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={() => setSelectedHistoryApplication(null)}
+              className="w-full bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all"
+            >
+              Готово
+            </button>
           </div>
         </div>
       )}
