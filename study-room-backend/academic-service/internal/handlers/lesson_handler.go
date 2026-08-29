@@ -405,10 +405,21 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 	// startAutoCompleteJob + LessonRepository.AutoCompletePast — как только
 	// время занятия вышло, оно само становится 'completed' без участия
 	// тьютора).
+	//
+	// Если статус меняют на 'cancelled' через этот же PATCH (а не через
+	// DELETE /lessons/{id}) — публикуем то же lesson.cancelled, что и в
+	// Delete ниже, чтобы участники узнали об отмене независимо от того,
+	// каким способом её сделали.
+	cancelledViaUpdate := req.Status != nil && *req.Status == models.LessonCancelled
 	if req.Status != nil {
 		participants, pErr := h.lessons.Participants(r.Context(), id)
 		if pErr == nil {
 			h.recalculateProgress(r.Context(), lesson.CourseID, participants)
+			if cancelledViaUpdate {
+				for _, studentID := range participants {
+					h.publisher.LessonCancelled(lesson.ID, studentID, lesson.Topic, lesson.LessonDate.Format("2006-01-02"), lesson.StartTime)
+				}
+			}
 		}
 	}
 
@@ -441,8 +452,14 @@ func (h *LessonHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	// Отменённое занятие исключается и из числителя, и из знаменателя
 	// прогресса (см. RecalculateProgress), поэтому после отмены прогресс
 	// участников нужно пересчитать точно так же, как при отметке "проведено".
+	// Раньше здесь же ничего не публиковалось в NATS — участники узнавали
+	// об отмене занятия только зайдя в приложение (см. комментарий у
+	// Publisher в events/publisher.go).
 	if participants, pErr := h.lessons.Participants(r.Context(), id); pErr == nil {
 		h.recalculateProgress(r.Context(), lesson.CourseID, participants)
+		for _, studentID := range participants {
+			h.publisher.LessonCancelled(lesson.ID, studentID, lesson.Topic, lesson.LessonDate.Format("2006-01-02"), lesson.StartTime)
+		}
 	}
 
 	w.WriteHeader(http.StatusOK)

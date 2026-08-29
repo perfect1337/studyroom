@@ -254,8 +254,10 @@ func (n *Notifier) resolveContact(ref *models.UserRef, channel models.Channel) (
 
 func subjectFor(notifType string) string {
 	switch notifType {
-	case "lesson_reminder":
-		return "Study Room — напоминание о занятии"
+	case "daily_lessons_digest":
+		return "Study Room — занятия сегодня"
+	case "lesson_cancelled":
+		return "Study Room — занятие отменено"
 	case "contract_expiring":
 		return "Study Room — истекает договор"
 	case "new_application":

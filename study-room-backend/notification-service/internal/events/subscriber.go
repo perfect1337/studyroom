@@ -73,9 +73,12 @@ type contractExpiringEvent struct {
     StudentID      int64  `json:"student_id"`
 }
 
-// lessonCreatedEvent — реальный payload Academic Service (см. event-schema.md,
-// "v1.lesson.created", вариант А: Notification Service сам собирает текст
-// сообщения, Academic Service не обязан знать формат уведомления).
+// lessonCreatedEvent — payload lesson.created, публикуется Academic Service
+// на каждое созданное занятие (см. academic-service/internal/events/
+// publisher.go). Notification Service больше не подписан на lesson.created
+// напрямую (мгновенное уведомление заменено ежедневным дайджестом — см.
+// handleDailyDigest ниже), тип оставлен неиспользуемым на случай, если
+// понадобится вернуть обработчик.
 type lessonCreatedEvent struct {
 	LessonID   int64  `json:"lesson_id"`
 	TutorID    int64  `json:"tutor_id"`
@@ -108,7 +111,8 @@ func (s *Subscriber) Start(ctx context.Context) error {
 		"user.credentials_reset":   s.handleCredentialsReset,
 		"password_reset_requested": s.handlePasswordReset,
 		"contract.expiring_soon":   s.handleContractExpiring,
-		"lesson.created":           s.handleLessonReminder,
+		"lesson.cancelled":         s.handleLessonCancelled,
+		"lesson.daily_digest":      s.handleDailyDigest,
 		"attendance.marked_absent": s.handleAttendanceAbsent,
 		"application.received":     s.handleApplicationReceived,
 	}
@@ -309,22 +313,93 @@ func (s *Subscriber) handleContractExpiring(msg *nats.Msg) {
     s.send(evt.UserID, "contract_expiring", message, "")
 }
 
-// handleLessonReminder — событие публикуется на каждого участника занятия
-// отдельно (см. event-schema.md), получатель уведомления — student_id.
-func (s *Subscriber) handleLessonReminder(msg *nats.Msg) {
-	var evt lessonCreatedEvent
+// lessonChangedEvent — payload для lesson.cancelled (см.
+// academic-service/internal/events/publisher.go, lessonChangedPayload).
+type lessonChangedEvent struct {
+	LessonID   int64  `json:"lesson_id"`
+	StudentID  int64  `json:"student_id"`
+	Topic      string `json:"topic"`
+	LessonDate string `json:"lesson_date"`
+	StartTime  string `json:"start_time"`
+}
+
+// handleLessonCancelled — тьютор отменил занятие (см. LessonHandler.Update
+// со status=cancelled и LessonHandler.Delete). Раньше такого события не
+// было вовсе — ни один канал не узнавал об отмене занятия.
+func (s *Subscriber) handleLessonCancelled(msg *nats.Msg) {
+	var evt lessonChangedEvent
 	if err := json.Unmarshal(msg.Data, &evt); err != nil {
-		log.Printf("events: bad lesson.created payload: %v", err)
+		log.Printf("events: bad lesson.cancelled payload: %v", err)
 		return
 	}
 	if evt.StudentID == 0 {
 		return
 	}
 	message := fmt.Sprintf(
-		"Напоминание: занятие «%s» %s в %s",
+		"Занятие «%s» %s в %s отменено",
 		evt.Topic, evt.LessonDate, evt.StartTime,
 	)
-	s.send(evt.StudentID, "lesson_reminder", message, "")
+	s.send(s.notifyRecipientFor(evt.StudentID), "lesson_cancelled", message, "")
+}
+
+// dailyDigestLessonItem/dailyLessonsDigestEvent — payload для
+// lesson.daily_digest (см. academic-service/internal/events/publisher.go,
+// dailyLessonsDigestPayload). Публикуется раз в сутки в 9:00 МСК, только
+// для учеников, у которых на сегодня есть хотя бы одно занятие.
+type dailyDigestLessonItem struct {
+	Topic     string `json:"topic"`
+	StartTime string `json:"start_time"`
+	EndTime   string `json:"end_time"`
+}
+
+type dailyLessonsDigestEvent struct {
+	StudentID int64                    `json:"student_id"`
+	Lessons   []dailyDigestLessonItem  `json:"lessons"`
+}
+
+// handleDailyDigest — ежедневная сводка "какие занятия сегодня и во
+// сколько" для конкретного ученика. Это единственное уведомление о
+// занятиях как таковых (мгновенное уведомление на каждое созданное занятие
+// сознательно убрано — по решению заказчика оставлен только этот дайджест).
+func (s *Subscriber) handleDailyDigest(msg *nats.Msg) {
+	var evt dailyLessonsDigestEvent
+	if err := json.Unmarshal(msg.Data, &evt); err != nil {
+		log.Printf("events: bad lesson.daily_digest payload: %v", err)
+		return
+	}
+	if evt.StudentID == 0 || len(evt.Lessons) == 0 {
+		return
+	}
+
+	studentName := "у вашего ребёнка"
+	if student, err := s.usersRef.GetByID(context.Background(), evt.StudentID); err == nil {
+		if name := strings.TrimSpace(student.FirstName + " " + student.LastName); name != "" {
+			studentName = "у " + name
+		}
+	}
+
+	var lines strings.Builder
+	fmt.Fprintf(&lines, "Сегодня %s занятия:\n", studentName)
+	for _, l := range evt.Lessons {
+		fmt.Fprintf(&lines, "%s–%s — %s\n", l.StartTime, l.EndTime, l.Topic)
+	}
+	message := strings.TrimRight(lines.String(), "\n")
+
+	s.send(s.notifyRecipientFor(evt.StudentID), "daily_lessons_digest", message, "")
+}
+
+// notifyRecipientFor — получатель уведомления про конкретного ученика: если
+// у него есть родитель (users_ref.parent_id) — уведомляем родителя, у
+// которого обычно и настроены реальные каналы связи; если родителя нет
+// (например, взрослый ученик без привязанного родительского аккаунта) —
+// отправляем самому ученику, чтобы не потерять уведомление совсем. Тот же
+// приём уже используется в handleAttendanceAbsent.
+func (s *Subscriber) notifyRecipientFor(studentID int64) int64 {
+	student, err := s.usersRef.GetByID(context.Background(), studentID)
+	if err != nil || student.ParentID == nil {
+		return studentID
+	}
+	return *student.ParentID
 }
 
 // handleAttendanceAbsent — Academic Service публикует только lesson_id/

@@ -68,6 +68,9 @@ func main() {
 	stopAutoComplete := startAutoCompleteJob(ctx, deps)
 	defer stopAutoComplete()
 
+	stopDailyDigest := startDailyDigestJob(ctx, deps)
+	defer stopDailyDigest()
+
 	go func() {
 		log.Printf("academic-service listening on :%s", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -133,6 +136,71 @@ func startAutoCompleteJob(ctx context.Context, deps *app.Deps) func() {
 
 	return func() {
 		ticker.Stop()
+		close(done)
+	}
+}
+
+// mskLocation — фиксированный часовой пояс МСК (UTC+3, без перехода на
+// летнее время с 2014 года). Используется FixedZone, а не
+// time.LoadLocation("Europe/Moscow"), потому что финальный образ
+// собирается на alpine (см. Dockerfile) без пакета tzdata — LoadLocation
+// там просто упал бы с "unknown time zone". FixedZone работает без базы
+// часовых поясов на диске вообще.
+var mskLocation = time.FixedZone("MSK", 3*60*60)
+
+// dailyDigestHour — в котором часу по МСК уходит ежедневный дайджест
+// занятий на сегодня.
+const dailyDigestHour = 9
+
+// startDailyDigestJob — раз в сутки в dailyDigestHour:00 МСК собирает по
+// каждому ученику список ещё не отменённых занятий на сегодняшний день (по
+// МСК) и публикует по одному событию lesson.daily_digest на ученика — но
+// только если у него сегодня есть хотя бы одно занятие (см.
+// events.NATSPublisher.DailyLessonsDigest). В отличие от
+// startAutoCompleteJob, первый запуск НЕ происходит сразу при старте
+// процесса — иначе при каждом перезапуске контейнера (деплой, рестарт)
+// дайджест улетал бы в случайное время суток; вместо этого высчитывается
+// точное время до ближайших dailyDigestHour:00 МСК и джоба ждёт именно до
+// него, а дальше срабатывает каждые 24 часа.
+func startDailyDigestJob(ctx context.Context, deps *app.Deps) func() {
+	done := make(chan struct{})
+
+	run := func() {
+		today := time.Now().In(mskLocation).Format("2006-01-02")
+		byStudent, err := deps.Lessons.ListTodayByStudent(ctx, today)
+		if err != nil {
+			log.Printf("[daily-digest-job] ListTodayByStudent error: %v", err)
+			return
+		}
+		for studentID, items := range byStudent {
+			deps.Events.DailyLessonsDigest(studentID, items)
+		}
+		if len(byStudent) > 0 {
+			log.Printf("[daily-digest-job] sent digest for %d student(s)", len(byStudent))
+		}
+	}
+
+	nextRun := func() time.Duration {
+		now := time.Now().In(mskLocation)
+		next := time.Date(now.Year(), now.Month(), now.Day(), dailyDigestHour, 0, 0, 0, mskLocation)
+		if !next.After(now) {
+			next = next.AddDate(0, 0, 1)
+		}
+		return next.Sub(now)
+	}
+
+	go func() {
+		for {
+			select {
+			case <-time.After(nextRun()):
+				run()
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	return func() {
 		close(done)
 	}
 }

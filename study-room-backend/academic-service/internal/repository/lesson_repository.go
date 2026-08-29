@@ -489,3 +489,41 @@ func (r *LessonRepository) Participants(ctx context.Context, lessonID int64) ([]
 	}
 	return out, rows.Err()
 }
+
+// DigestLessonItem — одно занятие ученика на конкретный день, для
+// ежедневного дайджеста (см. cmd/api/main.go, startDailyDigestJob).
+type DigestLessonItem struct {
+	Topic     string
+	StartTime string
+	EndTime   string
+}
+
+// ListTodayByStudent — группирует ещё не отменённые занятия на указанную
+// дату (формат YYYY-MM-DD) по участникам: "кому какие занятия сегодня и во
+// сколько". Используется дневным дайджестом, отправляемым в 9:00 МСК —
+// ученики/родители без занятий в этот день в результат не попадают вообще
+// (пустой дайджест никому не рассылается).
+func (r *LessonRepository) ListTodayByStudent(ctx context.Context, dateISO string) (map[int64][]DigestLessonItem, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT lp.student_id, l.topic, l.start_time, l.end_time
+		FROM lesson_participants lp
+		JOIN lessons l ON l.id = lp.lesson_id
+		WHERE l.lesson_date = $1 AND l.status <> 'cancelled'
+		ORDER BY lp.student_id, l.start_time
+	`, dateISO)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out2 := map[int64][]DigestLessonItem{}
+	for rows.Next() {
+		var studentID int64
+		var item DigestLessonItem
+		if err := rows.Scan(&studentID, &item.Topic, &item.StartTime, &item.EndTime); err != nil {
+			return nil, err
+		}
+		out2[studentID] = append(out2[studentID], item)
+	}
+	return out2, rows.Err()
+}
