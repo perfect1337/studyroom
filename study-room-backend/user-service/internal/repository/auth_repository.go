@@ -2,12 +2,25 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"studyroom/user-service/internal/models"
 )
+
+// refreshReuseGrace — окно, в течение которого повторное предъявление уже
+// отозванного (только что заменённого при ротации) refresh-токена ещё
+// считается легитимной гонкой, а не кражей. См. миграцию
+// 0006_refresh_token_grace и комментарий у RotateRefreshToken.
+const refreshReuseGrace = 30 * time.Second
+
+// ErrRefreshTokenReused возвращается, когда токен предъявлен уже за
+// пределами grace-периода после своей ротации — похоже на использование
+// скомпрометированного (украденного/подсмотренного) токена. В этом случае
+// все refresh-сессии пользователя гасятся превентивно.
+var ErrRefreshTokenReused = errors.New("refresh token reused after grace period")
 
 type AuthRepository struct {
 	pool *pgxpool.Pool
@@ -24,22 +37,59 @@ func (r *AuthRepository) SaveRefreshToken(ctx context.Context, userID int64, tok
 	return err
 }
 
-// FindUserIDByRefreshToken возвращает user_id, если токен существует и не истёк.
+// FindUserIDByRefreshToken возвращает user_id, если токен существует, не
+// истёк и либо ещё не был отозван, либо был отозван совсем недавно
+// (см. refreshReuseGrace) — такое повторное предъявление трактуется как
+// гонка (например, ответ на предыдущую ротацию не долетел до браузера
+// из-за перезагрузки страницы), а не как ошибка. Если токен отозван уже
+// давно — считаем это реиспользованием потенциально украденного токена и
+// гасим все сессии пользователя, возвращая ErrRefreshTokenReused.
 func (r *AuthRepository) FindUserIDByRefreshToken(ctx context.Context, tokenHash string) (int64, error) {
 	var userID int64
+	var revokedAt *time.Time
 	err := r.pool.QueryRow(ctx,
-		`SELECT user_id FROM refresh_tokens WHERE token_hash = $1 AND expires_at > now()`,
-		tokenHash).Scan(&userID)
+		`SELECT user_id, revoked_at FROM refresh_tokens WHERE token_hash = $1 AND expires_at > now()`,
+		tokenHash).Scan(&userID, &revokedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return 0, ErrNotFound
 		}
 		return 0, err
 	}
+
+	if revokedAt != nil {
+		if time.Since(*revokedAt) > refreshReuseGrace {
+			_ = r.RevokeAllRefreshTokens(ctx, userID)
+			return 0, ErrRefreshTokenReused
+		}
+		// В пределах grace-периода — разрешаем ротацию повторно (гонка,
+		// не кража).
+	}
+
 	return userID, nil
 }
 
-// RevokeRefreshToken удаляет один токен (ротация refresh).
+// RotateRefreshToken помечает токен отозванным (soft-revoke), но не удаляет
+// его сразу — см. комментарий у refreshReuseGrace и миграцию
+// 0006_refresh_token_grace. Идемпотентно: повторный вызов для уже
+// отозванного токена ничего не ломает (просто не найдёт строку с
+// revoked_at IS NULL и ничего не обновит), новая пара токенов при этом
+// всё равно успешно выдаётся вызывающим кодом. Используется ТОЛЬКО при
+// ротации в /auth/refresh — для явного выхода (Logout) нужен настоящий
+// DELETE, см. RevokeRefreshToken ниже, иначе токен можно было бы повторно
+// использовать в течение grace-периода уже после того, как пользователь
+// сам разлогинился.
+func (r *AuthRepository) RotateRefreshToken(ctx context.Context, tokenHash string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE refresh_tokens SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`,
+		tokenHash)
+	return err
+}
+
+// RevokeRefreshToken удаляет один токен насовсем (явный logout) — в отличие
+// от RotateRefreshToken, здесь никакого grace-периода на повторное
+// использование быть не должно: раз пользователь вышел, токен должен стать
+// недействительным немедленно и безусловно.
 func (r *AuthRepository) RevokeRefreshToken(ctx context.Context, tokenHash string) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM refresh_tokens WHERE token_hash = $1`, tokenHash)
 	return err

@@ -178,11 +178,30 @@ export default function ParentSchedule() {
     return map;
   }, [enrollments]);
 
+  // Занятия конкретного выбранного ребёнка.
+  //
+  // ВАЖНО: раньше здесь фильтровали по course_id (через courseIdsByChild —
+  // "на какие курсы записан ребёнок"). Это ломалось, если у родителя двое
+  // (и более) детей записаны на ОДИН и тот же курс (например, тот же
+  // групповой курс у одного тьютора, либо переиспользованный индивидуальный
+  // курс) — тогда при выборе одного ребёнка в календаре показывались занятия
+  // сразу обоих, потому что фильтрация шла по курсу, а не по конкретному
+  // ученику. У каждого занятия бэкенд уже отдаёт точный список участников —
+  // lesson.participant_ids (см. study-room-backend/academic-service
+  // internal/handlers/lesson_handler.go, LessonHandler.List) — именно по
+  // нему и нужно фильтровать: попал ли КОНКРЕТНО этот ребёнок в КОНКРЕТНОЕ
+  // занятие, а не просто "записан ли он вообще на этот курс".
   const childLessons = useMemo(() => {
     if (!selectedChildId) return lessons;
-    const courseIds = courseIdsByChild[selectedChildId];
-    if (!courseIds) return [];
-    return lessons.filter((l) => courseIds.has(l.course_id));
+    return lessons.filter((l) => {
+      if (Array.isArray(l.participant_ids) && l.participant_ids.length > 0) {
+        return l.participant_ids.includes(selectedChildId);
+      }
+      // Фолбэк на старую логику через enrollments — только если бэкенд по
+      // какой-то причине не прислал participant_ids для этого занятия.
+      const courseIds = courseIdsByChild[selectedChildId];
+      return courseIds ? courseIds.has(l.course_id) : false;
+    });
   }, [lessons, courseIdsByChild, selectedChildId]);
 
   const childHomework = useMemo(() => {

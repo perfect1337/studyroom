@@ -161,6 +161,11 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	hash := auth.HashToken(plain)
 	userID, err := h.authRepo.FindUserIDByRefreshToken(r.Context(), hash)
 	if err != nil {
+		// И "токен не найден/истёк", и repository.ErrRefreshTokenReused
+		// (токен предъявлен уже за пределами grace-периода после своей
+		// ротации — в этом случае FindUserIDByRefreshToken уже на всякий
+		// случай погасил все сессии пользователя) для клиента выглядят
+		// одинаково: невалидная сессия, нужно войти заново.
 		h.clearRefreshCookie(w)
 		writeError(w, http.StatusUnauthorized, "INVALID_TOKEN", "refresh token invalid or expired")
 		return
@@ -179,12 +184,20 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = h.authRepo.RevokeRefreshToken(r.Context(), hash)
+	// Сначала выпускаем и сохраняем новую пару токенов и только потом мягко
+	// (soft-revoke, с grace-периодом на повторное предъявление) гасим
+	// старую — если что-то пойдёт не так между этими двумя шагами (обрыв
+	// соединения при перезагрузке страницы и т.п.), старый токен останется
+	// пригодным для использования, а не "сгорит" без выданной замены.
+	// Раньше было наоборот (сначала DELETE старого, потом создание нового),
+	// из-за чего пользователя иногда выкидывало при перезагрузке страницы:
+	// см. историю миграции 0006_refresh_token_grace.
 	access, refresh, err := h.createTokenPair(r, u)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
 		return
 	}
+	_ = h.authRepo.RotateRefreshToken(r.Context(), hash)
 	h.setRefreshCookie(w, refresh, h.tm.RefreshTokenExpiry())
 	writeJSON(w, http.StatusOK, map[string]any{
 		"access_token": access,
