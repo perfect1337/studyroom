@@ -98,7 +98,7 @@ export default function TopBar({
                     </a>
 
                     <a 
-                      href="tel:+89000000000"
+                      href="tel:+79371402712"
                       className="flex items-center gap-3 p-3 rounded-xl bg-surface-container-low hover:bg-surface-container transition-colors group"
                     >
                       <div className="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
@@ -107,7 +107,10 @@ export default function TopBar({
                       <div className="min-w-0">
                         <p className="text-[11px] text-on-surface-variant">Телефон</p>
                         <p className="text-label-md font-bold text-primary group-hover:underline">
-                          +89000000000
+                          +7 (937) 140 27 12
+                        </p>
+                        <p className="text-[11px] text-on-surface-variant mt-0.5">
+                          Можно звонить в рабочее время пн - пт
                         </p>
                       </div>
                     </a>
