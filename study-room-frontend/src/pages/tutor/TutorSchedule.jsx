@@ -476,7 +476,7 @@ export default function TutorSchedule() {
                                     </div>
                                     <div className="flex-1">
                                       <p className="font-label-md font-bold text-on-surface">
-                                        {student ? fullName(student) : `Ученик #${e.student_id}`}
+                                        {student ? fullName(student) : (lesson.participant_names?.[e.student_id] ?? `Ученик #${e.student_id}`)}
                                       </p>
                                       <p className="text-[12px] text-on-surface-variant">
                                         Прогресс по курсу: {e.progress_pct ?? 0}%

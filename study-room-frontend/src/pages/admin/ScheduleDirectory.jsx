@@ -290,11 +290,23 @@ export default function ScheduleDirectory({ role }) {
 
   // Ученики, у которых сейчас конкретное занятие — берём напрямую из
   // participant_ids занятия (реальные участники, а не вычисленные по enrollments).
+  // Если профиль ученика недоступен во fetched-справочниках (напр. поменял
+  // филиал и выпал из выборки, а fetchUserById по каким-то причинам не смог
+  // его вернуть) — раньше такой ученик тихо пропадал из списка (.filter(Boolean)),
+  // занятие выглядело так, будто у него меньше участников, чем есть на самом
+  // деле. Теперь для нерезолвленных id подставляем ФИО из l.participant_names —
+  // снапшот имён с бэкенда специально для этого случая (см. Lesson.ParticipantNames
+  // в academic-service/internal/models/models.go) — и только если даже его нет,
+  // показываем "Ученик #id" как последний фолбэк.
   const studentsForLesson = useMemo(() => {
     const map = {}; // lesson.id -> [student, ...]
     lessons.forEach((l) => {
       const ids = [...new Set(l.participant_ids ?? [])];
-      map[l.id] = ids.map((id) => studentsById[id]).filter(Boolean);
+      map[l.id] = ids.map((id) => {
+        if (studentsById[id]) return studentsById[id];
+        const fallbackName = l.participant_names?.[id] ?? `Ученик #${id}`;
+        return { id, first_name: fallbackName, last_name: "", _isFallback: true };
+      });
     });
     return map;
   }, [lessons, studentsById]);

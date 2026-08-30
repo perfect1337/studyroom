@@ -768,7 +768,7 @@ export default function TeacherDetail({ role = "owner" }) {
                             <p className="text-[12px] text-primary font-bold truncate">
                               {(l.participant_ids ?? []).length > 0
                                 ? l.participant_ids
-                                    .map((sid) => studentsById[sid] ? fullName(studentsById[sid]) : `Ученик #${sid}`)
+                                    .map((sid) => studentsById[sid] ? fullName(studentsById[sid]) : (l.participant_names?.[sid] ?? `Ученик #${sid}`))
                                     .join(", ")
                                 : "Ученики не назначены"}
                             </p>
