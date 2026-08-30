@@ -2,9 +2,10 @@ import { useState, useEffect } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { updateMe, changePassword } from "../../api/auth.js";
-import { fetchNotificationSettings, updateNotificationSettings } from "../../api/notifications.js";
+import { fetchNotificationSettings, updateNotificationSettings, unlinkTelegram } from "../../api/notifications.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import { useTelegramStatus } from "../../hooks/useTelegramStatus.js";
+import { TELEGRAM_BOT_URL } from "../../api/config.js";
 
 // role из JWT/контекста -> роль для сайдбара (у owner отдельный визуальный раздел "admin")
 const SIDEBAR_ROLE = {
@@ -126,6 +127,30 @@ export default function SettingsPage({ role }) {
       }
     } catch (e) {
       setNotifSettings(notifSettings);
+    }
+  }
+
+  const [tgUnlinking, setTgUnlinking] = useState(false);
+  const [tgUnlinkError, setTgUnlinkError] = useState("");
+
+  // handleUnlinkTelegram — раньше отвязать Telegram можно было только
+  // заблокировав/удалив бота в самом Telegram, что никак не удаляло запись
+  // на бэкенде (telegram_users) — уведомления продолжали молча пытаться
+  // уйти в чат, который человек уже не откроет. Теперь есть явный DELETE
+  // /notifications/telegram/link (см. api/notifications.js), который
+  // удаляет привязку и заодно выключает telegram_enabled в настройках —
+  // здесь просто синхронизируем локальный state с тем, что сделал бэкенд.
+  async function handleUnlinkTelegram() {
+    setTgUnlinkError("");
+    setTgUnlinking(true);
+    try {
+      await unlinkTelegram();
+      await refreshTg();
+      setNotifSettings((prev) => (prev ? { ...prev, telegram_enabled: false } : prev));
+    } catch (e) {
+      setTgUnlinkError(e.message || "Не удалось отвязать Telegram");
+    } finally {
+      setTgUnlinking(false);
     }
   }
 
@@ -536,7 +561,7 @@ export default function SettingsPage({ role }) {
                       <li>Введите email, указанный при регистрации</li>
                     </ol>
                     <a
-                      href="https://t.me/StudyRoomNotificationBot"
+                      href={TELEGRAM_BOT_URL}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 bg-primary text-on-primary px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-90 transition-opacity w-full sm:w-auto justify-center"
@@ -546,11 +571,22 @@ export default function SettingsPage({ role }) {
                     </a>
                   </div>
                 ) : tgStatus?.connected ? (
-                  <div className="bg-primary/10 border border-primary/30 rounded-lg p-2 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary text-[16px] shrink-0">check_circle</span>
-                    <p className="text-xs text-primary font-medium break-words">
-                      {tgStatus.telegram_username ? `Подключено как @${tgStatus.telegram_username}` : "Telegram подключён"}
-                    </p>
+                  <div className="bg-primary/10 border border-primary/30 rounded-lg p-2 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-primary text-[16px] shrink-0">check_circle</span>
+                      <p className="text-xs text-primary font-medium break-words">
+                        {tgStatus.telegram_username ? `Подключено как @${tgStatus.telegram_username}` : "Telegram подключён"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleUnlinkTelegram}
+                      disabled={tgUnlinking}
+                      className="text-xs font-bold text-error hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {tgUnlinking ? "Отвязываем..." : "Отвязать Telegram"}
+                    </button>
+                    {tgUnlinkError && <p className="text-xs text-error">{tgUnlinkError}</p>}
                   </div>
                 ) : null}
               </div>

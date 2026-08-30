@@ -83,6 +83,7 @@ func NewRouter(d *Deps) http.Handler {
 			r.Get("/notifications/settings", notificationHandler.GetSettings)
 			r.Patch("/notifications/settings", notificationHandler.UpdateSettings)
 			r.Get("/notifications/telegram/status", notificationHandler.GetTelegramStatus)
+			r.Delete("/notifications/telegram/link", notificationHandler.UnlinkTelegram)
 		})
 
 		// --- Только service-to-service (X-Service-Token) ---

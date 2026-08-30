@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { TELEGRAM_BOT_URL } from "../../api/config.js";
 
 const DISMISS_KEY = "sr_telegram_banner_dismissed_until";
 const DISMISS_HOURS = 24;
@@ -97,7 +98,7 @@ export default function TelegramConnectBanner({ show }) {
             email.
           </p>
           <a
-            href="https://t.me/StudyRoomNotificationBot"
+            href={TELEGRAM_BOT_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md font-bold hover:opacity-90 transition-opacity"

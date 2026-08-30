@@ -70,3 +70,15 @@ func (r *TelegramUserRepository) GetUserIDByChatID(ctx context.Context, chatID i
 	}
 	return userID, nil
 }
+
+// DeleteByUserID — отвязка Telegram от аккаунта (кнопка "Отвязать Telegram"
+// в /settings). Возвращает true, если запись реально существовала и была
+// удалена — false, если пользователь и так не был привязан (идемпотентно,
+// не ошибка).
+func (r *TelegramUserRepository) DeleteByUserID(ctx context.Context, userID int64) (bool, error) {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM telegram_users WHERE user_id = $1`, userID)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}

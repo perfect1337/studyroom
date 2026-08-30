@@ -147,3 +147,40 @@ func (h *NotificationHandler) GetTelegramStatus(w http.ResponseWriter, r *http.R
 		})
 	}
 }
+
+// DELETE /notifications/telegram/link — отвязка Telegram от аккаунта.
+// Раньше такого эндпоинта не было вовсе: единственный способ отвязать бота
+// был выключить его вручную в самом Telegram (заблокировать/удалить чат),
+// но даже это не удаляло запись telegram_users — просто отправка сообщений
+// начинала молча падать. Теперь запись удаляется явно; заодно выключаем
+// telegram_enabled в настройках, чтобы UI сразу показал состояние
+// "не подключено" и не пытался слать в Telegram, пока пользователь не
+// привяжет его заново.
+func (h *NotificationHandler) UnlinkTelegram(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.FromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "no auth context")
+		return
+	}
+
+	if _, err := h.telegramUser.DeleteByUserID(r.Context(), claims.UserID); err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to unlink telegram")
+		return
+	}
+
+	current, err := h.settings.GetOrDefault(r.Context(), claims.UserID)
+	if err == nil && current.TelegramEnabled {
+		current.TelegramEnabled = false
+		if current.PreferredMessenger == "telegram" {
+			current.PreferredMessenger = ""
+		}
+		if _, err := h.settings.Upsert(r.Context(), current); err != nil {
+			// Отвязка самого Telegram уже произошла (важнее) — сбой апдейта
+			// настроек не должен превращать это в ошибку всего запроса.
+			writeJSON(w, http.StatusOK, map[string]any{"connected": false})
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"connected": false})
+}

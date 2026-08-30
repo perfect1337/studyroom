@@ -11,6 +11,7 @@ import { fetchNotificationSettings, updateNotificationSettings, fetchTelegramSta
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import { sanitizePhoneInput, isValidPhone } from "../../utils/phone.js";
 import { useTelegramStatus } from "../../hooks/useTelegramStatus.js";
+import { TELEGRAM_BOT_URL } from "../../api/config.js";
 
 function todayISO() {
   const d = new Date();
@@ -714,7 +715,7 @@ export default function ParentOverview() {
                 Перейдите в бота <strong>Study Room</strong>, нажмите <code className="bg-surface-container px-1.5 py-0.5 rounded text-xs font-mono">/start</code> и введите ваш email.
               </p>
               <a
-                href="https://t.me/StudyRoomNotificationBot"
+                href={TELEGRAM_BOT_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md font-bold hover:opacity-90 transition-opacity"

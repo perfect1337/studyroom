@@ -33,6 +33,22 @@ export const API = {
   notifications: import.meta.env.VITE_NOTIFICATIONS_API ?? "/api/v1/notifications",
 };
 
+// TELEGRAM_BOT_USERNAME — username бота (без "@"), на который ведут все
+// ссылки "Открыть бота" (SettingsPage.jsx, ParentOverview.jsx,
+// TelegramConnectBanner.jsx). Раньше строка "StudyRoomNotificationBot" была
+// захардкожена в каждом из этих трёх мест по отдельности и никак не
+// проверялась на соответствие реальному боту, привязанному к
+// TELEGRAM_BOT_TOKEN на бэкенде (notification-service) — эти два значения
+// вообще ничем не связаны. Если у бота в BotFather другой username, чем
+// "StudyRoomNotificationBot" — ссылка ведёт на несуществующий/чужой чат, и
+// Telegram просто не открывает окно с диалогом (то, что выглядит как "окно
+// не показывается"). Задайте VITE_TELEGRAM_BOT_USERNAME в .env / .env.prod
+// строго тем username'ом, который реально показывает BotFather для вашего
+// TELEGRAM_BOT_TOKEN (Telegram -> @BotFather -> /mybots -> ваш бот).
+export const TELEGRAM_BOT_USERNAME =
+  import.meta.env.VITE_TELEGRAM_BOT_USERNAME ?? "StudyRoomNotificationBot";
+export const TELEGRAM_BOT_URL = `https://t.me/${TELEGRAM_BOT_USERNAME}`;
+
 // USER_KEY — в localStorage кэшируется только не-секретная информация о
 // пользователе (id/роль/имя) для мгновенного отображения UI до ответа
 // сервера. Сами токены здесь больше не хранятся: access-токен живёт в

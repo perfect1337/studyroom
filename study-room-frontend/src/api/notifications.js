@@ -27,3 +27,8 @@ export function updateNotificationSettings(patch) {
 export function fetchTelegramStatus() {
   return notificationsApi("/telegram/status");
 }
+
+// 5.6 Отвязать Telegram от аккаунта
+export function unlinkTelegram() {
+  return notificationsApi("/telegram/link", { method: "DELETE" });
+}
