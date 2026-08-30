@@ -22,6 +22,18 @@ type TelegramBot struct {
 	telegramUserRepo *repository.TelegramUserRepository
 	botName        string
 	stopCh         chan struct{}
+
+	// chatLimiter — не более 5 попыток ввести email за 5 минут с одного
+	// chat_id. Защита от перебора email (кто-то методично присылает боту
+	// email за email, пытаясь понять, кто зарегистрирован в системе) и от
+	// простого спама командами.
+	chatLimiter *chatRateLimiter
+
+	// lookupLimiter — общий потолок в 60 попыток резолва email/минуту на
+	// весь бот, вне зависимости от chat_id (см. комментарий в
+	// telegram_ratelimit.go — Telegram-чаты бесплатны и их можно наплодить
+	// сколько угодно, per-chat лимита одного недостаточно).
+	lookupLimiter *globalRateLimiter
 }
 
 // NewTelegramBot создаёт бота без запуска polling с retry при ошибке.
@@ -68,6 +80,8 @@ func NewTelegramBot(token string, userRefRepo *repository.UserRefRepository, tel
 		telegramUserRepo: telegramUserRepo,
 		botName:          me.UserName,
 		stopCh:           make(chan struct{}),
+		chatLimiter:      newChatRateLimiter(5, 5*time.Minute, 5000),
+		lookupLimiter:    newGlobalRateLimiter(60, time.Minute),
 	}, nil
 }
 
@@ -116,6 +130,17 @@ func (b *TelegramBot) handleUpdate(ctx context.Context, update tgbotapi.Update) 
 
 	log.Printf("telegram: received from chat %d, text: %q, username: %s", chatID, text, username)
 
+	// Лимит попыток на chat_id — до проверки текста, чтобы резать флуд
+	// любыми сообщениями, а не только валидными email.
+	if !b.chatLimiter.Allow(chatID) {
+		msg := tgbotapi.NewMessage(chatID,
+			"⏳ Слишком много сообщений подряд. Пожалуйста, подождите несколько минут и попробуйте снова.")
+		if _, err := b.bot.Send(msg); err != nil {
+			log.Printf("telegram: send rate-limit message failed: %v", err)
+		}
+		return
+	}
+
 	switch text {
 	case "/start":
 		b.handleStart(ctx, chatID, username)
@@ -153,16 +178,34 @@ func (b *TelegramBot) handleText(ctx context.Context, chatID int64, text string,
 
 	email := strings.ToLower(text)
 
+	// Общий лимит на резолв email по всему боту — отдельно от per-chat
+	// лимита выше, т.к. Telegram-чаты создаются бесплатно и в любом
+	// количестве: одного лимита на chat_id недостаточно, чтобы помешать
+	// массовому перебору email через много разных чатов (см.
+	// telegram_ratelimit.go, globalRateLimiter).
+	if !b.lookupLimiter.Allow() {
+		msg := tgbotapi.NewMessage(chatID,
+			"⏳ Сервис сейчас перегружен запросами. Попробуйте, пожалуйста, чуть позже.")
+		if _, err := b.bot.Send(msg); err != nil {
+			log.Printf("telegram: send lookup rate-limit message failed: %v", err)
+		}
+		return
+	}
+
 	log.Printf("telegram: searching user by email: %q", email)
 
 	// Ищем user по email
 	userRef, err := b.userRefRepo.GetByEmail(ctx, email)
 	if err != nil || userRef == nil {
 		log.Printf("telegram: user not found for email: %q", email)
+		// Намеренно нейтральный текст без подстановки введённого email
+		// обратно в сообщение: раньше ответ содержал сам email и прямо
+		// сообщал "не найден", что позволяло перебором email вычислять,
+		// какие адреса зарегистрированы в системе (user enumeration).
 		msg := tgbotapi.NewMessage(chatID,
-			fmt.Sprintf("🔍 Пользователь с email `%s` не найден в системе.\n\n"+
-				"Проверьте, что вы вводите именно тот email, который указали при регистрации.\n"+
-				"Если уверены, что email правильный — напишите в поддержку.", email))
+			"🔍 Не получилось найти аккаунт по этому email.\n\n"+
+				"Проверьте, что вы вводите именно тот email, который указали при регистрации в Study Room.\n"+
+				"Если уверены, что всё верно — напишите в поддержку.")
 		if _, err := b.bot.Send(msg); err != nil {
 			log.Printf("telegram: send not found message failed: %v", err)
 		}
