@@ -60,7 +60,7 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, serviceToken string, mai
 // NewRouter строит chi.Router со всеми эндпоинтами сервиса — идентично тому,
 // что раньше строилось прямо в main().
 func NewRouter(d *Deps) http.Handler {
-	notificationHandler := handlers.NewNotificationHandler(d.Notifications, d.Settings, d.TelegramUser)
+	notificationHandler := handlers.NewNotificationHandler(d.Notifications, d.Settings, d.TelegramUser, d.UsersRef)
 	internalHandler := handlers.NewInternalHandler(d.Notifier, d.UsersRef)
 
 	r := chi.NewRouter()

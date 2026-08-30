@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -16,14 +17,16 @@ type NotificationHandler struct {
 	notifications  *repository.NotificationRepository
 	settings       *repository.SettingsRepository
 	telegramUser   *repository.TelegramUserRepository
+	usersRef       *repository.UserRefRepository
 }
 
 func NewNotificationHandler(
 	notifications *repository.NotificationRepository,
 	settings *repository.SettingsRepository,
 	telegramUser *repository.TelegramUserRepository,
+	usersRef *repository.UserRefRepository,
 ) *NotificationHandler {
-	return &NotificationHandler{notifications: notifications, settings: settings, telegramUser: telegramUser}
+	return &NotificationHandler{notifications: notifications, settings: settings, telegramUser: telegramUser, usersRef: usersRef}
 }
 
 // GET /notifications?unread_only=true
@@ -166,6 +169,12 @@ func (h *NotificationHandler) UnlinkTelegram(w http.ResponseWriter, r *http.Requ
 	if _, err := h.telegramUser.DeleteByUserID(r.Context(), claims.UserID); err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to unlink telegram")
 		return
+	}
+	if err := h.usersRef.ClearTelegramID(r.Context(), claims.UserID); err != nil {
+		// Отвязка в telegram_users уже прошла (это главное — бот больше не
+		// пришлёт вам ничего) — сбой очистки локального кэша не должен
+		// превращать это в ошибку всего запроса, но логируем.
+		log.Printf("notifications: clear telegram_id for user %d failed: %v", claims.UserID, err)
 	}
 
 	current, err := h.settings.GetOrDefault(r.Context(), claims.UserID)

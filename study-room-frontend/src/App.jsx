@@ -4,6 +4,7 @@ import { AuthProvider } from "./context/AuthContext.jsx";
 import ProtectedRoute from "./components/routing/ProtectedRoute.jsx";
 import RouteFallback from "./components/routing/RouteFallback.jsx";
 import ErrorBoundary from "./components/routing/ErrorBoundary.jsx";
+import CookieConsentBanner from "./components/ui/CookieConsentBanner.jsx";
 
 // Логин/регистрация нужны всем при первом заходе — грузим сразу, без lazy,
 // чтобы не добавлять лишний сетевой скачок на самом первом экране приложения.
@@ -67,6 +68,11 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <AppRoutes />
+        {/* Вне ErrorBoundary/Suspense маршрутов намеренно — согласие на куки
+            должно быть видно на КАЖДОЙ странице (включая /login и /register,
+            до входа в аккаунт), а не зависеть от того, какой раздел успел
+            догрузиться. См. components/ui/CookieConsentBanner.jsx. */}
+        <CookieConsentBanner />
       </AuthProvider>
     </BrowserRouter>
   );

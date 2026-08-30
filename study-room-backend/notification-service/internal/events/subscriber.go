@@ -258,9 +258,12 @@ func (s *Subscriber) upsertUserRef(evt userEvent) bool {
 	if evt.ID == 0 || evt.Email == "" {
 		return false
 	}
-	if err := s.usersRef.Upsert(context.Background(), &models.UserRef{
+	// UpsertFromUserService (а не общий Upsert) — принципиально: события от
+	// User Service не должны трогать telegram_id/whatsapp_id, см. подробный
+	// комментарий в userref_repository.go, UpsertFromUserService.
+	if err := s.usersRef.UpsertFromUserService(context.Background(), &models.UserRef{
 		ID: evt.ID, Email: evt.Email, FirstName: evt.FirstName, LastName: evt.LastName,
-		ParentID: evt.ParentID, Phone: evt.Phone, TelegramID: evt.TelegramID, WhatsAppID: evt.WhatsAppID,
+		ParentID: evt.ParentID, Phone: evt.Phone,
 	}); err != nil {
 		log.Printf("events: upsert users_ref failed: %v", err)
 		return false
