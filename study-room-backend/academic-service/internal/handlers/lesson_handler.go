@@ -73,6 +73,13 @@ func (h *LessonHandler) List(w http.ResponseWriter, r *http.Request) {
 	case models.RoleTutor:
 		tutorID := claims.UserID
 		filter.TutorID = &tutorID
+		// Тьютор может дополнительно сузить список своих занятий по ученику
+		// (фильтр в UI расписания репетитора) — это безопасно, так как
+		// filter.TutorID уже принудительно зафиксирован выше и не приходит
+		// от клиента, поэтому student_id здесь не расширяет область видимости.
+		if v, ok := parseIntQuery(r, "student_id"); ok {
+			filter.StudentID = v
+		}
 	case models.RoleStudent:
 		studentID := claims.UserID
 		filter.StudentID = &studentID

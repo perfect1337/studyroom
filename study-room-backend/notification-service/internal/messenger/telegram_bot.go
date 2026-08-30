@@ -20,6 +20,7 @@ type TelegramBot struct {
 	token          string
 	userRefRepo      *repository.UserRefRepository
 	telegramUserRepo *repository.TelegramUserRepository
+	settingsRepo     *repository.SettingsRepository
 	botName        string
 	stopCh         chan struct{}
 
@@ -37,7 +38,7 @@ type TelegramBot struct {
 }
 
 // NewTelegramBot создаёт бота без запуска polling с retry при ошибке.
-func NewTelegramBot(token string, userRefRepo *repository.UserRefRepository, telegramUserRepo *repository.TelegramUserRepository) (*TelegramBot, error) {
+func NewTelegramBot(token string, userRefRepo *repository.UserRefRepository, telegramUserRepo *repository.TelegramUserRepository, settingsRepo *repository.SettingsRepository) (*TelegramBot, error) {
 	var bot *tgbotapi.BotAPI
 	var err error
 
@@ -78,6 +79,7 @@ func NewTelegramBot(token string, userRefRepo *repository.UserRefRepository, tel
 		token:            token,
 		userRefRepo:      userRefRepo,
 		telegramUserRepo: telegramUserRepo,
+		settingsRepo:     settingsRepo,
 		botName:          me.UserName,
 		stopCh:           make(chan struct{}),
 		chatLimiter:      newChatRateLimiter(5, 5*time.Minute, 5000),
@@ -255,6 +257,30 @@ func (b *TelegramBot) handleText(ctx context.Context, chatID int64, text string,
 	userRef.TelegramID = fmt.Sprintf("%d", chatID)
 	if err := b.userRefRepo.Upsert(ctx, userRef); err != nil {
 		log.Printf("telegram: update user_ref failed: %v", err)
+	}
+
+	// Включаем telegram_enabled в настройках уведомлений — без этого сама
+	// привязка chat_id ни на что не влияет: Notifier.Send отправляет в
+	// Telegram только когда settings.TelegramEnabled == true (см.
+	// internal/notifier/notifier.go), а этот флаг живёт отдельно от
+	// telegram_id/telegram_users и раньше нигде не включался при успешной
+	// привязке через бота — только вручную через PATCH /notifications/settings
+	// на фронте. Из-за этого пользователь видел "Уведомления через Telegram
+	// подключены!" от бота, но реально ничего не приходило, пока он отдельно
+	// не заходил в настройки и не включал тумблер Telegram руками. Симметрично
+	// UnlinkTelegram, который выключает этот же флаг при отвязке (см.
+	// notification_handler.go).
+	if b.settingsRepo != nil {
+		currentSettings, err := b.settingsRepo.GetOrDefault(ctx, userRef.ID)
+		if err != nil {
+			log.Printf("telegram: get settings for user %d failed: %v", userRef.ID, err)
+			currentSettings = &models.Settings{UserID: userRef.ID, EmailEnabled: true}
+		}
+		currentSettings.UserID = userRef.ID
+		currentSettings.TelegramEnabled = true
+		if _, err := b.settingsRepo.Upsert(ctx, currentSettings); err != nil {
+			log.Printf("telegram: enable telegram_enabled for user %d failed: %v", userRef.ID, err)
+		}
 	}
 
 	// Отправляем подтверждение

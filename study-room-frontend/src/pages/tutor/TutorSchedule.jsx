@@ -4,7 +4,7 @@ import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import EditLessonModal from "../../components/lessons/EditLessonModal.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchLessons, fetchCourses, fetchEnrollments, fetchAttendance, updateLesson } from "../../api/academic.js";
-import { fetchMyPeople } from "../../api/users.js";
+import { fetchMyPeople, fetchUserById } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import { subscribeQuery } from "../../api/queryCache.js";
 
@@ -63,10 +63,24 @@ export default function TutorSchedule() {
   const [courses, setCourses] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
   const [studentsById, setStudentsById] = useState({});
+  // Список "своих" учеников тьютора (fetchMyPeople) — источник опций для
+  // выпадающего фильтра по ученику в расписании.
+  const [myStudents, setMyStudents] = useState([]);
+  // Ученики, не найденные среди "своих" (fetchMyPeople) — например, сменили
+  // филиал и выпали из выборки тьютора, но остаются участником уже созданного
+  // занятия. Дотягиваем их профили отдельно по id (см. load() ниже), как это
+  // уже делается в ScheduleDirectory.jsx (owner/branch_owner), чтобы в
+  // карточке занятия показывалось ФИО, а не "Ученик #id".
+  const [extraStudentsById, setExtraStudentsById] = useState({});
   const [attendanceByLesson, setAttendanceByLesson] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedDay, setSelectedDay] = useState(null); // day number in current month, or null
+  // Фильтр по ученику — сужает занятия тьютора до занятий с конкретным
+  // учеником среди участников (lesson_participants). Сервер сам ограничивает
+  // выборку по tutor_id = свой, student_id лишь дополнительно сужает её
+  // (см. academic-service LessonHandler.List, case RoleTutor).
+  const [studentFilter, setStudentFilter] = useState("");
 
   // Занятие, которое сейчас редактируется. Список lessons уже отфильтрован
   // сервером по tutor_id = свой (см. fetchLessons({ tutor_id: user.id, ... })
@@ -134,7 +148,12 @@ export default function TutorSchedule() {
         const date_to = toISODate(viewYear, viewMonth, daysInMonth);
 
         const [lessonsRes, coursesRes, enrollRes, peopleRes] = await Promise.all([
-          fetchLessons({ tutor_id: user.id, date_from, date_to }),
+          fetchLessons({
+            tutor_id: user.id,
+            student_id: studentFilter ? Number(studentFilter) : undefined,
+            date_from,
+            date_to,
+          }),
           fetchCourses({ tutor_id: user.id }),
           fetchEnrollments({ tutor_id: user.id }),
           fetchMyPeople(),
@@ -145,10 +164,31 @@ export default function TutorSchedule() {
         setLessons(lessonItems);
         setCourses(coursesRes?.items ?? []);
         setEnrollments(enrollRes?.items ?? []);
+        if (!silent) setSelectedDay(null);
 
         const byId = {};
         (peopleRes?.students ?? []).forEach((s) => (byId[s.id] = s));
         setStudentsById(byId);
+        setMyStudents(peopleRes?.students ?? []);
+
+        // Участники занятий (lesson_participants) — реальные ученики, которым
+        // назначено конкретное занятие. У тьютора не все они обязательно
+        // входят в fetchMyPeople (см. комментарий у extraStudentsById выше),
+        // поэтому недостающих дотягиваем по id, как в ScheduleDirectory.jsx.
+        const participantIds = new Set();
+        lessonItems.forEach((l) => (l.participant_ids ?? []).forEach((id) => participantIds.add(id)));
+        const missingIds = [...participantIds].filter((id) => !byId[id]);
+        if (missingIds.length) {
+          const fetched = await Promise.all(missingIds.map((id) => fetchUserById(id).catch(() => null)));
+          if (requestId !== requestIdRef.current) return;
+          const extra = {};
+          fetched.forEach((s, i) => {
+            if (s) extra[missingIds[i]] = s;
+          });
+          setExtraStudentsById(extra);
+        } else {
+          setExtraStudentsById({});
+        }
 
         // Для уже прошедших занятий подтягиваем реальную посещаемость (кто был/отсутствовал).
         const now = nowHHMM();
@@ -172,7 +212,7 @@ export default function TutorSchedule() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [user?.id, viewYear, viewMonth, daysInMonth]
+    [user?.id, viewYear, viewMonth, daysInMonth, studentFilter]
   );
 
   useEffect(() => {
@@ -194,12 +234,21 @@ export default function TutorSchedule() {
     if (!user?.id) return;
     const date_from = toISODate(viewYear, viewMonth, 1);
     const date_to = toISODate(viewYear, viewMonth, daysInMonth);
-    const key = ["lessons", { tutor_id: user.id, student_id: undefined, branch_id: undefined, date_from, date_to }];
+    const key = [
+      "lessons",
+      {
+        tutor_id: user.id,
+        student_id: studentFilter ? Number(studentFilter) : undefined,
+        branch_id: undefined,
+        date_from,
+        date_to,
+      },
+    ];
     const unsubscribe = subscribeQuery(key, (reason) => {
       if (reason === "invalidate") load({ silent: true });
     });
     return unsubscribe;
-  }, [user?.id, viewYear, viewMonth, daysInMonth, load]);
+  }, [user?.id, viewYear, viewMonth, daysInMonth, studentFilter, load]);
 
   const coursesById = useMemo(() => {
     const map = {};
@@ -213,18 +262,52 @@ export default function TutorSchedule() {
     return map;
   }, [courses]);
 
-  // Активные записи (ученики), сгруппированные по course_id — так мы узнаём,
-  // кто из учеников фактически занимается на паре у этого репетитора по данному курсу
-  // (в занятии напрямую student_id не хранится, только course_id + tutor_id, см. models.Lesson).
-  const activeStudentsByCourse = useMemo(() => {
+  // Объединённый справочник учеников: "свои" (fetchMyPeople) + дотянутые
+  // отдельно по id участники занятий, которые не входят в fetchMyPeople
+  // (см. комментарий у extraStudentsById выше).
+  const allStudentsById = useMemo(
+    () => ({ ...extraStudentsById, ...studentsById }),
+    [studentsById, extraStudentsById]
+  );
+
+  // Записи (enrollments) по student_id — нужны только для прогресса
+  // (progress_pct) конкретного ученика по курсу занятия, см. ниже.
+  const enrollmentByStudentAndCourse = useMemo(() => {
     const map = {};
-    enrollments
-      .filter((e) => e.status === "active")
-      .forEach((e) => {
-        (map[e.course_id] ??= []).push(e);
-      });
+    enrollments.forEach((e) => {
+      map[`${e.student_id}:${e.course_id}`] = e;
+    });
     return map;
   }, [enrollments]);
+
+  // Ученики конкретного занятия — берём напрямую из participant_ids, которые
+  // отдаёт API вместе с занятием (реальные участники этого занятия, снимок
+  // lesson_participants), а НЕ из всех активных записей на курс: у курса
+  // может быть много учеников, но конкретное занятие назначено не всем сразу
+  // (см. models.Lesson.ParticipantIDs на бэкенде). Раньше здесь ошибочно
+  // показывались все активные ученики курса — из-за этого в карточке любого
+  // занятия отображался весь список, а не тот ученик, кому оно назначено.
+  const studentsForLesson = useMemo(() => {
+    const map = {}; // lesson.id -> [{ student, enrollment }, ...]
+    lessons.forEach((l) => {
+      const ids = [...new Set(l.participant_ids ?? [])];
+      map[l.id] = ids.map((id) => {
+        const known = allStudentsById[id];
+        const enrollment = enrollmentByStudentAndCourse[`${id}:${l.course_id}`];
+        if (known) return { id, student: known, enrollment };
+        // Нет профиля даже среди дотянутых по id — используем ФИО из
+        // participant_names (снапшот имён с бэкенда, см. Lesson.ParticipantNames),
+        // и только если даже его нет, показываем "Ученик #id" как последний фолбэк.
+        const fallbackName = l.participant_names?.[id];
+        return {
+          id,
+          student: fallbackName ? { id, first_name: fallbackName, last_name: "" } : null,
+          enrollment,
+        };
+      });
+    });
+    return map;
+  }, [lessons, allStudentsById, enrollmentByStudentAndCourse]);
 
   const lessonsByDay = useMemo(() => {
     const map = {};
@@ -264,6 +347,36 @@ export default function TutorSchedule() {
       userLabel={fullName(user)}
       avatarUrl={user?.avatar_url}
     >
+      {/* Фильтр по ученику — сужает занятия до занятий с конкретным учеником
+          среди участников. Сервер и так отдаёт только занятия этого тьютора
+          (см. LessonHandler.List, case RoleTutor), student_id лишь
+          дополнительно сужает выборку внутри его собственных занятий. */}
+      <div className="flex flex-wrap items-center gap-3 mt-4">
+        <div className="relative">
+          <select
+            value={studentFilter}
+            onChange={(e) => setStudentFilter(e.target.value)}
+            className="appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+          >
+            <option value="">Все ученики</option>
+            {myStudents.map((s) => (
+              <option key={s.id} value={s.id}>
+                {fullName(s)}
+              </option>
+            ))}
+          </select>
+        </div>
+        {studentFilter && (
+          <button
+            type="button"
+            onClick={() => setStudentFilter("")}
+            className="px-4 py-2 rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors border border-outline-variant"
+          >
+            Сбросить фильтр
+          </button>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-stack-lg mt-4">
         {/* Calendar */}
         <div className="lg:col-span-8 space-y-stack-lg">
@@ -379,7 +492,7 @@ export default function TutorSchedule() {
                 const isCompletedInBackend = lesson.status === "completed";
                 const isDone =
                   isCompletedInBackend || lesson.status === "conducted" || (!isCancelled && isLessonPast(lesson, today));
-                const roster = activeStudentsByCourse[lesson.course_id] ?? [];
+                const roster = studentsForLesson[lesson.id] ?? [];
                 const attendance = attendanceByLesson[lesson.id] ?? [];
                 const attendanceByStudent = {};
                 attendance.forEach((r) => (attendanceByStudent[r.student_id] = r));
@@ -459,16 +572,15 @@ export default function TutorSchedule() {
                           </h4>
                           {roster.length === 0 ? (
                             <p className="font-body-md text-on-surface-variant italic">
-                              Нет активных записей на этот курс.
+                              Участники занятия не найдены.
                             </p>
                           ) : (
                             <div className="space-y-2">
-                              {roster.map((e) => {
-                                const student = studentsById[e.student_id];
-                                const record = attendanceByStudent[e.student_id];
+                              {roster.map(({ id, student, enrollment }) => {
+                                const record = attendanceByStudent[id];
                                 return (
                                   <div
-                                    key={e.id}
+                                    key={id}
                                     className="flex items-center gap-3 p-3 bg-surface-container rounded-lg"
                                   >
                                     <div className="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center font-bold text-primary shrink-0">
@@ -476,10 +588,10 @@ export default function TutorSchedule() {
                                     </div>
                                     <div className="flex-1">
                                       <p className="font-label-md font-bold text-on-surface">
-                                        {student ? fullName(student) : (lesson.participant_names?.[e.student_id] ?? `Ученик #${e.student_id}`)}
+                                        {student ? fullName(student) : `Ученик #${id}`}
                                       </p>
                                       <p className="text-[12px] text-on-surface-variant">
-                                        Прогресс по курсу: {e.progress_pct ?? 0}%
+                                        Прогресс по курсу: {enrollment?.progress_pct ?? 0}%
                                       </p>
                                     </div>
                                     {record && (

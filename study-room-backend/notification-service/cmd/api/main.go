@@ -111,7 +111,7 @@ func main() {
 	// Теперь сервер поднимается сразу, а бот донастраивается параллельно.
 	if cfg.TelegramBotToken != "" {
 		go func() {
-			bot, err := messenger.NewTelegramBot(cfg.TelegramBotToken, deps.UsersRef, deps.TelegramUser)
+			bot, err := messenger.NewTelegramBot(cfg.TelegramBotToken, deps.UsersRef, deps.TelegramUser, deps.Settings)
 			if err != nil {
 				log.Printf("telegram: bot init failed: %v (continuing without bot polling)", err)
 				return
