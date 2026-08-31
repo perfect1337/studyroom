@@ -102,7 +102,7 @@ export default function CookieConsentBanner() {
             Study Room использует cookie, чтобы сайт работал (вход в аккаунт, безопасность), а
             также — если вы согласитесь — для аналитики использования сервиса. Подробнее в{" "}
             <a
-              href="https://studyroom64.ru/privacy"
+              href="https://mestudyroom64.ru/privacy"
               target="_blank"
               rel="noopener noreferrer"
               className="text-primary hover:underline"

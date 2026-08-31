@@ -221,6 +221,10 @@ services:
       - "443:443"
     volumes:
       - ./nginx/ssl:/etc/nginx/ssl:ro
+      # Общий каталог с host'ом для ACME-challenge файлов certbot'а
+      # (webroot-режим): certbot пишет сюда с хоста, nginx отдаёт их
+      # по HTTP на /.well-known/acme-challenge/ для проверки домена.
+      - ./certbot-webroot:/var/www/certbot:ro
     depends_on:
       user-service:
         condition: service_started
