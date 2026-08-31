@@ -74,6 +74,22 @@ func (h *ApplicationHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Анти-дубль: у вебхука нет своего request id (см. HasRecentWebhookApplication),
+	// поэтому проверяем по содержимому. Если такая же заявка уже создана
+	// недавно — отвечаем 200 OK, ничего не создаём и не уведомляем повторно,
+	// чтобы это не выглядело для Tilda как ошибка и не спровоцировало ещё
+	// один ретрай.
+	recent, err := h.repo.HasRecentWebhookApplication(r.Context(), req.Name, req.Phone, req.SubjectInterest, webhookDedupWindow)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check duplicate webhook application")
+		return
+	}
+	if recent {
+		log.Printf("[crm] webhook: duplicate application ignored (name=%q)", req.Name)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	app, err := h.repo.CreateFromWebhook(r.Context(), req.Name, req.Age, req.Phone, req.SubjectInterest, req.ParentName)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to create application")
@@ -83,6 +99,11 @@ func (h *ApplicationHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 	h.notifyReceived(r.Context(), app)
 	w.WriteHeader(http.StatusOK)
 }
+
+// webhookDedupWindow — окно, в течение которого повторный вызов вебхука с
+// теми же name+phone+subject_interest считается дублем (ретраем Tilda или
+// повторной отправкой формы), см. HasRecentWebhookApplication.
+const webhookDedupWindow = 2 * time.Minute
 
 func validSignature(body []byte, signature, secret string) bool {
 	if signature == "" {

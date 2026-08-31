@@ -78,6 +78,34 @@ func (r *ApplicationRepository) HasRecentInternalApplication(ctx context.Context
 	return exists, err
 }
 
+// HasRecentWebhookApplication — true, если за последние `within` уже есть
+// заявка source='tilda' с тем же name+phone+subject_interest. Защита от
+// дублей на вебхуке: в отличие от CreateInternal (см.
+// HasRecentInternalApplication выше), у /applications/webhook нет
+// идентификатора клиента (student_id) — Tilda не присылает свой request id
+// в контракте (api-contracts.md 4.1), поэтому дедуп делаем по совпадению
+// содержимого заявки. Так гасятся повторные вызовы вебхука на одну и ту же
+// отправку формы: ретраи Tilda при таймауте/5xx, двойной клик по кнопке
+// отправки на сайте и т.п. — они всегда приходят с одинаковыми полями за
+// секунды друг от друга.
+// phone/subjectInterest сравниваются через IS NOT DISTINCT FROM, потому что
+// это nullable-поля и обычное "=" не совпадает с NULL.
+func (r *ApplicationRepository) HasRecentWebhookApplication(ctx context.Context, name string, phone, subjectInterest *string, within time.Duration) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM applications
+			WHERE source = 'tilda'
+			  AND name = $1
+			  AND phone IS NOT DISTINCT FROM $2
+			  AND subject_interest IS NOT DISTINCT FROM $3
+			  AND created_at > now() - make_interval(secs => $4)
+		)`,
+		name, phone, subjectInterest, within.Seconds(),
+	).Scan(&exists)
+	return exists, err
+}
+
 func (r *ApplicationRepository) GetByID(ctx context.Context, id int64) (*models.Application, error) {
 	query := `SELECT ` + applicationColumns + ` FROM applications WHERE id = $1`
 	return scanApplication(r.pool.QueryRow(ctx, query, id))
