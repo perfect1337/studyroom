@@ -1,5 +1,38 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+// Явная таблица порядка символов для сортировки ФИО: русский алфавит (а-я, ё после е)
+// + латиница + всё остальное. Не полагаемся на Intl/localeCompare('ru'), потому что
+// его поведение (особенно порядок ё, регистр, символы вне алфавита вроде цифр/подчёркиваний
+// в тестовых ФИО) может отличаться между браузерами — а список родителей должен выглядеть
+// одинаково предсказуемо всегда, а не "почти по алфавиту".
+const RU_ALPHABET = "абвгдежзийклмнопрстуфхцчшщъыьэюя";
+const CHAR_RANK = new Map();
+[...RU_ALPHABET].forEach((ch, i) => CHAR_RANK.set(ch, i));
+// "ё" сортируется сразу после "е" (как в словарях), а не в конце алфавита.
+CHAR_RANK.set("ё", CHAR_RANK.get("е") + 0.5);
+const LATIN_BASE = RU_ALPHABET.length + 1;
+[..."abcdefghijklmnopqrstuvwxyz"].forEach((ch, i) => CHAR_RANK.set(ch, LATIN_BASE + i));
+
+function charRank(ch) {
+  const rank = CHAR_RANK.get(ch);
+  if (rank !== undefined) return rank;
+  // Цифры, знаки препинания и всё остальное — после букв, по коду символа.
+  return 10000 + ch.codePointAt(0);
+}
+
+// Сравнение строк посимвольно по таблице рангов — детерминированный аналог
+// localeCompare для кириллицы, не зависящий от локали окружения.
+function compareRu(a, b) {
+  const sa = (a || "").toLowerCase();
+  const sb = (b || "").toLowerCase();
+  const len = Math.min(sa.length, sb.length);
+  for (let i = 0; i < len; i++) {
+    const diff = charRank(sa[i]) - charRank(sb[i]);
+    if (diff !== 0) return diff;
+  }
+  return sa.length - sb.length;
+}
+
 /**
  * Выпадающий список с поиском по тексту — используется там, где вариантов
  * может быть много (например, список родителей в форме "Добавить договор" —
@@ -34,7 +67,7 @@ export default function SearchableSelect({
   // Список всегда отсортирован по алфавиту (locale-aware, важно для кириллицы),
   // чтобы родителя можно было быстро найти глазами даже без поиска.
   const sortedOptions = useMemo(
-    () => [...options].sort((a, b) => a.label.localeCompare(b.label, "ru")),
+    () => [...options].sort((a, b) => compareRu(a.label, b.label)),
     [options]
   );
 
