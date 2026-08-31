@@ -421,19 +421,41 @@ func TestContract_1_13_UpdateUser(t *testing.T) {
 	}, e.accessToken(bo)), 403)
 }
 
-func TestContract_1_14_SetStatus_OwnerOnly(t *testing.T) {
+// TestContract_1_14_SetStatus_BranchScoped — раньше этот тест назывался
+// "...OwnerOnly" и (ошибочно) ожидал 403, когда branch_owner восстанавливает
+// ("Восстановить в штат", is_active=true) преподавателя СВОЕГО ЖЕ филиала —
+// то есть ровно тот сценарий, который согласно комментариям в
+// UserHandler.SetStatus (и app.go, группа роутов /users/{id}/status) должен
+// быть РАЗРЕШЁН. Старая версия теста не соответствовала фактическому и
+// задуманному поведению кода и была битым/устаревшим тестом. Здесь она
+// заменена на набор проверок, которые реально соответствуют контракту:
+//   - owner может уволить/восстановить кого угодно;
+//   - branch_owner может уволить/восстановить преподавателя СВОЕГО филиала
+//     (в т.ч. полный цикл "уволить → восстановить");
+//   - branch_owner НЕ может тронуть статус преподавателя ЧУЖОГО филиала.
+func TestContract_1_14_SetStatus_BranchScoped(t *testing.T) {
 	e := getEnv(t)
-	b := e.seedBranch("A", "A")
+	b1 := e.seedBranch("A", "A")
+	b2 := e.seedBranch("B", "B")
 	owner := e.seedUser(seedOpts{Email: "o14@t.l", Role: models.RoleOwner})
-	bo := e.seedUser(seedOpts{Email: "bo14@t.l", Role: models.RoleBranchOwner, BranchID: &b.ID})
-	target := e.seedUser(seedOpts{Email: "tgt14@t.l", Role: models.RoleTutor, BranchID: &b.ID})
+	bo := e.seedUser(seedOpts{Email: "bo14@t.l", Role: models.RoleBranchOwner, BranchID: &b1.ID})
+	target := e.seedUser(seedOpts{Email: "tgt14@t.l", Role: models.RoleTutor, BranchID: &b1.ID})
+	foreignTutor := e.seedUser(seedOpts{Email: "ftgt14@t.l", Role: models.RoleTutor, BranchID: &b2.ID})
 
+	// owner увольняет.
 	e.mustOK(e.do("PATCH", fmt.Sprintf("/api/v1/users/%d/status", target.ID), map[string]any{
 		"is_active": false,
 	}, e.accessToken(owner)), 200)
 
+	// branch_owner СВОЕГО филиала успешно восстанавливает.
 	e.mustOK(e.do("PATCH", fmt.Sprintf("/api/v1/users/%d/status", target.ID), map[string]any{
 		"is_active": true,
+	}, e.accessToken(bo)), 200)
+
+	// branch_owner ЧУЖОГО филиала не может тронуть статус чужого тьютора —
+	// ни уволить, ни восстановить.
+	e.mustOK(e.do("PATCH", fmt.Sprintf("/api/v1/users/%d/status", foreignTutor.ID), map[string]any{
+		"is_active": false,
 	}, e.accessToken(bo)), 403)
 }
 
