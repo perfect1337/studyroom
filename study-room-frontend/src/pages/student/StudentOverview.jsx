@@ -138,12 +138,20 @@ export default function StudentOverview() {
 
   return (
     <DashboardShell
+      fullWidth
       role="student"
       user={toSidebarUser(user)}
       searchPlaceholder="Поиск..."
       userLabel={fullName(user)}
       avatarUrl={user?.avatar_url}
     >
+      {/* fullWidth снимает общий потолок ширины контента (max-w-container-max),
+          иначе на широких мониторах вся сетка карточек упирается в ~1200px и
+          справа остаётся пустая полоса. Чтобы при этом отступ слева от сайдбара
+          остался таким же, как на остальных страницах, здесь вручную повторена
+          та же формула отступа, что и в DashboardShell для не-fullWidth страниц
+          (см. components/layout/DashboardShell.jsx). */}
+      <div className="ml-[max(0px,calc((100%_-_1200px)/2_-_100px))]">
       <div className="pb-section-padding">
         {error && (
           <div className="mt-4 mb-4 p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">
@@ -372,6 +380,7 @@ export default function StudentOverview() {
             </div>
           </div>
         </div>
+      </div>
       </div>
     </DashboardShell>
   );
