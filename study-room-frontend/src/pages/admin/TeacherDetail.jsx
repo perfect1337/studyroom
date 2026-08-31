@@ -455,13 +455,28 @@ export default function TeacherDetail({ role = "owner" }) {
 
                     <div className="flex items-center gap-2 ml-0 md:ml-2">
                       <StatusBadge status={TUTOR_STATUS_LABEL[tutorStatus] ?? tutorStatus} />
-                      <TutorStatusSelect
-                        value={tutorStatus}
-                        options={statusOptions}
-                        labelMap={TUTOR_STATUS_LABEL}
-                        disabled={statusUpdating}
-                        onChange={handleStatusChange}
-                      />
+                      {/* Пока преподаватель уволен (isFired, is_active=false), этот
+                          дропдаун (active|vacation|sick_leave|inactive) скрываем —
+                          он меняет ТОЛЬКО tutor_profiles.status через отдельный
+                          endpoint PATCH /tutors/{id}/status и никак не влияет на
+                          users.is_active, от которого реально зависит вход в
+                          систему. Раньше дропдаун был виден всегда, и было легко
+                          по ошибке переключить его на "Активен", решив, что это
+                          и есть восстановление — бейдж менялся, а вход всё равно
+                          оставался заблокирован, потому что настоящий is_active
+                          так и не трогался. Единственный способ вернуть доступ —
+                          кнопка "Восстановить в штат" в шапке (handleReinstate),
+                          которая теперь синхронно чинит оба поля на бэкенде (см.
+                          UserHandler.reinstateTutorOrActivate). */}
+                      {!isFired && (
+                        <TutorStatusSelect
+                          value={tutorStatus}
+                          options={statusOptions}
+                          labelMap={TUTOR_STATUS_LABEL}
+                          disabled={statusUpdating}
+                          onChange={handleStatusChange}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>

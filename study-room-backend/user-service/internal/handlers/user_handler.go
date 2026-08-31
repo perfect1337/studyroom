@@ -801,12 +801,10 @@ func (h *UserHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if body.IsActive {
-		updated, err := h.users.Update(r.Context(), id, map[string]any{"is_active": true})
-		if err != nil {
+		if err := h.reinstateTutorOrActivate(r.Context(), target); err != nil {
 			writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
 			return
 		}
-		h.events.UserUpdated(updated)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -839,6 +837,47 @@ func (h *UserHandler) fireTutorOrDeactivate(ctx context.Context, target *models.
 
 	if target.Role == models.RoleTutor {
 		if err := h.tutorProfiles.SetStatus(ctx, target.ID, models.TutorStatusInactive); err != nil {
+			return err
+		}
+	}
+	h.events.UserUpdated(updated)
+	return nil
+}
+
+// reinstateTutorOrActivate — обратная операция к fireTutorOrDeactivate
+// ("Восстановить в штат"): снимает блокировку входа (is_active=true) и,
+// что важно, для tutor также возвращает tutor_profiles.status обратно в
+// active.
+//
+// БАГ, который здесь исправлен: раньше PATCH /users/{id}/status с
+// is_active=true просто делал users.is_active=true и всё — tutor_status
+// так и оставался "inactive" (его выставил fireTutorOrDeactivate при
+// увольнении). Само по себе это не мешало логину (SetStatus и Login
+// проверяют только users.is_active), НО именно эта асимметрия и была
+// источником реальной проблемы "уволили — восстановили — всё равно не
+// пускает": карточка преподавателя (TeacherDetail.jsx) продолжала
+// показывать статус "Неактивен" рядом с выпадающим списком
+// TutorStatusSelect, который виден ВСЕГДА, в том числе для уволенных.
+// Администратор, не заметив (или не поняв) отдельную кнопку "Восстановить
+// в штат" в шапке, часто вместо неё просто переключал этот дропдаун на
+// "Активен" — а это дергает СОВСЕМ ДРУГОЙ endpoint (PATCH
+// /tutors/{id}/status), который трогает только tutor_profiles.status и
+// НЕ трогает users.is_active. В итоге бейдж мог даже показать "Активен",
+// а вход по-прежнему был запрещён (users.is_active оставался false),
+// потому что настоящее восстановление так и не было вызвано.
+//
+// Теперь единственная кнопка "Восстановить в штат" синхронно приводит в
+// порядок оба поля разом, а UI (см. TeacherDetail.jsx) больше не даёт
+// трогать TutorStatusSelect, пока сотрудник уволен — так что запутаться
+// между этими двумя контролами больше нельзя.
+func (h *UserHandler) reinstateTutorOrActivate(ctx context.Context, target *models.User) error {
+	updated, err := h.users.Update(ctx, target.ID, map[string]any{"is_active": true})
+	if err != nil {
+		return err
+	}
+
+	if target.Role == models.RoleTutor {
+		if err := h.tutorProfiles.SetStatus(ctx, target.ID, models.TutorStatusActive); err != nil {
 			return err
 		}
 	}
