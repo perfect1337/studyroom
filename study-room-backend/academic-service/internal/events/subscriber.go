@@ -93,10 +93,11 @@ type Subscriber struct {
 	lessonRepo   *repository.LessonRepository
 	homeworkRepo *repository.HomeworkRepository
 	testRepo     *repository.TestRepository
+	subgroupRepo *repository.SubgroupRepository
 }
 
-func NewSubscriber(nc *nats.Conn, userRefRepo *repository.UserRefRepository, enrollRepo *repository.EnrollmentRepository, courseRepo *repository.CourseRepository, lessonRepo *repository.LessonRepository, homeworkRepo *repository.HomeworkRepository, testRepo *repository.TestRepository) *Subscriber {
-	return &Subscriber{nc: nc, userRefRepo: userRefRepo, enrollRepo: enrollRepo, courseRepo: courseRepo, lessonRepo: lessonRepo, homeworkRepo: homeworkRepo, testRepo: testRepo}
+func NewSubscriber(nc *nats.Conn, userRefRepo *repository.UserRefRepository, enrollRepo *repository.EnrollmentRepository, courseRepo *repository.CourseRepository, lessonRepo *repository.LessonRepository, homeworkRepo *repository.HomeworkRepository, testRepo *repository.TestRepository, subgroupRepo *repository.SubgroupRepository) *Subscriber {
+	return &Subscriber{nc: nc, userRefRepo: userRefRepo, enrollRepo: enrollRepo, courseRepo: courseRepo, lessonRepo: lessonRepo, homeworkRepo: homeworkRepo, testRepo: testRepo, subgroupRepo: subgroupRepo}
 }
 
 // Start подписывается на нужные субъекты. Подписки живут вместе с процессом
@@ -181,6 +182,18 @@ func (s *Subscriber) detachTutor(ctx context.Context, tutorID int64, reason stri
 			log.Printf("[events] %s: delete lessons for tutor %d error: %v", reason, tutorID, err)
 		} else if n > 0 {
 			log.Printf("[events] %s: deleted %d lesson(s) for tutor %d", reason, n, tutorID)
+		}
+	}
+	// Личные подгруппы тьютора (subgroups/subgroup_members) — отдельная от
+	// course_tutors/enrollments сущность, поэтому чистится отдельным
+	// вызовом. Без этого шага после увольнения и последующего
+	// восстановления в штат за преподавателем по-прежнему "числились" бы
+	// его старые ученики — см. SubgroupRepository.DeleteByTutor.
+	if s.subgroupRepo != nil {
+		if n, err := s.subgroupRepo.DeleteByTutor(ctx, tutorID); err != nil {
+			log.Printf("[events] %s: delete subgroups for tutor %d error: %v", reason, tutorID, err)
+		} else if n > 0 {
+			log.Printf("[events] %s: deleted %d subgroup(s) for tutor %d", reason, n, tutorID)
 		}
 	}
 
