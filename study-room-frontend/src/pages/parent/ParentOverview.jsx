@@ -53,7 +53,7 @@ export default function ParentOverview() {
 
   const [format, setFormat] = useState("group");
   const [applyChildId, setApplyChildId] = useState("");
-  const [applySubject, setApplySubject] = useState("");
+  const [applyCourseId, setApplyCourseId] = useState("");
   const [applyStatus, setApplyStatus] = useState("");
   // Контакты родителя для заявки — по умолчанию берём из профиля (ФИО, телефон),
   // но даём поправить перед отправкой (например, если удобнее указать другой номер).
@@ -170,25 +170,25 @@ export default function ParentOverview() {
     return map;
   }, [courses]);
 
-  // Реальные предметы из уже загруженных курсов (а не выдуманный статический
+  // Реальные курсы из уже загруженных данных (а не выдуманный статический
   // список) — родитель может подать заявку только на то, что действительно
-  // преподаётся в учебном центре.
-  const availableSubjects = useMemo(() => {
-    const set = new Set();
-    courses.forEach((c) => {
-      const s = (c.subject || c.title || "").trim();
-      if (s) set.add(s);
-    });
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
+  // преподаётся в учебном центре. Записываемся конкретно на курс, а не
+  // обобщённо на предмет — так менеджер сразу видит, какая именно программа
+  // интересует родителя.
+  const availableCourses = useMemo(() => {
+    return courses
+      .filter((c) => (c.title || c.subject || "").trim())
+      .slice()
+      .sort((a, b) => (a.title || a.subject || "").localeCompare(b.title || b.subject || "", "ru"));
   }, [courses]);
 
-  // Как только курсы подгрузились — выставляем первый реальный предмет по
-  // умолчанию (пока список не готов, applySubject остаётся пустым).
+  // Как только курсы подгрузились — выставляем первый курс по умолчанию
+  // (пока список не готов, applyCourseId остаётся пустым).
   useEffect(() => {
-    if (availableSubjects.length && !applySubject) {
-      setApplySubject(availableSubjects[0]);
+    if (availableCourses.length && !applyCourseId) {
+      setApplyCourseId(String(availableCourses[0].id));
     }
-  }, [availableSubjects, applySubject]);
+  }, [availableCourses, applyCourseId]);
 
   const childrenById = useMemo(() => {
     const map = {};
@@ -258,16 +258,21 @@ export default function ParentOverview() {
 
   async function handleApply(e) {
     e.preventDefault();
-    if (!applyChildId || !applySubject) return;
+    if (!applyChildId || !applyCourseId) return;
     if (!isValidPhone(applyPhone)) {
       setApplyStatus("Введите телефон в формате из 10-15 цифр (можно с +)");
       return;
     }
+    const selectedCourse = coursesById[Number(applyCourseId)];
+    // Бэкенд заявок хранит текстовое поле subject_interest (нет отдельного
+    // course_id), поэтому передаём туда название конкретного курса — так
+    // менеджер видит именно программу, на которую хочет записаться родитель.
+    const courseLabel = selectedCourse?.title || selectedCourse?.subject || "";
     setApplyStatus("saving");
     try {
       await createInternalApplication({
         student_id: Number(applyChildId),
-        subject_interest: applySubject,
+        subject_interest: courseLabel,
         format,
         parent_name: applyParentName.trim() || fullName(user),
         phone: applyPhone.trim() || undefined,
@@ -501,8 +506,9 @@ export default function ParentOverview() {
                   [
                     { key: "email_enabled", label: "Почта" },
                     { key: "telegram_enabled", label: "Telegram" },
-                    { key: "whatsapp_enabled", label: "WhatsApp" },
-                    { key: "max_enabled", label: "MAX" },
+                    // WhatsApp и MAX скрыты из UI по требованию — бэкенд и
+                    // state (whatsapp_enabled/max_enabled) не трогаем, чтобы
+                    // не ломать то, что уже подогнано под них на бэке.
                   ].map((ch) => (
                     <label key={ch.key} className="flex items-center gap-3 cursor-pointer">
                       <input
@@ -625,19 +631,22 @@ export default function ParentOverview() {
                   </select>
                 </div>
                 <div>
-                  <label className="block font-label-md text-label-md text-on-surface mb-2">Предмет</label>
+                  <label className="block font-label-md text-label-md text-on-surface mb-2">Курс</label>
                   <select
                     required
-                    disabled={!availableSubjects.length}
-                    value={applySubject}
-                    onChange={(e) => setApplySubject(e.target.value)}
+                    disabled={!availableCourses.length}
+                    value={applyCourseId}
+                    onChange={(e) => setApplyCourseId(e.target.value)}
                     className="w-full rounded-lg border-outline-variant bg-surface-container-lowest text-on-surface focus:ring-primary disabled:opacity-60"
                   >
-                    {!availableSubjects.length && (
+                    {!availableCourses.length && (
                       <option value="">Нет доступных курсов</option>
                     )}
-                    {availableSubjects.map((s) => (
-                      <option key={s} value={s}>{s}</option>
+                    {availableCourses.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.title || c.subject}
+                        {c.subject && c.title && c.subject !== c.title ? ` (${c.subject})` : ""}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -690,7 +699,7 @@ export default function ParentOverview() {
                 </div>
                 <button
                   type="submit"
-                  disabled={!applyChildId || !applySubject}
+                  disabled={!applyChildId || !applyCourseId}
                   className="w-full bg-primary text-on-primary py-3 rounded-lg font-label-md text-label-md hover:bg-primary-container transition-all mt-2 disabled:opacity-60"
                 >
                   Отправить заявку
