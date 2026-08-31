@@ -364,14 +364,18 @@ export default function FinanceDirectory({ role }) {
           <div className="mb-6 p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-          <div className="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-              <span className="material-symbols-outlined text-6xl text-primary">account_balance_wallet</span>
+        <div className={`grid grid-cols-1 gap-6 mb-10 ${isOwner ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
+          {/* Выручку видит только owner (сеть в целом) — у branch_owner карточка
+              скрыта, т.к. эти цифры относятся к финансам компании, а не филиала. */}
+          {isOwner && (
+            <div className="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                <span className="material-symbols-outlined text-6xl text-primary">account_balance_wallet</span>
+              </div>
+              <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-2">Общая выручка (оплачено)</p>
+              <h3 className="font-display-lg text-display-lg text-on-surface">{loading ? "…" : formatMoney(totalRevenue)}</h3>
             </div>
-            <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-2">Общая выручка (оплачено)</p>
-            <h3 className="font-display-lg text-display-lg text-on-surface">{loading ? "…" : formatMoney(totalRevenue)}</h3>
-          </div>
+          )}
 
           <button
             type="button"
