@@ -128,8 +128,35 @@ func New(
 
 // Send creates a notification record and dispatches to ALL enabled channels.
 // Each channel gets its own DB record so delivery can be tracked independently.
+//
+// in_app — отдельно от внешних каналов: см. ChannelInApp в internal/models.
+// Раньше "уведомление" в смысле колокольчика (GET /notifications) было
+// побочным продуктом внешней доставки — по записи на каждый включённый
+// канал (email/telegram/...). Из-за этого пользователь с несколькими
+// включёнными каналами видел в колокольчике один и тот же текст
+// продублированным (по числу каналов), а пользователь без резолвящегося
+// контакта ни по одному каналу (см. len(createdRecords) == 0 ниже) не
+// получал уведомление вообще нигде — даже в самом вебе, где он уже
+// залогинен и никакой "доставки" для этого не требуется. Теперь запись
+// с channel=in_app создаётся ВСЕГДА и безусловно, сразу в статусе "sent"
+// (никуда ничего не отправляет — это просто то, что видно в колокольчике),
+// а внешние каналы по-прежнему зависят от настроек/наличия контакта и не
+// влияют на то, увидит ли пользователь уведомление в интерфейсе.
 func (n *Notifier) Send(ctx context.Context, userID int64, notifType, message, emailOverride string) (*models.Notification, error) {
 	subject := subjectFor(notifType)
+
+	inApp, err := n.notifications.Create(ctx, &models.Notification{
+		UserID:  userID,
+		Type:    notifType,
+		Channel: models.ChannelInApp,
+		Message: message,
+		Status:  models.StatusSent,
+	})
+	if err != nil {
+		// Если даже in_app-запись не создалась (БД недоступна и т.п.) — это
+		// уже фатально для доставки как таковой, дальше пытаться нет смысла.
+		return nil, fmt.Errorf("create in-app notification: %w", err)
+	}
 
 	// Load user settings
 	settings, err := n.settings.GetOrDefault(ctx, userID)
@@ -145,7 +172,8 @@ func (n *Notifier) Send(ctx context.Context, userID int64, notifType, message, e
 		ref = &models.UserRef{ID: userID}
 	}
 
-	// Create notification records for ALL enabled channels
+	// Create notification records for external channels — доставка,
+	// не влияет на видимость in_app-записи выше в колокольчике.
 	createdRecords := make([]*models.Notification, 0)
 
 	if settings.EmailEnabled {
@@ -191,8 +219,15 @@ func (n *Notifier) Send(ctx context.Context, userID int64, notifType, message, e
 	}
 
 	if len(createdRecords) == 0 {
-		return nil, fmt.Errorf("no enabled channels for user %d (email=%v, telegram=%v, whatsapp=%v, max=%v)",
+		// Раньше это была ошибка (Send возвращал err, и вызывающая сторона —
+		// events/subscriber.go, s.send — просто логировала и теряла
+		// уведомление целиком). Теперь in_app-запись уже создана выше
+		// безусловно, так что пользователь всё равно увидит уведомление
+		// в колокольчике — отсутствие внешних каналов не повод считать
+		// Send() проваленным, просто нечего доставлять вовне.
+		log.Printf("notifier: no external channels for user %d (email=%v, telegram=%v, whatsapp=%v, max=%v), in-app only",
 			userID, settings.EmailEnabled, settings.TelegramEnabled, settings.WhatsAppEnabled, settings.MaxEnabled)
+		return inApp, nil
 	}
 
 	// Return the first record (preferred channel) as the "main" notification

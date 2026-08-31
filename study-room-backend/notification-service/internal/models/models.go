@@ -9,6 +9,10 @@ const (
 	ChannelMax      Channel = "max"
 	ChannelTelegram Channel = "telegram"
 	ChannelWhatsApp Channel = "whatsapp"
+	// ChannelInApp — "виртуальный" канал: не доставляет ничего никуда,
+	// это ровно то, что показывает колокольчик в вебе (GET /notifications).
+	// См. Notifier.Send и NotificationRepository.ListByUser.
+	ChannelInApp Channel = "in_app"
 )
 
 type Status string

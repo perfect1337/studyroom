@@ -52,9 +52,20 @@ func (r *NotificationRepository) UpdateStatus(ctx context.Context, id int64, sta
 	return err
 }
 
-// ListByUser — уведомления конкретного пользователя, опционально только непрочитанные.
+// ListByUser — уведомления конкретного пользователя для колокольчика,
+// опционально только непрочитанные.
+//
+// Фильтр по channel = 'in_app' — принципиально: строки с channel в
+// (email/telegram/whatsapp/max) создаются в Notifier.Send для КАЖДОГО
+// включённого внешнего канала отдельно (это трекинг реальной доставки,
+// см. Notifier.createAndQueueJob), и раньше ListByUser отдавала их все —
+// пользователь с несколькими включёнными каналами видел в колокольчике
+// один и тот же текст продублированным по числу каналов. channel='in_app'
+// создаётся Notifier.Send ровно один раз на событие, безусловно (см.
+// ChannelInApp в internal/models) — это и есть то, что должен показывать
+// колокольчик.
 func (r *NotificationRepository) ListByUser(ctx context.Context, userID int64, unreadOnly bool) ([]*models.Notification, error) {
-	query := `SELECT ` + notificationColumns + ` FROM notifications WHERE user_id = $1`
+	query := `SELECT ` + notificationColumns + ` FROM notifications WHERE user_id = $1 AND channel = 'in_app'`
 	args := []any{userID}
 	if unreadOnly {
 		query += ` AND is_read = false`
