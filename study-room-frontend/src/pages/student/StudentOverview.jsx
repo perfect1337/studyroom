@@ -138,7 +138,6 @@ export default function StudentOverview() {
 
   return (
     <DashboardShell
-      fullWidth
       role="student"
       user={toSidebarUser(user)}
       searchPlaceholder="Поиск..."
@@ -223,7 +222,7 @@ export default function StudentOverview() {
             </div>
           </div>
 
-          <div className="col-span-1 grid grid-cols-1 gap-stack-md">
+          <div className="col-span-1 flex flex-col justify-center gap-stack-md h-full">
             {!loading && enrollments.length === 0 && (
               <div className="bg-surface-container-lowest rounded-xl p-stack-md shadow-sm border border-outline-variant text-on-surface-variant font-body-md">
                 Вы пока не записаны ни на один курс
@@ -231,26 +230,32 @@ export default function StudentOverview() {
             )}
             {enrollments.slice(0, 3).map((e) => {
               const course = coursesById[e.course_id];
+              const isActive = e.status === "active";
               return (
                 <div
                   key={e.id}
-                  className="bg-surface-container-lowest rounded-xl p-stack-md shadow-sm border border-outline-variant border-l-4 border-l-primary flex items-center justify-between"
+                  className="bg-surface-container-lowest rounded-xl p-stack-lg shadow-sm border border-outline-variant border-l-4 border-l-primary flex flex-col justify-center gap-4"
                 >
-                  <div>
-                    <p className="font-label-md text-label-md font-bold text-on-surface-variant mb-3">
-                      {course?.title ?? course?.subject ?? `Курс #${e.course_id}`}
-                    </p>
-                    <div className="flex gap-6">
-                      <div>
-                        <p className="text-xs text-on-surface-variant mb-1 uppercase tracking-wide">Прогресс</p>
-                        <h3 className="font-headline-sm text-headline-sm text-primary">{e.progress_pct ?? 0}%</h3>
-                      </div>
-                      <div>
-                        <p className="text-xs text-on-surface-variant mb-1 uppercase tracking-wide">Статус</p>
-                        <h3 className="font-headline-sm text-headline-sm text-secondary-container">
-                          {e.status === "active" ? "Активен" : e.status}
-                        </h3>
-                      </div>
+                  <p className="font-label-md text-label-md font-bold text-on-surface-variant truncate">
+                    {course?.title ?? course?.subject ?? `Курс #${e.course_id}`}
+                  </p>
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-xs text-on-surface-variant mb-1 uppercase tracking-wide">Прогресс</p>
+                      <h3 className="font-headline-sm text-headline-sm text-primary">{e.progress_pct ?? 0}%</h3>
+                    </div>
+                    <div>
+                      <p className="text-xs text-on-surface-variant mb-1 uppercase tracking-wide text-right">Статус</p>
+                      <span
+                        className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full border ${
+                          isActive
+                            ? "border-secondary-container bg-secondary-container/40 text-on-secondary-container"
+                            : "border-outline-variant bg-surface-container text-on-surface-variant"
+                        }`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-secondary-fixed-dim" : "bg-outline"}`} />
+                        {isActive ? "Активен" : e.status}
+                      </span>
                     </div>
                   </div>
                 </div>
