@@ -39,7 +39,11 @@ type Deps struct {
 // mail — mailer.Sender, чтобы в тестах можно было подставить фейковый отправитель
 // вместо реального SMTP.
 // factory — messenger.Factory для отправки через мессенджеры.
-func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, serviceToken string, mail mailer.Sender, factory *messenger.Factory) *Deps {
+// smtpBatchHourlyLimit — верхняя граница писем/час для "пачечных"
+// уведомлений (дайджест занятий, напоминания об истечении договора), см.
+// notifier.New и config.Config.SMTPBatchHourlyLimit. 0 значит "использовать
+// значение по умолчанию notifier'а (400)".
+func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, serviceToken string, mail mailer.Sender, factory *messenger.Factory, smtpBatchHourlyLimit int) *Deps {
 	notificationsRepo := repository.NewNotificationRepository(pool)
 	settingsRepo := repository.NewSettingsRepository(pool)
 	usersRefRepo := repository.NewUserRefRepository(pool)
@@ -51,7 +55,7 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, serviceToken string, mai
 		Settings:       settingsRepo,
 		UsersRef:       usersRefRepo,
 		TelegramUser:   telegramUserRepo,
-		Notifier:       notifier.New(notificationsRepo, settingsRepo, usersRefRepo, mail, factory),
+		Notifier:       notifier.New(notificationsRepo, settingsRepo, usersRefRepo, mail, factory, smtpBatchHourlyLimit),
 		TokenManager:   tm,
 		ServiceToken:   serviceToken,
 	}

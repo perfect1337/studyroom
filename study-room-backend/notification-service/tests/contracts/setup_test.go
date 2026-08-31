@@ -170,7 +170,10 @@ func getEnv(t *testing.T) *env {
 		mail := newFakeMailer()
 		messengerCfg := messenger.Config{}
 		factory := messenger.NewFactory(messengerCfg)
-		deps := app.NewDeps(pool, tm, testServiceToken, mail, factory)
+		// -1 отключает почасовой троттлинг batch-уведомлений (см.
+		// notifier.New) — контрактные тесты шлют единичные письма и не
+		// должны зависеть от реального SMTP-лимита/скользящего окна.
+		deps := app.NewDeps(pool, tm, testServiceToken, mail, factory, -1)
 
 		shared = &env{
 			pool:   pool,

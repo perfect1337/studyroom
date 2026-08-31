@@ -30,6 +30,16 @@ type Config struct {
 	SMTPPassword string
 	SMTPFrom     string // "Study Room <no-reply@yourdomain.ru>" или просто email
 
+	// SMTPBatchHourlyLimit — сколько писем в час разрешено потратить на
+	// "пачечные" уведомления (ежедневный дайджест занятий в 9:00 МСК и
+	// напоминания об истекающих договорах, см. notifier.batchEmailNotifTypes).
+	// Провайдер (mail.ru) отдаёт 500 писем/час на аккаунт — по умолчанию
+	// сюда уходит 400, гарантированный запас 100 остаётся на остальные
+	// уведомления (welcome/сброс пароля/новая заявка и т.д., см.
+	// notifier.New). 0 — использовать значение по умолчанию (400),
+	// отрицательное — отключить троттлинг вовсе.
+	SMTPBatchHourlyLimit int
+
 	// --- Мессенджеры ---
 	// Telegram Bot API
 	TelegramBotToken string // токен от @BotFather (например, 123456789:ABCdefGHIjklMNOpqrsTUVwxyz)
@@ -55,6 +65,8 @@ func Load() (*Config, error) {
 		SMTPUser:     getEnv("SMTP_USER", ""),
 		SMTPPassword: getEnv("SMTP_PASSWORD", ""),
 		SMTPFrom:     getEnv("SMTP_FROM", ""),
+
+		SMTPBatchHourlyLimit: getEnvInt("SMTP_BATCH_HOURLY_LIMIT", 400),
 
 		// Мессенджеры (не обязательны для запуска — проверяются при первой отправке)
 		TelegramBotToken:    getEnv("TELEGRAM_BOT_TOKEN", ""),

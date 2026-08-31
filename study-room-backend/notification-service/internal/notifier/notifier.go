@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"studyroom/notification-service/internal/mailer"
 	"studyroom/notification-service/internal/messenger"
 	"studyroom/notification-service/internal/models"
+	"studyroom/notification-service/internal/ratelimit"
 	"studyroom/notification-service/internal/repository"
 )
 
@@ -20,6 +22,29 @@ type Notifier struct {
 	mail          mailer.Sender
 	factory       *messenger.Factory
 	sendQueue     chan *sendJob
+
+	// batchSendQueue/emailQuota — отдельный путь доставки только для email
+	// "пачечных" уведомлений (см. batchEmailNotifTypes): ежедневного
+	// дайджеста занятий (публикуется раз в сутки в 9:00 МСК, см.
+	// academic-service startDailyDigestJob) и напоминаний об истекающих
+	// договорах. Оба генерируются разом на десятки/сотни получателей и
+	// поэтому сами по себе способны упереться в почасовой лимит
+	// SMTP-провайдера (mail.ru — не более 500 писем в час на аккаунт).
+	//
+	// emailQuota ограничивает именно эти два типа сверху (см.
+	// defaultSMTPBatchHourlyLimit) — как только за последний час через
+	// SMTP отправлено достаточно писем ЭТИХ типов, доставка следующих
+	// блокируется внутри processBatchEmailSends (см. ratelimit.HourlyLimiter.
+	// Wait) и продолжается только тогда, когда самому старому письму в
+	// окне "исполняется" час, т.е. лимит обновляется. Так гарантированно
+	// остаётся запас пропускной способности SMTP на остальные типы
+	// уведомлений (приветственные письма, сброс пароля, новая заявка,
+	// отмена занятия, отсутствие на занятии) — они по-прежнему идут через
+	// обычный sendQueue/processBackgroundSends безо всякого троттлинга с
+	// нашей стороны.
+	batchSendQueue chan *sendJob
+	emailQuota     *ratelimit.HourlyLimiter
+	emailQuotaMax  int // фактически сконфигурированный лимит, для логов (см. New)
 }
 
 type sendJob struct {
@@ -29,31 +54,75 @@ type sendJob struct {
 	subject        string
 	body           string
 	channel        models.Channel
+	notifType      string
 }
 
 const (
 	defaultSendQueueSize = 128
 	defaultSendWorkers   = 4
+
+	// defaultBatchSendQueueSize — с запасом на дневной дайджест: в
+	// худшем случае у каждого активного ученика в этот час будет своё
+	// письмо, и все они встанут в очередь одновременно в 9:00 МСК, ещё до
+	// того, как quota начнёт их выпускать по одному. Больше, чем
+	// defaultSendQueueSize, намеренно — эта очередь по конструкции
+	// предназначена копить письма, а не обрабатываться мгновенно.
+	defaultBatchSendQueueSize = 4096
+
+	// defaultSMTPBatchHourlyLimit — сколько писем в час разрешено на
+	// дайджест занятий и напоминания об истечении договора вместе взятые.
+	// SMTP-провайдер (mail.ru) отдаёт 500/час на аккаунт; 400 сюда, 100
+	// гарантированно остаются на остальные уведомления (см. New —
+	// SMTP_BATCH_HOURLY_LIMIT переопределяет значение из конфига).
+	defaultSMTPBatchHourlyLimit = 400
 )
 
+// batchEmailNotifTypes — типы уведомлений, чья email-доставка идёт через
+// batchSendQueue/emailQuota, а не напрямую. Именно эти два типа
+// рассылаются пачками по расписанию (см. комментарий у поля batchSendQueue
+// в Notifier) — остальные типы почти всегда единичны (один пользователь —
+// одно событие: регистрация, сброс пароля и т.д.) и не должны ждать
+// освобождения общей SMTP-квоты пачечных рассылок.
+var batchEmailNotifTypes = map[string]bool{
+	"daily_lessons_digest": true,
+	"contract_expiring":    true,
+}
+
+// New создаёt Notifier. smtpBatchHourlyLimit — верхняя граница писем в час
+// для batchEmailNotifTypes (см. defaultSMTPBatchHourlyLimit): 0 значит
+// "использовать значение по умолчанию", отрицательное — "троттлинга нет"
+// (полезно для тестов/локальной разработки без реального SMTP-лимита).
 func New(
 	notifications *repository.NotificationRepository,
 	settings *repository.SettingsRepository,
 	usersRef *repository.UserRefRepository,
 	mail mailer.Sender,
 	factory *messenger.Factory,
+	smtpBatchHourlyLimit int,
 ) *Notifier {
+	if smtpBatchHourlyLimit == 0 {
+		smtpBatchHourlyLimit = defaultSMTPBatchHourlyLimit
+	}
 	n := &Notifier{
-		notifications: notifications,
-		settings:      settings,
-		usersRef:      usersRef,
-		mail:          mail,
-		factory:       factory,
-		sendQueue:     make(chan *sendJob, defaultSendQueueSize),
+		notifications:  notifications,
+		settings:       settings,
+		usersRef:       usersRef,
+		mail:           mail,
+		factory:        factory,
+		sendQueue:      make(chan *sendJob, defaultSendQueueSize),
+		batchSendQueue: make(chan *sendJob, defaultBatchSendQueueSize),
+		emailQuota:     ratelimit.NewHourlyLimiter(smtpBatchHourlyLimit, time.Hour),
+		emailQuotaMax:  smtpBatchHourlyLimit,
 	}
 	for i := 0; i < defaultSendWorkers; i++ {
 		go n.processBackgroundSends()
 	}
+	// Один воркер: очередь и так последовательно ограничена общей квотой
+	// emailQuota, несколько воркеров здесь не увеличили бы реальную
+	// пропускную способность SMTP, а вот порядок отправки (FIFO) удобнее
+	// сохранить простым — письма уходят в том порядке, в котором встали
+	// в очередь.
+	go n.processBatchEmailSends()
 	return n
 }
 
@@ -150,15 +219,27 @@ func (n *Notifier) createAndQueueJob(ctx context.Context, userID int64, notifTyp
 		subject:        subject,
 		body:           message,
 		channel:        channel,
+		notifType:      notifType,
+	}
+
+	// Только email-доставка "пачечных" типов (дайджест занятий,
+	// напоминание об истекающем договоре) идёт через отдельную очередь с
+	// почасовой SMTP-квотой — см. комментарий у Notifier.batchSendQueue.
+	// Те же типы через telegram/whatsapp/max квоту не расходуют — она
+	// ограничивает именно SMTP.
+	queue := n.sendQueue
+	queueFullMsg := "notification queue is full"
+	if channel == models.ChannelEmail && batchEmailNotifTypes[notifType] {
+		queue = n.batchSendQueue
+		queueFullMsg = "batch email queue is full"
 	}
 
 	select {
-	case n.sendQueue <- job:
+	case queue <- job:
 		return created, nil
 	default:
-		errMsg := "notification queue is full"
-		_ = n.notifications.UpdateStatus(ctx, created.ID, models.StatusFailed, &errMsg)
-		return created, fmt.Errorf("%s", errMsg)
+		_ = n.notifications.UpdateStatus(ctx, created.ID, models.StatusFailed, &queueFullMsg)
+		return created, fmt.Errorf("%s", queueFullMsg)
 	}
 }
 
@@ -182,6 +263,35 @@ func (n *Notifier) SendDirect(ctx context.Context, userID int64, channel models.
 func (n *Notifier) processBackgroundSends() {
 	for job := range n.sendQueue {
 		n.processSendJob(job)
+	}
+}
+
+// processBatchEmailSends — воркер для batchSendQueue (см. Notifier.
+// batchSendQueue). Для каждого письма сначала блокируется на emailQuota.
+// Wait, пока не появится свободное место в почасовой SMTP-квоте, и только
+// потом реально отправляет письмо — это и есть требуемое поведение
+// "уведомления встают в очередь и уходят только после обновления лимита".
+//
+// ctx — фоновый (context.Background()), т.к. у Notifier сейчас нет общего
+// жизненного цикла/отмены (тот же паттерн, что и в processSendJob) —
+// значит Wait здесь блокируется исключительно по квоте и практически
+// никогда не возвращает ошибку.
+func (n *Notifier) processBatchEmailSends() {
+	for job := range n.batchSendQueue {
+		ctx := context.Background()
+		if n.emailQuotaMax > 0 {
+			if used := n.emailQuota.Used(); used >= n.emailQuotaMax {
+				log.Printf("notifier: SMTP hourly batch quota reached (%d/%d), queueing %s for notification %d until it frees up",
+					used, n.emailQuotaMax, job.notifType, job.notificationID)
+			}
+		}
+		if err := n.emailQuota.Wait(ctx); err != nil {
+			errMsg := err.Error()
+			log.Printf("notifier: batch email quota wait failed for notification %d: %v", job.notificationID, err)
+			_ = n.notifications.UpdateStatus(ctx, job.notificationID, models.StatusFailed, &errMsg)
+			continue
+		}
+		n.sendEmail(ctx, job)
 	}
 }
 

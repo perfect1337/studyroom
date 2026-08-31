@@ -225,3 +225,30 @@ func (r *SubgroupRepository) Delete(ctx context.Context, id int64) error {
 	}
 	return nil
 }
+
+// DeleteByTutor — физически удаляет ВСЕ подгруппы данного преподавателя
+// (вместе с их составом — subgroup_members уходит каскадом по FK, см.
+// 0007_subgroups.up.sql). Используется при увольнении репетитора (см.
+// events/subscriber.go: detachTutor), парно с CourseRepository.
+// RemoveTutorEverywhere/EnrollmentRepository.UnassignTutorEverywhere/
+// LessonRepository.DeleteByTutor.
+//
+// Зачем это отдельная операция: subgroups.tutor_id и subgroup_members —
+// это ЛИЧНЫЙ, приватный для тьютора набор ("моя группа для занятий"),
+// никак не связанный с course_tutors/enrollments — увольнение чистит
+// только их. Без этого шага после увольнения подгруппа со своим старым
+// составом учеников продолжала бы существовать в БД с тем же tutor_id, и
+// при восстановлении в штат ("Восстановить в штат") преподаватель снова
+// видел бы её (и её старых учеников) в GET /subgroups?tutor_id=...,
+// например при создании нового занятия в TutorNewLesson.jsx — хотя из
+// course_tutors/enrollments он к этим ученикам уже никак не привязан.
+// Восстановление in-tutor-service (SetStatus/reinstateTutorOrActivate)
+// эту таблицу не трогает и не должно — только сам факт увольнения
+// (user.updated, is_active=false) считается источником правды для чистки.
+func (r *SubgroupRepository) DeleteByTutor(ctx context.Context, tutorID int64) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM subgroups WHERE tutor_id = $1`, tutorID)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}

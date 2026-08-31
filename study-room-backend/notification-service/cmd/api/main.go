@@ -98,7 +98,7 @@ func main() {
 		WhatsAppAccessToken: cfg.WhatsAppAccessToken,
 	}
 	factory := messenger.NewFactory(messengerCfg)
-	deps := app.NewDeps(pool, tm, cfg.ServiceToken, mail, factory)
+	deps := app.NewDeps(pool, tm, cfg.ServiceToken, mail, factory, cfg.SMTPBatchHourlyLimit)
 
 	// Telegram bot polling запускаем в фоне, НЕ блокируя старт HTTP-сервера
 	// ниже. NewTelegramBot делает синхронный retry (до 5 попыток NewBotAPI
