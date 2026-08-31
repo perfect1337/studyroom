@@ -389,21 +389,32 @@ export default function FinanceDirectory({ role }) {
               <p className="text-xs text-warning mt-2 font-normal">Фильтр активен — показаны договоры, истекающие в ближайшие {EXPIRING_DAYS_THRESHOLD} дней. Нажмите ещё раз, чтобы сбросить.</p>
             )}
           </button>
+
+          {/* Занимает оставшуюся колонку сетки карточек (третью у owner, вторую
+              у branch_owner) — раньше кнопка стояла отдельно в шапке страницы,
+              теперь она встроена в ту же строку, что и карточки со сводкой. */}
+          <button
+            type="button"
+            onClick={openAddModal}
+            className="text-left bg-primary text-on-primary p-6 rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] relative overflow-hidden group hover:brightness-110 transition-all active:scale-[0.98]"
+          >
+            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+              <span className="material-symbols-outlined text-6xl">add_circle</span>
+            </div>
+            <p className="font-label-md text-label-md text-on-primary/80 uppercase tracking-wider mb-2">Новый договор</p>
+            <div className="flex items-center gap-2 mt-4 font-bold">
+              <span className="material-symbols-outlined">add</span>
+              <span className="text-sm">Добавить договор</span>
+            </div>
+          </button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Основная таблица со всеми договорами */}
           <div className="lg:col-span-2 bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high overflow-hidden">
             <div className="p-6 border-b border-surface-container-high flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h4 className="font-headline-sm text-headline-sm text-on-surface">Все договоры</h4>
-                <button
-                  onClick={openAddModal}
-                  className="bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md text-label-md flex items-center gap-1.5 hover:brightness-110 transition-all active:scale-95 shadow-sm shrink-0"
-                >
-                  <span className="material-symbols-outlined text-[18px]">add</span>
-                  Добавить договор
-                </button>
                 {showExpiringSoon && (
                   <button
                     type="button"

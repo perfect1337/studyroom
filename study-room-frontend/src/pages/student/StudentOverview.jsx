@@ -144,14 +144,18 @@ export default function StudentOverview() {
       userLabel={fullName(user)}
       avatarUrl={user?.avatar_url}
     >
-      <div className="space-y-section-padding pb-section-padding">
+      <div className="pb-section-padding">
         {error && (
-          <div className="mt-4 p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">
+          <div className="mt-4 mb-4 p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">
             {error}
           </div>
         )}
 
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-gutter mt-4">
+        {/* Единая сетка на все 4 блока: одна и та же раскладка колонок (2fr/1fr)
+            и один и тот же промежуток (gap-gutter) в обеих строках, поэтому
+            карточки сверху и снизу выравниваются по одним и тем же границам
+            колонок и не расползаются на разную ширину/высоту. */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-gutter mt-4">
           <div className="relative col-span-1 lg:col-span-2">
             {/* Лента-закладка "дневника" — единственный акцентный элемент шапки,
                 вместо абстрактного градиента отсылает к обложке дневника/зачётки. */}
@@ -262,10 +266,8 @@ export default function StudentOverview() {
               );
             })}
           </div>
-        </section>
 
-        <section className="grid grid-cols-1 xl:grid-cols-3 gap-gutter">
-          <div className="xl:col-span-2 space-y-stack-md">
+          <div className="col-span-1 lg:col-span-2 flex flex-col gap-stack-md">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-headline-sm text-headline-sm text-on-background">Текущие курсы</h3>
               <Link
@@ -275,7 +277,7 @@ export default function StudentOverview() {
                 Все курсы <span className="material-symbols-outlined text-sm">arrow_forward</span>
               </Link>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-stack-md">
+            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-stack-md content-start">
               {enrollments.map((e) => {
                 const course = coursesById[e.course_id];
                 const tutor = tutorsById[e.tutor_id || courseTutorId[e.course_id]];
@@ -326,7 +328,7 @@ export default function StudentOverview() {
             </div>
           </div>
 
-          <div className="xl:col-span-1 space-y-stack-md">
+          <div className="col-span-1 flex flex-col gap-stack-md">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-headline-sm text-headline-sm text-on-background">Домашние задания</h3>
               <Link
@@ -336,7 +338,7 @@ export default function StudentOverview() {
                 Все <span className="material-symbols-outlined text-sm">arrow_forward</span>
               </Link>
             </div>
-            <div className="bg-surface-container-lowest rounded-xl p-stack-md shadow-sm border border-outline-variant h-full max-h-[420px] overflow-y-auto">
+            <div className="flex-1 bg-surface-container-lowest rounded-xl p-stack-md shadow-sm border border-outline-variant overflow-y-auto">
               {homework.length === 0 ? (
                 <p className="text-on-surface-variant font-body-md p-3">Заданий пока нет</p>
               ) : (
@@ -369,7 +371,7 @@ export default function StudentOverview() {
               )}
             </div>
           </div>
-        </section>
+        </div>
       </div>
     </DashboardShell>
   );
