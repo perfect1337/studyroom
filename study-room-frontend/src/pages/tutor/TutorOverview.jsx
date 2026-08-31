@@ -252,50 +252,7 @@ export default function TutorOverview() {
             </Link>
           </section>
 
-          <section className="bg-surface-container-lowest rounded-xl p-6 shadow-[0px_10px_30px_rgba(0,0,0,0.05)] flex-1">
-            <h2 className="font-headline-sm text-headline-sm text-on-background flex items-center gap-2 mb-6">
-              <span className="material-symbols-outlined text-primary">school</span>
-              Выдать домашнее задание
-            </h2>
-            <form onSubmit={handleAssignHomework} className="flex flex-col gap-4">
-              <div>
-                <label className="block font-label-md text-label-md text-on-surface-variant mb-2">Ученик</label>
-                <div className="relative">
-                  <select
-                    value={hwStudentId}
-                    onChange={(e) => setHwStudentId(e.target.value)}
-                    className="w-full bg-surface border border-outline-variant rounded-lg p-3 appearance-none focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-body-md text-body-md text-on-surface transition-all shadow-sm"
-                  >
-                    <option value="">Выберите ученика</option>
-                    {enrollments.map((e) => (
-                      <option key={e.id} value={e.student_id}>
-                        {studentsById[e.student_id] ? fullName(studentsById[e.student_id]) : `Ученик #${e.student_id}`}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block font-label-md text-label-md text-on-surface-variant mb-2">Ссылка на задание</label>
-                <input
-                  value={hwLink}
-                  onChange={(e) => setHwLink(e.target.value)}
-                  className="mt-0 w-full bg-surface border border-outline-variant rounded-lg p-3 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-body-md text-body-md text-on-surface transition-all shadow-sm"
-                  placeholder="https://example.com/hw/..."
-                  type="url"
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full border-2 border-dashed border-primary-fixed-dim bg-surface-container-low text-primary hover:bg-surface-container hover:border-primary py-3 rounded-lg flex items-center justify-center gap-2 transition-all"
-              >
-                <span className="material-symbols-outlined">upload_file</span>
-                <span className="font-label-md text-label-md font-medium">Выдать задание</span>
-              </button>
-              {hwStatus === "done" && <p className="text-sm text-primary">Задание успешно выдано.</p>}
-              {hwStatus && hwStatus !== "saving" && hwStatus !== "done" && <p className="text-sm text-error">{hwStatus}</p>}
-            </form>
-          </section>
+          
         </div>
       </div>
 
