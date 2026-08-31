@@ -159,12 +159,15 @@ export default function StudentOverview() {
           </div>
         )}
 
-        {/* Единая сетка на все 4 блока: одна и та же раскладка колонок (2fr/1fr)
-            и один и тот же промежуток (gap-gutter) в обеих строках, поэтому
-            карточки сверху и снизу выравниваются по одним и тем же границам
-            колонок и не расползаются на разную ширину/высоту. */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-gutter mt-4">
-          <div className="relative col-span-1 lg:col-span-2">
+        {/* Явные grid-template-areas вместо порядка col-span'ов: на десктопе это
+            жёсткая сетка 2×2 (профиль/статус сверху, курсы/дз снизу), где обе
+            строки одной высоты (align-items: stretch по умолчанию), а колонки
+            в обеих строках — одной ширины, т.к. это буквально одна и та же
+            сетка. Ниже lg — обычный вертикальный стек (по одному блоку в ряд). */}
+        <div
+          className="grid grid-cols-1 gap-gutter mt-4 lg:grid-cols-[2fr_1fr] lg:[grid-template-areas:'profile_status'_'courses_homework']"
+        >
+          <div className="relative lg:[grid-area:profile]">
             {/* Лента-закладка "дневника" — единственный акцентный элемент шапки,
                 вместо абстрактного градиента отсылает к обложке дневника/зачётки. */}
             <div
@@ -174,10 +177,10 @@ export default function StudentOverview() {
               <span className="material-symbols-outlined text-on-primary text-[18px]">school</span>
             </div>
 
-            <div className="relative bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant overflow-hidden">
+            <div className="relative h-full bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant overflow-hidden">
               <div className="bg-notebook-grid absolute inset-0 text-primary opacity-[0.04] pointer-events-none" aria-hidden="true" />
 
-              <div className="relative p-stack-lg pt-10 flex flex-col sm:flex-row items-start sm:items-center gap-stack-lg">
+              <div className="relative h-full p-stack-lg pt-10 flex flex-col sm:flex-row items-start sm:items-center gap-stack-lg">
                 <Avatar
                   src={user?.avatar_url}
                   name={fullName(user)}
@@ -234,7 +237,7 @@ export default function StudentOverview() {
             </div>
           </div>
 
-          <div className="col-span-1 flex flex-col justify-center gap-stack-md h-full">
+          <div className="lg:[grid-area:status] flex flex-col justify-center gap-stack-md h-full">
             {!loading && enrollments.length === 0 && (
               <div className="bg-surface-container-lowest rounded-xl p-stack-md shadow-sm border border-outline-variant text-on-surface-variant font-body-md">
                 Вы пока не записаны ни на один курс
@@ -275,7 +278,7 @@ export default function StudentOverview() {
             })}
           </div>
 
-          <div className="col-span-1 lg:col-span-2 flex flex-col gap-stack-md">
+          <div className="lg:[grid-area:courses] flex flex-col gap-stack-md">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-headline-sm text-headline-sm text-on-background">Текущие курсы</h3>
               <Link
@@ -336,7 +339,7 @@ export default function StudentOverview() {
             </div>
           </div>
 
-          <div className="col-span-1 flex flex-col gap-stack-md">
+          <div className="lg:[grid-area:homework] flex flex-col gap-stack-md">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-headline-sm text-headline-sm text-on-background">Домашние задания</h3>
               <Link
