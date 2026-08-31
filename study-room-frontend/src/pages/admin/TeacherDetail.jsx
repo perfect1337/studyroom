@@ -760,7 +760,7 @@ export default function TeacherDetail({ role = "owner" }) {
                           </div>
                           <div className="flex-1">
                             <p className="text-label-md font-bold leading-tight">
-                              {l.start_time} - {course?.subject ?? course?.title ?? l.topic}
+                              {l.start_time} - {course?.title ?? course?.subject ?? l.topic}
                             </p>
                             <p className="text-[12px] text-on-surface-variant">
                               {l.location_type === "remote" ? "Дистанционно" : "Очно"}

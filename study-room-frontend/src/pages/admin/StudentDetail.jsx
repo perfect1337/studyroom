@@ -674,7 +674,7 @@ export default function StudentDetail({ role = "parent" }) {
                           {l.start_time?.slice(0, 5)} - {l.end_time?.slice(0, 5)}
                         </p>
                         <p className="text-[13px] text-on-surface truncate">
-                          {course?.subject ?? course?.title ?? l.topic}
+                          {course?.title ?? course?.subject ?? l.topic}
                         </p>
                         <p className="text-[12px] text-on-surface-variant truncate">
                           {l.location_type === "remote" ? "Дистанционно" : "Очно"}

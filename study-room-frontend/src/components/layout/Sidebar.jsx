@@ -171,7 +171,7 @@ function TutorProfileCard({ user }) {
           <span className="material-symbols-outlined text-[14px] mt-[1px]">menu_book</span>
           <span className="font-label-md text-[11px] leading-snug line-clamp-2">
             {courses.length > 0
-              ? courses.map((c) => c.subject ?? c.title).join(", ")
+              ? courses.map((c) => c.title ?? c.subject).join(", ")
               : "Нет назначенных курсов"}
           </span>
         </div>

@@ -367,7 +367,7 @@ export default function ParentSchedule() {
                         className="mt-1 hidden sm:block overflow-hidden text-ellipsis whitespace-nowrap text-[10px] bg-white rounded px-1"
                         style={{ color }}
                       >
-                        {coursesById[l.course_id]?.subject ?? coursesById[l.course_id]?.title ?? l.topic}
+                        {coursesById[l.course_id]?.title ?? coursesById[l.course_id]?.subject ?? l.topic}
                       </div>
                     ))}
                     {dayLessons.length > 1 && (
@@ -435,7 +435,7 @@ export default function ParentSchedule() {
                             ЗАНЯТИЕ
                           </span>
                           <h3 className="font-headline-sm text-headline-sm text-on-surface">
-                            {course?.subject ?? course?.title ?? lesson.topic}
+                            {course?.title ?? course?.subject ?? lesson.topic}
                           </h3>
                         </div>
                         <StatusBadge status={isCancelled ? "Отменено" : isDone ? "Выполнено" : "Ожидание"} />
