@@ -9,6 +9,7 @@ import DashboardShell from "../../components/layout/DashboardShell.jsx";
 // договоров чужого филиала возвращает 403 (см. ContractHandler.checkBranchOwnerAccess) —
 // поэтому здесь достаточно скрыть выбор филиала и подставить свой branch_id.
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
+import SearchableSelect from "../../components/ui/SearchableSelect.jsx";
 import Pagination from "../../components/ui/Pagination.jsx";
 import { usePagination } from "../../utils/usePagination.js";
 import { useAuth } from "../../context/AuthContext.jsx";
@@ -601,19 +602,14 @@ export default function FinanceDirectory({ role }) {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Родитель *</label>
-                    <select
+                    <SearchableSelect
                       required
                       value={addForm.parent_id}
-                      onChange={(e) => handleParentChange(e.target.value)}
-                      className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-                    >
-                      <option value="">Выберите родителя</option>
-                      {people.parents.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {fullName(p)}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={handleParentChange}
+                      options={people.parents.map((p) => ({ value: p.id, label: fullName(p) }))}
+                      placeholder="Выберите родителя"
+                      searchPlaceholder="Поиск по ФИО родителя…"
+                    />
                   </div>
                   <div>
                     <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Ученик *</label>
