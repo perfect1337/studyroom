@@ -27,6 +27,7 @@ type Deps struct {
 	Attendance  *repository.AttendanceRepository
 	Homework    *repository.HomeworkRepository
 	Tests       *repository.TestRepository
+	Subgroups   *repository.SubgroupRepository
 	UserRefs    *repository.UserRefRepository
 
 	UserClient handlers.ChildrenResolver
@@ -46,6 +47,7 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, userServiceURL string, p
 		Attendance:  repository.NewAttendanceRepository(pool),
 		Homework:    repository.NewHomeworkRepository(pool),
 		Tests:       repository.NewTestRepository(pool),
+		Subgroups:   repository.NewSubgroupRepository(pool),
 		UserRefs:    repository.NewUserRefRepository(pool),
 		UserClient:  userclient.New(userServiceURL),
 		Events:      pub,
@@ -57,9 +59,10 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, userServiceURL string, p
 func NewRouter(d *Deps) http.Handler {
 	courseHandler := handlers.NewCourseHandler(d.Courses, d.UserRefs, d.Enrollments, d.UserClient)
 	enrollHandler := handlers.NewEnrollmentHandler(d.Enrollments, d.UserClient)
-	lessonHandler := handlers.NewLessonHandler(d.Lessons, d.Enrollments, d.Attendance, d.UserRefs, d.UserClient, d.Events)
+	lessonHandler := handlers.NewLessonHandler(d.Lessons, d.Enrollments, d.Attendance, d.Subgroups, d.UserRefs, d.UserClient, d.Events)
 	homeworkHandler := handlers.NewHomeworkHandler(d.Homework, d.Lessons, d.UserRefs, d.UserClient)
 	testHandler := handlers.NewTestHandler(d.Tests, d.Lessons, d.UserRefs, d.UserClient)
+	subgroupHandler := handlers.NewSubgroupHandler(d.Subgroups, d.Courses, d.Enrollments, d.UserRefs)
 
 	r := chi.NewRouter()
 	// Recoverer — первым, чтобы ловить паники даже из middleware ниже
@@ -93,6 +96,9 @@ func NewRouter(d *Deps) http.Handler {
 			// 2.19 — тесты: ссылка тьютора ученику + оценка за прохождение.
 			// Область видимости сужается внутри testHandler.List (см. комментарий там).
 			r.Get("/tests", testHandler.List)
+			// Подгруппы: список тоже сужается внутри хендлера (owner/branch_owner
+			// видят по фильтру, tutor — только свои, см. SubgroupHandler.List).
+			r.Get("/subgroups", subgroupHandler.List)
 
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRoles(models.RoleOwner))
@@ -130,6 +136,12 @@ func NewRouter(d *Deps) http.Handler {
 				r.Patch("/lessons/{id}", lessonHandler.Update)
 				r.Delete("/lessons/{id}", lessonHandler.Delete)
 				r.Post("/lessons/{id}/attendance", lessonHandler.MarkAttendance)
+				// Подгруппы: создание/изменение/удаление доступны тем же ролям,
+				// что и управление занятиями — доступ дальше сужается внутри
+				// хендлера (SubgroupHandler.canManage) по фактическому владельцу.
+				r.Post("/subgroups", subgroupHandler.Create)
+				r.Patch("/subgroups/{id}", subgroupHandler.Update)
+				r.Delete("/subgroups/{id}", subgroupHandler.Delete)
 			})
 
 			r.Group(func(r chi.Router) {

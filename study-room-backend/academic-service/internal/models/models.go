@@ -142,6 +142,21 @@ type Lesson struct {
 	ParticipantNames map[int64]string `json:"participant_names,omitempty"`
 }
 
+// Subgroup — соответствует таблице subgroups: именованный набор учеников
+// на конкретном курсе, который тьютор заводит один раз и переиспользует
+// при создании занятий (см. LessonHandler.Create, createLessonRequest.
+// SubgroupID), вместо того чтобы каждый раз вручную выбирать участников
+// заново. StudentIDs заполняется отдельным запросом к subgroup_members
+// (см. SubgroupRepository), как и Lesson.ParticipantIDs.
+type Subgroup struct {
+	ID         int64     `json:"id"`
+	CourseID   int64     `json:"course_id"`
+	TutorID    int64     `json:"tutor_id"`
+	Name       string    `json:"name"`
+	StudentIDs []int64   `json:"student_ids"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 type AttendanceStatus string
 
 const (

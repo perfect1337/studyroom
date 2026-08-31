@@ -112,6 +112,35 @@ export function createLesson(payload) {
   });
 }
 
+// Подгруппы — сохранённый набор учеников на групповом курсе, чтобы не
+// выбирать участников заново при каждом занятии (см. академик-сервис
+// SubgroupHandler). course_id обязателен для List, чтобы не тянуть все
+// подгруппы тьютора сразу при выборе курса в форме занятия.
+export function fetchSubgroups({ course_id, tutor_id } = {}) {
+  return academicApi("/subgroups", { params: { course_id, tutor_id } });
+}
+
+export function createSubgroup(payload) {
+  return academicApi("/subgroups", { method: "POST", body: payload }).then((res) => {
+    invalidateQuery(["subgroups"]);
+    return res;
+  });
+}
+
+export function updateSubgroup(id, patch) {
+  return academicApi(`/subgroups/${id}`, { method: "PATCH", body: patch }).then((res) => {
+    invalidateQuery(["subgroups"]);
+    return res;
+  });
+}
+
+export function deleteSubgroup(id) {
+  return academicApi(`/subgroups/${id}`, { method: "DELETE" }).then((res) => {
+    invalidateQuery(["subgroups"]);
+    return res;
+  });
+}
+
 // 2.9 Обновить / отменить занятие
 //
 // ВАЖНО: то же самое для смены статуса занятия — в первую очередь для
