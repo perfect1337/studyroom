@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchEnrollments, fetchCourses, createLesson } from "../../api/academic.js";
+import { fetchEnrollments, fetchCourses, createLesson, fetchSubgroups, createSubgroup } from "../../api/academic.js";
 import { fetchMyPeople } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
@@ -54,6 +54,19 @@ export default function TutorNewLesson() {
 
   // --- курс ---
   const [selectedCourseId, setSelectedCourseId] = useState("");
+
+  // --- режим участников: один ученик или сохранённая подгруппа ---
+  // Подгруппа доступна только на курсах с format === 'group' — на
+  // индивидуальном курсе всегда ровно один ученик, группировать нечего.
+  const [participantMode, setParticipantMode] = useState("student"); // "student" | "group"
+  const [subgroups, setSubgroups] = useState([]);
+  const [loadingSubgroups, setLoadingSubgroups] = useState(false);
+  const [selectedSubgroupId, setSelectedSubgroupId] = useState("");
+  const [creatingSubgroup, setCreatingSubgroup] = useState(false);
+  const [newSubgroupName, setNewSubgroupName] = useState("");
+  const [newSubgroupStudentIds, setNewSubgroupStudentIds] = useState([]);
+  const [subgroupError, setSubgroupError] = useState("");
+  const [subgroupSubmitting, setSubgroupSubmitting] = useState(false);
 
   // --- даты занятия: мини-календарь с множественным выбором ---
   const today = new Date();
@@ -144,6 +157,100 @@ export default function TutorNewLesson() {
     return courses.filter((c) => courseIds.has(c.id));
   }, [enrollments, courses, selectedStudentId]);
 
+  // Курсы с групповым форматом — только на них имеет смысл подгруппа.
+  const groupCourses = useMemo(() => courses.filter((c) => c.format === "group"), [courses]);
+
+  // Ученики с активной записью именно на выбранный (в режиме "группа") курс —
+  // пул, из которого можно набирать новую подгруппу.
+  const courseStudents = useMemo(() => {
+    if (!selectedCourseId) return [];
+    const map = new Map();
+    enrollments
+      .filter((e) => e.status === "active" && String(e.course_id) === String(selectedCourseId))
+      .forEach((e) => {
+        if (!map.has(e.student_id)) {
+          const person = studentsById[e.student_id];
+          map.set(e.student_id, {
+            id: e.student_id,
+            name: person ? fullName(person) : `Ученик #${e.student_id}`,
+          });
+        }
+      });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  }, [enrollments, studentsById, selectedCourseId]);
+
+  // Подгрупп конкретного курса загружаем лениво, только когда реально выбран
+  // курс в режиме "группа" — не тянуть все подгруппы тьютора сразу.
+  useEffect(() => {
+    if (participantMode !== "group" || !selectedCourseId || !user?.id) {
+      setSubgroups([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingSubgroups(true);
+    fetchSubgroups({ course_id: selectedCourseId, tutor_id: user.id })
+      .then((res) => {
+        if (!cancelled) setSubgroups(res?.items ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setSubgroups([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSubgroups(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [participantMode, selectedCourseId, user?.id]);
+
+  function switchParticipantMode(mode) {
+    setParticipantMode(mode);
+    setSelectedCourseId("");
+    setSelectedStudentId("");
+    setStudentQuery("");
+    setSelectedSubgroupId("");
+    setCreatingSubgroup(false);
+    setNewSubgroupName("");
+    setNewSubgroupStudentIds([]);
+    setSubgroupError("");
+  }
+
+  function toggleNewSubgroupStudent(studentId) {
+    setNewSubgroupStudentIds((prev) =>
+      prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId]
+    );
+  }
+
+  async function handleCreateSubgroup() {
+    setSubgroupError("");
+    if (!newSubgroupName.trim()) {
+      setSubgroupError("Введите название группы");
+      return;
+    }
+    if (newSubgroupStudentIds.length === 0) {
+      setSubgroupError("Выберите хотя бы одного ученика");
+      return;
+    }
+    setSubgroupSubmitting(true);
+    try {
+      const sg = await createSubgroup({
+        course_id: Number(selectedCourseId),
+        tutor_id: user.id,
+        name: newSubgroupName.trim(),
+        student_ids: newSubgroupStudentIds.map(Number),
+      });
+      setSubgroups((prev) => [...prev, sg].sort((a, b) => a.name.localeCompare(b.name, "ru")));
+      setSelectedSubgroupId(sg.id);
+      setCreatingSubgroup(false);
+      setNewSubgroupName("");
+      setNewSubgroupStudentIds([]);
+    } catch (e) {
+      setSubgroupError(e.message || "Не удалось создать группу");
+    } finally {
+      setSubgroupSubmitting(false);
+    }
+  }
+
   function selectStudent(student) {
     setSelectedStudentId(student.id);
     setStudentQuery(student.name);
@@ -208,8 +315,12 @@ export default function TutorNewLesson() {
     e.preventDefault();
     setSubmitError("");
 
-    if (!selectedStudentId) {
+    if (participantMode === "student" && !selectedStudentId) {
       setSubmitError("Выберите ученика из списка");
+      return;
+    }
+    if (participantMode === "group" && !selectedSubgroupId) {
+      setSubmitError("Выберите группу или создайте новую");
       return;
     }
     if (!selectedCourseId) {
@@ -239,13 +350,15 @@ export default function TutorNewLesson() {
           createLesson({
             course_id: course.id,
             tutor_id: user.id,
-            student_id: Number(selectedStudentId),
+            ...(participantMode === "group"
+              ? { subgroup_id: Number(selectedSubgroupId) }
+              : { student_id: Number(selectedStudentId) }),
             topic,
             lesson_date: date,
             start_time: form.startTime,
             end_time: endTime,
             location_type: form.lessonType === "online" ? "remote" : "onsite",
-            group_type: form.lessonFormat,
+            group_type: participantMode === "group" ? "group" : form.lessonFormat,
             comment: form.comment || undefined,
           })
         )
@@ -287,76 +400,224 @@ export default function TutorNewLesson() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-stack-lg">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-stack-md">
-              <div className="flex flex-col gap-stack-sm relative" ref={studentFieldRef}>
-                <label className="font-label-md text-label-md text-on-surface" htmlFor="student-search">
-                  Выбор ученика/группы <span className="text-error">*</span>
-                </label>
-                <div className="relative">
-                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px]">
-                    search
-                  </span>
-                  <input
-                    id="student-search"
-                    autoComplete="off"
-                    placeholder={loadingOptions ? "Загрузка…" : "Поиск ученика..."}
-                    value={studentQuery}
-                    onFocus={() => setStudentDropdownOpen(true)}
-                    onChange={(e) => handleStudentQueryChange(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
-                  />
+            <div className="flex flex-col gap-stack-sm">
+              <span className="font-label-md text-label-md text-on-surface">Кому назначить занятие</span>
+              <div className="flex bg-surface-container p-1 rounded-lg w-fit">
+                {[
+                  { value: "student", label: "Ученик" },
+                  { value: "group", label: "Группа" },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => switchParticipantMode(opt.value)}
+                    className={`px-6 py-2 rounded-md font-label-md text-label-md transition-colors ${
+                      participantMode === opt.value ? "bg-primary text-on-primary" : "text-on-surface-variant"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {participantMode === "student" ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-stack-md">
+                <div className="flex flex-col gap-stack-sm relative" ref={studentFieldRef}>
+                  <label className="font-label-md text-label-md text-on-surface" htmlFor="student-search">
+                    Ученик <span className="text-error">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px]">
+                      search
+                    </span>
+                    <input
+                      id="student-search"
+                      autoComplete="off"
+                      placeholder={loadingOptions ? "Загрузка…" : "Поиск ученика..."}
+                      value={studentQuery}
+                      onFocus={() => setStudentDropdownOpen(true)}
+                      onChange={(e) => handleStudentQueryChange(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
+                    />
+                  </div>
+                  {studentDropdownOpen && (
+                    <div className="absolute top-full left-0 right-0 mt-1 z-20 bg-surface-container-lowest border border-outline-variant rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                      {filteredStudents.length === 0 ? (
+                        <div className="px-4 py-3 font-body-md text-body-md text-on-surface-variant italic">
+                          {loadingOptions ? "Загрузка…" : "Ученики не найдены"}
+                        </div>
+                      ) : (
+                        filteredStudents.map((s) => (
+                          <button
+                            type="button"
+                            key={s.id}
+                            onClick={() => selectStudent(s)}
+                            className={`w-full text-left px-4 py-2 font-body-md text-body-md hover:bg-surface-container transition-colors ${
+                              String(s.id) === String(selectedStudentId) ? "bg-primary-container/40 text-primary" : "text-on-surface"
+                            }`}
+                          >
+                            {s.name}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
-                {studentDropdownOpen && (
-                  <div className="absolute top-full left-0 right-0 mt-1 z-20 bg-surface-container-lowest border border-outline-variant rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                    {filteredStudents.length === 0 ? (
-                      <div className="px-4 py-3 font-body-md text-body-md text-on-surface-variant italic">
-                        {loadingOptions ? "Загрузка…" : "Ученики не найдены"}
-                      </div>
+
+                <div className="flex flex-col gap-stack-sm">
+                  <label className="font-label-md text-label-md text-on-surface" htmlFor="course-select">
+                    Курс <span className="text-error">*</span>
+                  </label>
+                  <select
+                    id="course-select"
+                    required
+                    disabled={!selectedStudentId}
+                    value={selectedCourseId}
+                    onChange={(e) => setSelectedCourseId(e.target.value)}
+                    className="w-full px-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <option value="">
+                      {!selectedStudentId
+                        ? "Сначала выберите ученика"
+                        : availableCourses.length === 0
+                        ? "Нет доступных курсов"
+                        : "Выберите курс"}
+                    </option>
+                    {availableCourses.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.title ?? c.subject}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-stack-md">
+                <div className="flex flex-col gap-stack-sm">
+                  <label className="font-label-md text-label-md text-on-surface" htmlFor="group-course-select">
+                    Курс (групповой) <span className="text-error">*</span>
+                  </label>
+                  <select
+                    id="group-course-select"
+                    required
+                    value={selectedCourseId}
+                    onChange={(e) => {
+                      setSelectedCourseId(e.target.value);
+                      setSelectedSubgroupId("");
+                      setCreatingSubgroup(false);
+                    }}
+                    className="w-full px-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
+                  >
+                    <option value="">
+                      {groupCourses.length === 0 ? "Нет групповых курсов" : "Выберите курс"}
+                    </option>
+                    {groupCourses.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.title ?? c.subject}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {selectedCourseId && (
+                  <div className="flex flex-col gap-stack-sm">
+                    <label className="font-label-md text-label-md text-on-surface">
+                      Подгруппа <span className="text-error">*</span>
+                    </label>
+
+                    {loadingSubgroups ? (
+                      <p className="font-body-md text-body-md text-on-surface-variant">Загрузка групп…</p>
                     ) : (
-                      filteredStudents.map((s) => (
+                      <div className="flex flex-wrap gap-2">
+                        {subgroups.map((sg) => (
+                          <button
+                            type="button"
+                            key={sg.id}
+                            onClick={() => {
+                              setSelectedSubgroupId(sg.id);
+                              setCreatingSubgroup(false);
+                            }}
+                            className={`px-4 py-2 rounded-lg border font-label-md text-label-md transition-colors ${
+                              String(sg.id) === String(selectedSubgroupId)
+                                ? "bg-primary text-on-primary border-primary"
+                                : "border-outline-variant text-on-surface hover:bg-surface-container"
+                            }`}
+                          >
+                            {sg.name} <span className="opacity-70">({sg.student_ids?.length ?? 0})</span>
+                          </button>
+                        ))}
                         <button
                           type="button"
-                          key={s.id}
-                          onClick={() => selectStudent(s)}
-                          className={`w-full text-left px-4 py-2 font-body-md text-body-md hover:bg-surface-container transition-colors ${
-                            String(s.id) === String(selectedStudentId) ? "bg-primary-container/40 text-primary" : "text-on-surface"
-                          }`}
+                          onClick={() => {
+                            setCreatingSubgroup((v) => !v);
+                            setSelectedSubgroupId("");
+                          }}
+                          className="px-4 py-2 rounded-lg border border-dashed border-primary text-primary font-label-md text-label-md hover:bg-primary-container/20 transition-colors flex items-center gap-1"
                         >
-                          {s.name}
+                          <span className="material-symbols-outlined text-[18px]">add</span>
+                          Новая подгруппа
                         </button>
-                      ))
+                      </div>
+                    )}
+
+                    {creatingSubgroup && (
+                      <div className="mt-2 p-stack-md bg-surface-container-low rounded-lg flex flex-col gap-stack-sm">
+                        <input
+                          type="text"
+                          placeholder="Название подгруппы, например «Вторник 16:00»"
+                          value={newSubgroupName}
+                          onChange={(e) => setNewSubgroupName(e.target.value)}
+                          className="w-full px-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
+                        />
+                        <div className="flex flex-col gap-1 max-h-48 overflow-y-auto border border-outline-variant rounded-lg p-2">
+                          {courseStudents.length === 0 ? (
+                            <p className="font-body-md text-body-md text-on-surface-variant italic px-2 py-1">
+                              На этом курсе нет учеников с активной записью
+                            </p>
+                          ) : (
+                            courseStudents.map((s) => (
+                              <label
+                                key={s.id}
+                                className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-surface-container cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={newSubgroupStudentIds.includes(s.id)}
+                                  onChange={() => toggleNewSubgroupStudent(s.id)}
+                                  className="accent-primary"
+                                />
+                                <span className="font-body-md text-body-md text-on-surface">{s.name}</span>
+                              </label>
+                            ))
+                          )}
+                        </div>
+                        {subgroupError && (
+                          <p className="font-body-md text-[12px] text-error">{subgroupError}</p>
+                        )}
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setCreatingSubgroup(false)}
+                            className="px-4 py-2 rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors"
+                          >
+                            Отмена
+                          </button>
+                          <button
+                            type="button"
+                            disabled={subgroupSubmitting}
+                            onClick={handleCreateSubgroup}
+                            className="px-4 py-2 rounded-lg font-label-md text-label-md bg-primary text-on-primary hover:bg-on-primary-fixed-variant transition-colors disabled:opacity-60"
+                          >
+                            {subgroupSubmitting ? "Создание…" : "Создать и выбрать"}
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
               </div>
-
-              <div className="flex flex-col gap-stack-sm">
-                <label className="font-label-md text-label-md text-on-surface" htmlFor="course-select">
-                  Курс <span className="text-error">*</span>
-                </label>
-                <select
-                  id="course-select"
-                  required
-                  disabled={!selectedStudentId}
-                  value={selectedCourseId}
-                  onChange={(e) => setSelectedCourseId(e.target.value)}
-                  className="w-full px-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  <option value="">
-                    {!selectedStudentId
-                      ? "Сначала выберите ученика"
-                      : availableCourses.length === 0
-                      ? "Нет доступных курсов"
-                      : "Выберите курс"}
-                  </option>
-                  {availableCourses.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.title ?? c.subject}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-stack-md bg-surface-container-low p-stack-md rounded-lg">
               <div className="flex flex-col gap-stack-sm">
@@ -471,7 +732,7 @@ export default function TutorNewLesson() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-stack-md">
+            <div className={`grid grid-cols-1 gap-stack-md ${participantMode === "group" ? "" : "md:grid-cols-2"}`}>
               <SegmentedControl
                 label="Тип занятия"
                 name="lesson_type"
@@ -482,16 +743,18 @@ export default function TutorNewLesson() {
                   { value: "online", label: "Дистанционное" },
                 ]}
               />
-              <SegmentedControl
-                label="Формат занятия"
-                name="lesson_format"
-                value={form.lessonFormat}
-                onChange={(v) => update("lessonFormat", v)}
-                options={[
-                  { value: "individual", label: "Индивидуальное" },
-                  { value: "group", label: "Групповое" },
-                ]}
-              />
+              {participantMode !== "group" && (
+                <SegmentedControl
+                  label="Формат занятия"
+                  name="lesson_format"
+                  value={form.lessonFormat}
+                  onChange={(v) => update("lessonFormat", v)}
+                  options={[
+                    { value: "individual", label: "Индивидуальное" },
+                    { value: "group", label: "Групповое" },
+                  ]}
+                />
+              )}
             </div>
 
             <div className="flex flex-col gap-stack-sm">

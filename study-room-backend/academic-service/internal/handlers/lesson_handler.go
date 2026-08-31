@@ -17,6 +17,7 @@ type LessonHandler struct {
 	lessons     *repository.LessonRepository
 	enrollments *repository.EnrollmentRepository
 	attendance  *repository.AttendanceRepository
+	subgroups   *repository.SubgroupRepository
 	userRefs    *repository.UserRefRepository
 	userClient  ChildrenResolver
 	publisher   events.Publisher
@@ -26,12 +27,13 @@ func NewLessonHandler(
 	lessons *repository.LessonRepository,
 	enrollments *repository.EnrollmentRepository,
 	attendance *repository.AttendanceRepository,
+	subgroups *repository.SubgroupRepository,
 	userRefs *repository.UserRefRepository,
 	userClient ChildrenResolver,
 	publisher events.Publisher,
 ) *LessonHandler {
 	return &LessonHandler{
-		lessons: lessons, enrollments: enrollments, attendance: attendance,
+		lessons: lessons, enrollments: enrollments, attendance: attendance, subgroups: subgroups,
 		userRefs: userRefs, userClient: userClient, publisher: publisher,
 	}
 }
@@ -186,6 +188,12 @@ type createLessonRequest struct {
 	// заодно и любого другого ученика, которого позже записали на тот же
 	// курс — см. баг "второй ученик в расписании".
 	StudentID *int64 `json:"student_id"`
+	// SubgroupID — сохранённая подгруппа учеников (см. models.Subgroup),
+	// альтернатива StudentID для группового занятия на конкретный набор
+	// участников курса, а не на всех сразу и не на одного. Взаимоисключим
+	// со StudentID — если передано и то, и другое, приоритет у SubgroupID
+	// (см. LessonHandler.Create).
+	SubgroupID *int64 `json:"subgroup_id"`
 }
 
 // Create — POST /lessons (api-contracts.md 2.8). created_by берётся из JWT,
@@ -243,7 +251,46 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var participantIDs []int64
-	if req.StudentID != nil {
+	switch {
+	case req.SubgroupID != nil:
+		// Занятие для сохранённой подгруппы — участники это её состав,
+		// пересечённый с активными enrollments курса на данный момент (если
+		// кто-то из подгруппы успел отчислиться/поставиться на паузу с
+		// момента создания подгруппы, в занятие он всё равно не попадёт).
+		sg, err := h.subgroups.GetByID(r.Context(), *req.SubgroupID)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				writeError(w, http.StatusBadRequest, "BAD_REQUEST", "subgroup not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load subgroup")
+			return
+		}
+		if sg.CourseID != req.CourseID {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "subgroup does not belong to this course")
+			return
+		}
+		if claims.Role == models.RoleTutor && sg.TutorID != claims.UserID {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "subgroup belongs to another tutor")
+			return
+		}
+		activeOnCourse := make(map[int64]bool, len(enrollments))
+		for _, e := range enrollments {
+			if e.Status == models.EnrollmentActive {
+				activeOnCourse[e.StudentID] = true
+			}
+		}
+		participantIDs = make([]int64, 0, len(sg.StudentIDs))
+		for _, studentID := range sg.StudentIDs {
+			if activeOnCourse[studentID] {
+				participantIDs = append(participantIDs, studentID)
+			}
+		}
+		if len(participantIDs) == 0 {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "no active students left in this subgroup")
+			return
+		}
+	case req.StudentID != nil:
 		// Тьютор явно выбрал ученика — занятие только для него, даже если
 		// на курсе активны и другие enrollments (например, ученик, которого
 		// записали на этот же курс уже после того, как расписание для
@@ -260,10 +307,10 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		participantIDs = []int64{*req.StudentID}
-	} else {
-		// Явного ученика не передали — старое поведение для по-настоящему
-		// группового занятия на весь курс: участники это все активные
-		// enrollments.
+	default:
+		// Ни ученика, ни подгруппы не передали — старое поведение для
+		// по-настоящему группового занятия на весь курс: участники это все
+		// активные enrollments.
 		participantIDs = make([]int64, 0, len(enrollments))
 		for _, e := range enrollments {
 			if e.Status == models.EnrollmentActive {
