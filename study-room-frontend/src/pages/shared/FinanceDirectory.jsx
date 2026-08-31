@@ -342,7 +342,7 @@ export default function FinanceDirectory({ role }) {
   }
 
   return (
-    <DashboardShell role={isOwner ? "admin" : role} user={toSidebarUser(user)} searchPlaceholder="Поиск по договорам..." userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
+    <DashboardShell fullWidth role={isOwner ? "admin" : role} user={toSidebarUser(user)} searchPlaceholder="Поиск по договорам..." userLabel={fullName(user)} avatarUrl={user?.avatar_url}>
       <div className="mt-4 pb-stack-lg">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-stack-md mb-8">
           <div>

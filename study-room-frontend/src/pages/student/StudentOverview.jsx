@@ -138,6 +138,7 @@ export default function StudentOverview() {
 
   return (
     <DashboardShell
+      fullWidth
       role="student"
       user={toSidebarUser(user)}
       searchPlaceholder="Поиск..."
@@ -269,7 +270,7 @@ export default function StudentOverview() {
                 Все курсы <span className="material-symbols-outlined text-sm">arrow_forward</span>
               </Link>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-stack-md">
+            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-stack-md">
               {enrollments.map((e) => {
                 const course = coursesById[e.course_id];
                 const tutor = tutorsById[e.tutor_id || courseTutorId[e.course_id]];
