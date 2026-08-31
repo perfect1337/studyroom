@@ -717,7 +717,7 @@ export default function FinanceDirectory({ role }) {
                       <option value="">Выберите курс</option>
                       {courses.map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.subject ?? c.title}
+                          {c.title ?? c.subject}
                         </option>
                       ))}
                     </select>

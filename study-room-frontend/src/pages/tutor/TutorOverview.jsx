@@ -168,7 +168,7 @@ export default function TutorOverview() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="bg-primary-container text-on-primary-container px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
-                        {course?.subject ?? course?.title ?? "—"}
+                        {course?.title ?? course?.subject ?? "—"}
                       </span>
                       <span className="bg-surface-variant text-on-surface-variant px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
                         {lesson.group_type === "group" ? "Групповое" : "Индивидуально"} / {lesson.location_type === "remote" ? "Дистанционно" : "Очно"}
@@ -235,7 +235,7 @@ export default function TutorOverview() {
                       <div className="font-body-md text-body-md font-medium text-on-surface">
                         {student ? fullName(student) : `Ученик #${e.student_id}`}
                       </div>
-                      <div className="font-label-md text-label-md text-on-surface-variant">{course?.subject ?? course?.title ?? "—"}</div>
+                      <div className="font-label-md text-label-md text-on-surface-variant">{course?.title ?? course?.subject ?? "—"}</div>
                     </div>
                     <div className="w-12 bg-surface-container-high rounded-full h-2">
                       <div

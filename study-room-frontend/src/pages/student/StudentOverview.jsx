@@ -237,7 +237,7 @@ export default function StudentOverview() {
                 >
                   <div>
                     <p className="font-label-md text-label-md font-bold text-on-surface-variant mb-3">
-                      {course?.subject ?? course?.title ?? `Курс #${e.course_id}`}
+                      {course?.title ?? course?.subject ?? `Курс #${e.course_id}`}
                     </p>
                     <div className="flex gap-6">
                       <div>
