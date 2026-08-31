@@ -4,7 +4,7 @@ import TopBar from "./TopBar.jsx";
 import MobileBottomNav from "./MobileBottomNav.jsx";
 import { ROLE_SECTION_PREFIX, preloadRoleRoutes } from "../../routes/routeComponents.js";
 
-export default function DashboardShell({ role, user, userLabel, avatarUrl, children }) {
+export default function DashboardShell({ role, user, userLabel, avatarUrl, children, fullWidth = false }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Прогреваем JS-чанки остальных страниц этого раздела в свободное время браузера
@@ -30,7 +30,18 @@ export default function DashboardShell({ role, user, userLabel, avatarUrl, child
           avatarUrl={avatarUrl}
           onMenuClick={() => setMobileMenuOpen(true)}
         />
-        <main className="flex-1 p-4 md:p-gutter max-w-container-max w-full pb-20 md:pb-gutter ml-[max(0px,calc((100%_-_1200px)/2_-_100px))] mr-auto page-fade-in">
+        <main
+          className={`flex-1 p-4 md:p-gutter w-full pb-20 md:pb-gutter page-fade-in ${
+            fullWidth
+              ? // Полная ширина экрана — используется на странице "Финансы", чтобы таблица
+                // договоров помещалась без внутреннего горизонтального скролла на ПК
+                // (см. FinanceDirectory.jsx). Остальные страницы по умолчанию держат
+                // читаемую ширину контента (max-w-container-max), чтобы не растягивать
+                // короткие формы/списки на весь широкий монитор.
+                "max-w-none"
+              : "max-w-container-max ml-[max(0px,calc((100%_-_1200px)/2_-_100px))] mr-auto"
+          }`}
+        >
           {children}
         </main>
       </div>
