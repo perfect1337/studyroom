@@ -357,7 +357,7 @@ export default function FinanceDirectory({ role }) {
           <div className="mb-6 p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
         )}
 
-        <div className={`grid grid-cols-1 gap-6 mb-10 ${isOwner ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
+        <div className={`grid grid-cols-1 sm:grid-cols-2 gap-6 mb-10 ${isOwner ? "xl:grid-cols-3" : ""}`}>
           {/* Выручку видит только owner (сеть в целом) — у branch_owner карточка
               скрыта, т.к. эти цифры относятся к финансам компании, а не филиала. */}
           {isOwner && (
@@ -392,26 +392,21 @@ export default function FinanceDirectory({ role }) {
 
           {/* Занимает оставшуюся колонку сетки карточек (третью у owner, вторую
               у branch_owner) — раньше кнопка стояла отдельно в шапке страницы,
-              теперь она встроена в ту же строку, что и карточки со сводкой. */}
-          <button
-            type="button"
-            onClick={openAddModal}
-            className="text-left bg-primary text-on-primary p-6 rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] relative overflow-hidden group hover:brightness-110 transition-all active:scale-[0.98]"
-          >
-            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-              <span className="material-symbols-outlined text-6xl">add_circle</span>
-            </div>
-            <p className="font-label-md text-label-md text-on-primary/80 uppercase tracking-wider mb-2">Новый договор</p>
-            <div className="flex items-center gap-2 mt-4 font-bold">
-              <span className="material-symbols-outlined">add</span>
-              <span className="text-sm">Добавить договор</span>
-            </div>
-          </button>
+              теперь она просто перенесена сюда, стиль кнопки не менялся. */}
+          <div className="flex items-center justify-center">
+            <button
+              onClick={openAddModal}
+              className="bg-primary text-on-primary px-4 py-2 sm:px-6 sm:py-2.5 rounded-lg font-label-md text-label-md flex items-center gap-1.5 sm:gap-2 hover:brightness-110 transition-all active:scale-95 shadow-sm"
+            >
+              <span className="material-symbols-outlined text-[18px] sm:text-[20px]">add</span>
+              Добавить договор
+            </button>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           {/* Основная таблица со всеми договорами */}
-          <div className="lg:col-span-2 bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high overflow-hidden">
+          <div className="xl:col-span-2 bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high overflow-hidden">
             <div className="p-6 border-b border-surface-container-high flex flex-col md:flex-row md:items-center justify-between gap-3">
               <div className="flex items-center gap-2 flex-wrap">
                 <h4 className="font-headline-sm text-headline-sm text-on-surface">Все договоры</h4>
@@ -439,7 +434,12 @@ export default function FinanceDirectory({ role }) {
                 />
               </div>
             </div>
-            <div className="hidden md:block overflow-x-auto">
+            {/* Полная таблица показывается только там, где реально хватает
+                ширины на 6 колонок (широкий десктоп, тот же порог, что и у
+                разбивки на 2 колонки выше) — на iPad и других планшетах,
+                где сайдбар уже занимает часть экрана, вместо горизонтального
+                скролла показываются карточки, как на телефоне. */}
+            <div className="hidden xl:block overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-container-low/50">
@@ -492,8 +492,8 @@ export default function FinanceDirectory({ role }) {
               </table>
             </div>
 
-            {/* Мобильные карточки */}
-            <div className="md:hidden divide-y divide-surface-container-high">
+            {/* Карточки — телефоны и планшеты (до xl включительно) */}
+            <div className="xl:hidden divide-y divide-surface-container-high">
               {!loading && filteredContracts.length === 0 && (
                 <div className="px-4 py-8 text-center text-on-surface-variant">
                   {contracts.length === 0 ? "Договоров пока нет" : "Ничего не найдено"}
