@@ -351,13 +351,6 @@ export default function FinanceDirectory({ role }) {
               {isOwner ? "Управление доходами и договорами учебного центра." : "Управление доходами и договорами вашего филиала."}
             </p>
           </div>
-          <button
-            onClick={openAddModal}
-            className="bg-primary text-on-primary px-6 py-2.5 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:brightness-110 transition-all active:scale-95 shadow-sm"
-          >
-            <span className="material-symbols-outlined">add</span>
-            Добавить договор
-          </button>
         </div>
 
         {error && (
@@ -402,8 +395,15 @@ export default function FinanceDirectory({ role }) {
           {/* Основная таблица со всеми договорами */}
           <div className="lg:col-span-2 bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high overflow-hidden">
             <div className="p-6 border-b border-surface-container-high flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-3 flex-wrap">
                 <h4 className="font-headline-sm text-headline-sm text-on-surface">Все договоры</h4>
+                <button
+                  onClick={openAddModal}
+                  className="bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md text-label-md flex items-center gap-1.5 hover:brightness-110 transition-all active:scale-95 shadow-sm shrink-0"
+                >
+                  <span className="material-symbols-outlined text-[18px]">add</span>
+                  Добавить договор
+                </button>
                 {showExpiringSoon && (
                   <button
                     type="button"
