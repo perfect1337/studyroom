@@ -237,7 +237,7 @@ export default function StudentOverview() {
             </div>
           </div>
 
-          <div className="lg:[grid-area:status] flex flex-col justify-center gap-stack-md h-full">
+          <div className="lg:[grid-area:status] flex flex-col justify-start gap-stack-md h-full">
             {!loading && enrollments.length === 0 && (
               <div className="bg-surface-container-lowest rounded-xl p-stack-md shadow-sm border border-outline-variant text-on-surface-variant font-body-md">
                 Вы пока не записаны ни на один курс
