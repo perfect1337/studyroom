@@ -86,8 +86,10 @@ services:
       # Мессенджеры — заполните в .env.prod перед запуском
       # Документация: notification-service/MESSENGER_KEYS_GUIDE.md
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      MAX_API_URL: ${MAX_API_URL}
-      MAX_APP_TOKEN: ${MAX_APP_TOKEN}
+      MAX_ACCESS_TOKEN: ${MAX_ACCESS_TOKEN}
+      MAX_WEBHOOK_URL: ${MAX_WEBHOOK_URL}
+      MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET}
+      MAX_BOT_USERNAME: ${MAX_BOT_USERNAME}
       WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
       WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
     depends_on:

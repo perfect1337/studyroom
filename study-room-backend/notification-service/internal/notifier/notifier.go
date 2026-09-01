@@ -209,8 +209,8 @@ func (n *Notifier) Send(ctx context.Context, userID int64, notifType, message, e
 		}
 	}
 
-	if settings.MaxEnabled && ref.Phone != "" {
-		rec, err := n.createAndQueueJob(ctx, userID, notifType, message, subject, models.ChannelMax, ref.Phone)
+	if settings.MaxEnabled && ref.MaxID != "" {
+		rec, err := n.createAndQueueJob(ctx, userID, notifType, message, subject, models.ChannelMax, ref.MaxID)
 		if err != nil {
 			log.Printf("notifier: max dispatch failed for user %d: %v", userID, err)
 		} else {
@@ -391,7 +391,7 @@ func (n *Notifier) resolveContact(ref *models.UserRef, channel models.Channel) (
 	case models.ChannelWhatsApp:
 		return ref.WhatsAppID, ref.WhatsAppID != ""
 	case models.ChannelMax:
-		return ref.Phone, ref.Phone != ""
+		return ref.MaxID, ref.MaxID != ""
 	default:
 		return "", false
 	}

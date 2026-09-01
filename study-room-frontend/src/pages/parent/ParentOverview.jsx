@@ -11,6 +11,9 @@ import { fetchNotificationSettings, updateNotificationSettings, fetchTelegramSta
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import { sanitizePhoneInput, isValidPhone } from "../../utils/phone.js";
 import { useTelegramStatus } from "../../hooks/useTelegramStatus.js";
+import { useMaxStatus } from "../../hooks/useMaxStatus.js";
+import MaxConnectBanner from "../../components/notifications/MaxConnectBanner.jsx";
+import { useMaxConnectPrompt } from "../../hooks/useMaxConnectPrompt.js";
 import { TELEGRAM_BOT_URL } from "../../api/config.js";
 
 function todayISO() {
@@ -41,6 +44,8 @@ export default function ParentOverview() {
   const { user } = useAuth();
 
   const { status: tgStatus, refresh: refreshTg } = useTelegramStatus();
+  const { status: maxStatus, refresh: refreshMax } = useMaxStatus();
+  const showMaxConnectPrompt = useMaxConnectPrompt();
   const [children, setChildren] = useState([]);
   const [courses, setCourses] = useState([]);
   const [enrollmentsByChild, setEnrollmentsByChild] = useState({});
@@ -246,11 +251,8 @@ export default function ParentOverview() {
     setNotif(next);
     try {
       await updateNotificationSettings(next);
-      if (key === "telegram_enabled" && next.telegram_enabled) {
-        try {
-          await refreshTg();
-        } catch {}
-      }
+      if (key === "telegram_enabled" && next.telegram_enabled) { try { await refreshTg(); } catch {} }
+      if (key === "max_enabled" && next.max_enabled) { try { await refreshMax(); } catch {} }
     } catch {
       setNotif(notif); // откатываем при ошибке
     }
@@ -506,9 +508,7 @@ export default function ParentOverview() {
                   [
                     { key: "email_enabled", label: "Почта" },
                     { key: "telegram_enabled", label: "Telegram" },
-                    // WhatsApp и MAX скрыты из UI по требованию — бэкенд и
-                    // state (whatsapp_enabled/max_enabled) не трогаем, чтобы
-                    // не ломать то, что уже подогнано под них на бэке.
+                    { key: "max_enabled", label: "MAX" },
                   ].map((ch) => (
                     <label key={ch.key} className="flex items-center gap-3 cursor-pointer">
                       <input
@@ -524,6 +524,12 @@ export default function ParentOverview() {
                         }`}>
                           <span className={`w-2 h-2 rounded-full ${tgStatus.connected ? "bg-primary" : "bg-warning"}`}></span>
                           {tgStatus.connected ? "Подключено" : "Не подключено"}
+                        </span>
+                      )}
+                      {ch.key === "max_enabled" && notif.max_enabled && maxStatus && (
+                        <span className={`ml-auto flex items-center gap-1 text-[11px] font-bold uppercase ${maxStatus.connected ? "text-primary" : "text-warning"}`}>
+                          <span className={`w-2 h-2 rounded-full ${maxStatus.connected ? "bg-primary" : "bg-warning"}`}></span>
+                          {maxStatus.connected ? "Подключено" : "Не подключено"}
                         </span>
                       )}
                     </label>
@@ -713,6 +719,8 @@ export default function ParentOverview() {
           </div>
         </div>
 
+
+
         {/* Баннер про подключение Telegram — снизу, как и остальные
             уведомления/подсказки о настройках (см. блок "Уведомления" на
             /settings), а не первым делом при входе на страницу. */}
@@ -735,6 +743,7 @@ export default function ParentOverview() {
             </div>
           </div>
         )}
+        <MaxConnectBanner show={showMaxConnectPrompt} />
       </div>
     </DashboardShell>
   );

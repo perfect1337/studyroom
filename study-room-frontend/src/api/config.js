@@ -54,3 +54,10 @@ export const TELEGRAM_BOT_URL = `https://t.me/${TELEGRAM_BOT_USERNAME}`;
 // сервера. Сами токены здесь больше не хранятся: access-токен живёт в
 // памяти вкладки, refresh-токен — в httpOnly cookie на бэкенде (см. http.js).
 export const USER_KEY = "sr_user";
+
+
+export const MAX_BOT_USERNAME =
+  import.meta.env.VITE_MAX_BOT_USERNAME ?? "";
+export const MAX_BOT_URL = MAX_BOT_USERNAME
+  ? `https://max.ru/${MAX_BOT_USERNAME.replace(/^@/, "")}`
+  : "https://max.ru";

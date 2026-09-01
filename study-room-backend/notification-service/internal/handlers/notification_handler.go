@@ -14,19 +14,21 @@ import (
 )
 
 type NotificationHandler struct {
-	notifications  *repository.NotificationRepository
-	settings       *repository.SettingsRepository
-	telegramUser   *repository.TelegramUserRepository
-	usersRef       *repository.UserRefRepository
+	notifications *repository.NotificationRepository
+	settings      *repository.SettingsRepository
+	telegramUser  *repository.TelegramUserRepository
+	maxUser       *repository.MaxUserRepository
+	usersRef      *repository.UserRefRepository
 }
 
 func NewNotificationHandler(
 	notifications *repository.NotificationRepository,
 	settings *repository.SettingsRepository,
 	telegramUser *repository.TelegramUserRepository,
+	maxUser *repository.MaxUserRepository,
 	usersRef *repository.UserRefRepository,
 ) *NotificationHandler {
-	return &NotificationHandler{notifications: notifications, settings: settings, telegramUser: telegramUser, usersRef: usersRef}
+	return &NotificationHandler{notifications: notifications, settings: settings, telegramUser: telegramUser, maxUser: maxUser, usersRef: usersRef}
 }
 
 // GET /notifications?unread_only=true
@@ -140,8 +142,8 @@ func (h *NotificationHandler) GetTelegramStatus(w http.ResponseWriter, r *http.R
 
 	if tu != nil {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"connected":      true,
-			"telegram_chat_id": tu.TelegramChatID,
+			"connected":         true,
+			"telegram_chat_id":  tu.TelegramChatID,
 			"telegram_username": tu.TelegramUsername,
 		})
 	} else {
@@ -191,5 +193,57 @@ func (h *NotificationHandler) UnlinkTelegram(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
+	writeJSON(w, http.StatusOK, map[string]any{"connected": false})
+}
+
+// GET /notifications/max/status
+func (h *NotificationHandler) GetMaxStatus(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.FromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "no auth context")
+		return
+	}
+
+	mu, err := h.maxUser.GetByUserID(r.Context(), claims.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check max status")
+		return
+	}
+	if mu == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"connected": false})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"connected":    true,
+		"max_user_id":  mu.MaxUserID,
+		"max_username": mu.MaxUsername,
+	})
+}
+
+// DELETE /notifications/max/link — отвязка MAX от аккаунта.
+func (h *NotificationHandler) UnlinkMax(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.FromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "no auth context")
+		return
+	}
+
+	if _, err := h.maxUser.DeleteByUserID(r.Context(), claims.UserID); err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to unlink max")
+		return
+	}
+	if err := h.usersRef.ClearMaxID(r.Context(), claims.UserID); err != nil {
+		log.Printf("notifications: clear max_id for user %d failed: %v", claims.UserID, err)
+	}
+	current, err := h.settings.GetOrDefault(r.Context(), claims.UserID)
+	if err == nil && current.MaxEnabled {
+		current.MaxEnabled = false
+		if current.PreferredMessenger == "max" {
+			current.PreferredMessenger = ""
+		}
+		if _, err := h.settings.Upsert(r.Context(), current); err != nil {
+			log.Printf("notifications: disable max for user %d failed: %v", claims.UserID, err)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"connected": false})
 }

@@ -50,13 +50,14 @@ type Settings struct {
 // резолва контактов (email, phone, telegram, whatsapp) при отправке
 // уведомлений через разные каналы.
 type UserRef struct {
-	ID           int64  `json:"id"`
-	Email        string `json:"email"`
-	FirstName    string `json:"first_name,omitempty"`
-	LastName     string `json:"last_name,omitempty"`
-	Phone        string `json:"phone,omitempty"`
-	TelegramID   string `json:"telegram_id,omitempty"`
-	WhatsAppID   string `json:"whatsapp_id,omitempty"`
+	ID         int64  `json:"id"`
+	Email      string `json:"email"`
+	FirstName  string `json:"first_name,omitempty"`
+	LastName   string `json:"last_name,omitempty"`
+	Phone      string `json:"phone,omitempty"`
+	TelegramID string `json:"telegram_id,omitempty"`
+	MaxID      string `json:"max_id,omitempty"`
+	WhatsAppID string `json:"whatsapp_id,omitempty"`
 	// ParentID — id родителя, если этот UserRef — ученик (из user.created.parent_id).
 	// Нужен, чтобы резолвить получателя attendance.marked_absent локально.
 	ParentID *int64 `json:"parent_id,omitempty"`
@@ -64,10 +65,22 @@ type UserRef struct {
 
 // TelegramUser — связка Telegram chat_id с user_id в системе.
 type TelegramUser struct {
-	ID              int64     `json:"id"`
-	TelegramChatID  int64     `json:"telegram_chat_id"`
+	ID               int64     `json:"id"`
+	TelegramChatID   int64     `json:"telegram_chat_id"`
 	TelegramUsername string    `json:"telegram_username,omitempty"`
-	UserID          int64     `json:"user_id"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	UserID           int64     `json:"user_id"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+// MaxUser — связка MAX user_id с user_id в системе (аналог TelegramUser
+// для мессенджера MAX). max_user_id — ID пользователя в MAX, приходит в
+// событиях bot_started / message_created webhook'а MAX Bot API.
+type MaxUser struct {
+	ID          int64     `json:"id"`
+	MaxUserID   int64     `json:"max_user_id"`
+	MaxUsername string    `json:"max_username,omitempty"`
+	UserID      int64     `json:"user_id"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
