@@ -154,17 +154,21 @@ export default function PeopleDirectory({ role }) {
         const seen = new Map();
         lessonItems.forEach((l) => {
           (l.participant_ids ?? []).forEach((studentId) => {
-            if (!seen.has(studentId)) {
-              // GET /users фильтрует учеников тьютора по branch_id — если
-              // участник занятия в этот фильтр не попал (см. api/lesson_handler.go
-              // ParticipantNames), используем денормализованное имя из
-              // lesson.participant_names, чтобы не показывать голое "Ученик".
-              const fallbackName = l.participant_names?.[studentId];
-              seen.set(studentId, byId[studentId] ?? { id: studentId, _fallbackName: fallbackName });
+            // Для преподавателя backend /users возвращает только активных
+            // учеников. Не добавляем сюда fallback из занятия, иначе
+            // неактивный ученик снова появится в списке.
+            if (!seen.has(studentId) && byId[studentId]) {
+              seen.set(studentId, byId[studentId]);
             }
           });
         });
-        setPeople(Array.from(seen.values()));
+        // Преподавателю показываем только учеников с активной записью на курс.
+        // Неактивные/приостановленные/завершённые записи не должны попадать
+        // в раздел "Мои ученики", даже если по ним остались старые занятия.
+        const activeStudentIds = new Set(
+          enrollItems.filter((e) => e.status === "active").map((e) => e.student_id)
+        );
+        setPeople(Array.from(seen.values()).filter((student) => activeStudentIds.has(student.id)));
       } else {
         setPeople(peopleRes?.students ?? []);
       }

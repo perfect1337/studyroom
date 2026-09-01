@@ -293,8 +293,9 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case models.RoleTutor:
+		active := true
 		students, err := h.users.ListAll(ctx, repository.ListFilter{
-			Role: rolePtr(models.RoleStudent), BranchID: branchFilter, Search: search,
+			Role: rolePtr(models.RoleStudent), BranchID: branchFilter, IsActive: &active, Search: search,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")

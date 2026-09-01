@@ -338,15 +338,15 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 	for _, studentID := range participantIDs {
 		e := activeEnrollments[studentID]
 		if e == nil {
-			writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "student does not have an active contract for this course")
+			writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "У ученика нет действующего договора на этот курс.")
 			return
 		}
 		if e.StartDate != nil && lessonDate.Before(*e.StartDate) {
-			writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "lesson date is before the contract start date")
+			writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "Дата занятия раньше даты начала договора.")
 			return
 		}
 		if e.EndDate != nil && lessonDate.After(*e.EndDate) {
-			writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "student's contract has expired for this lesson date")
+			writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "Срок действия договора ученика истёк на дату этого занятия.")
 			return
 		}
 	}

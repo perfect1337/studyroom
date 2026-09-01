@@ -19,13 +19,13 @@ func NewContractRepository(pool *pgxpool.Pool) *ContractRepository {
 	return &ContractRepository{pool: pool}
 }
 
-const contractColumns = `id, contract_number, student_id, parent_id, course_id, branch_id, amount, payment_status, status, start_date, end_date, created_at`
+const contractColumns = `id, contract_number, student_id, parent_id, course_id, branch_id, amount, payment_status, status, start_date, end_date, created_at, deleted_at, deleted_by`
 
 func scanContract(row pgx.Row) (*models.Contract, error) {
 	var c models.Contract
 	err := row.Scan(
 		&c.ID, &c.ContractNumber, &c.StudentID, &c.ParentID, &c.CourseID, &c.BranchID,
-		&c.Amount, &c.PaymentStatus, &c.Status, &c.StartDate, &c.EndDate, &c.CreatedAt,
+		&c.Amount, &c.PaymentStatus, &c.Status, &c.StartDate, &c.EndDate, &c.CreatedAt, &c.DeletedAt, &c.DeletedBy,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -72,7 +72,7 @@ func (r *ContractRepository) Create(ctx context.Context, studentID, parentID, co
 }
 
 func (r *ContractRepository) GetByID(ctx context.Context, id int64) (*models.Contract, error) {
-	query := `SELECT ` + contractColumns + ` FROM contracts WHERE id = $1`
+	query := `SELECT ` + contractColumns + ` FROM contracts WHERE id = $1 AND deleted_at IS NULL`
 	return scanContract(r.pool.QueryRow(ctx, query, id))
 }
 
@@ -84,7 +84,7 @@ type ListFilter struct {
 
 // List — GET /contracts?branch_id=&student_id=&status= (api-contracts.md 3.2), owner-only.
 func (r *ContractRepository) List(ctx context.Context, f ListFilter) ([]*models.Contract, error) {
-	query := `SELECT ` + contractColumns + ` FROM contracts WHERE 1=1`
+	query := `SELECT ` + contractColumns + ` FROM contracts WHERE deleted_at IS NULL`
 	args := []any{}
 	i := 1
 	if f.BranchID != nil {
@@ -128,7 +128,7 @@ func (r *ContractRepository) ListByStudentIDs(ctx context.Context, studentIDs []
 	if len(studentIDs) == 0 {
 		return []*models.Contract{}, nil
 	}
-	query := `SELECT ` + contractColumns + ` FROM contracts WHERE student_id = ANY($1) ORDER BY id DESC`
+	query := `SELECT ` + contractColumns + ` FROM contracts WHERE student_id = ANY($1) AND deleted_at IS NULL ORDER BY id DESC`
 	rows, err := r.pool.Query(ctx, query, studentIDs)
 	if err != nil {
 		return nil, err
@@ -189,7 +189,7 @@ func (r *ContractRepository) UpdatePaymentStatus(ctx context.Context, id int64, 
 // (11 класс/выпуск), а не разорвал договор досрочно.
 func (r *ContractRepository) CompleteActiveByStudent(ctx context.Context, studentID int64) (int64, error) {
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE contracts SET status = 'completed' WHERE student_id = $1 AND status = 'active'`,
+		`UPDATE contracts SET status = 'completed' WHERE student_id = $1 AND status = 'active' AND deleted_at IS NULL`,
 		studentID)
 	if err != nil {
 		return 0, err
@@ -197,8 +197,8 @@ func (r *ContractRepository) CompleteActiveByStudent(ctx context.Context, studen
 	return tag.RowsAffected(), nil
 }
 
-func (r *ContractRepository) Delete(ctx context.Context, id int64) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM contracts WHERE id = $1`, id)
+func (r *ContractRepository) Delete(ctx context.Context, id int64, deletedBy int64) error {
+	tag, err := r.pool.Exec(ctx, `UPDATE contracts SET deleted_at = now(), deleted_by = $2 WHERE id = $1 AND deleted_at IS NULL`, id, deletedBy)
 	if err != nil {
 		return err
 	}
@@ -206,6 +206,35 @@ func (r *ContractRepository) Delete(ctx context.Context, id int64) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// ContractStats contains owner-wide counters. Deleted contracts are retained
+// for audit/statistics but excluded from normal contract lists.
+type ContractStats struct {
+	Total         int64   `json:"total"`
+	Active        int64   `json:"active"`
+	Completed     int64   `json:"completed"`
+	Terminated    int64   `json:"terminated"`
+	Deleted       int64   `json:"deleted"`
+	DeletedAmount float64 `json:"deleted_amount"`
+}
+
+func (r *ContractRepository) Stats(ctx context.Context) (*ContractStats, error) {
+	var stats ContractStats
+	err := r.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE deleted_at IS NULL),
+			COUNT(*) FILTER (WHERE deleted_at IS NULL AND status = 'active'),
+			COUNT(*) FILTER (WHERE deleted_at IS NULL AND status = 'completed'),
+			COUNT(*) FILTER (WHERE deleted_at IS NULL AND status = 'terminated'),
+			COUNT(*) FILTER (WHERE deleted_at IS NOT NULL),
+			COALESCE(SUM(amount) FILTER (WHERE deleted_at IS NOT NULL), 0)
+		FROM contracts
+	`).Scan(&stats.Total, &stats.Active, &stats.Completed, &stats.Terminated, &stats.Deleted, &stats.DeletedAmount)
+	if err != nil {
+		return nil, err
+	}
+	return &stats, nil
 }
 
 // ListExpiringSoon — договоры со статусом active, у которых end_date попадает
@@ -244,7 +273,7 @@ func (r *ContractRepository) ExpireDue(ctx context.Context) ([]*models.Contract,
 	rows, err := r.pool.Query(ctx, `
 		UPDATE contracts
 		SET status = 'completed'
-		WHERE status = 'active' AND end_date < CURRENT_DATE
+		WHERE status = 'active' AND deleted_at IS NULL AND end_date < CURRENT_DATE
 		RETURNING `+contractColumns)
 	if err != nil {
 		return nil, err
@@ -263,6 +292,6 @@ func (r *ContractRepository) ExpireDue(ctx context.Context) ([]*models.Contract,
 }
 
 func (r *ContractRepository) MarkExpiryNotified(ctx context.Context, id int64) error {
-	_, err := r.pool.Exec(ctx, `UPDATE contracts SET expiry_notified_at = now() WHERE id = $1`, id)
+	_, err := r.pool.Exec(ctx, `UPDATE contracts SET expiry_notified_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
 	return err
 }

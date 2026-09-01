@@ -8,6 +8,19 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /stats:
+    get:
+      summary: Contract statistics (owner only)
+      description: Aggregate contract counters including soft-deleted contracts.
+      responses:
+        '200':
+          description: Contract statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContractStats'
+        '403':
+          description: Forbidden
   /:
     get:
       summary: List contracts
@@ -190,3 +203,19 @@ components:
           enum: [unpaid, paid]
       required:
         - payment_status
+
+    ContractStats:
+      type: object
+      properties:
+        total:
+          type: integer
+        active:
+          type: integer
+        completed:
+          type: integer
+        terminated:
+          type: integer
+        deleted:
+          type: integer
+        deleted_amount:
+          type: number

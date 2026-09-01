@@ -78,3 +78,9 @@ export function deleteContract(id) {
     return res;
   });
 }
+
+
+// Статистика договоров — только owner. Учитывает soft-deleted договоры.
+export function fetchContractStats() {
+  return contractsApi("/stats");
+}

@@ -437,7 +437,7 @@ func (h *ContractHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", err.Error())
 		return
 	}
-	if err := h.repo.Delete(r.Context(), id); err != nil {
+	if err := h.repo.Delete(r.Context(), id, claims.UserID); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "contract not found")
 			return
@@ -446,6 +446,23 @@ func (h *ContractHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// Stats — GET /contracts/stats, owner-only. Deleted contracts are counted
+// separately because they are soft-deleted and intentionally hidden from
+// normal contract lists.
+func (h *ContractHandler) Stats(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+	if claims.Role != models.RoleOwner {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "owner role required")
+		return
+	}
+	stats, err := h.repo.Stats(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load contract statistics")
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
 }
 
 // checkBranchOwnerAccess — для branch_owner проверяет, что договор id

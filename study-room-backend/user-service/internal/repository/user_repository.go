@@ -321,6 +321,8 @@ type ListFilter struct {
 	Role     *models.Role
 	Roles    []models.Role // если задан — OR по нескольким ролям (Role игнорируется)
 	BranchID *int64
+	// IsActive — optional filter by users.is_active.
+	IsActive *bool
 	Search   string
 	Page     int
 	PerPage  int
@@ -353,6 +355,11 @@ func (r *UserRepository) List(ctx context.Context, f ListFilter) ([]*models.User
 	if f.BranchID != nil {
 		where += " AND users.branch_id = $" + strconv.Itoa(i)
 		args = append(args, *f.BranchID)
+		i++
+	}
+	if f.IsActive != nil {
+		where += " AND users.is_active = $" + strconv.Itoa(i)
+		args = append(args, *f.IsActive)
 		i++
 	}
 	if f.Search != "" {

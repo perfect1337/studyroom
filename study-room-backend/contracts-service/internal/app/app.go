@@ -67,6 +67,12 @@ func NewRouter(d *Deps) http.Handler {
 	r.Route("/api/v1/contracts", func(r chi.Router) {
 		r.Use(middleware.RequireAuth(d.TM))
 
+		// Owner-only aggregate statistics, including soft-deleted contracts.
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireRoles(models.RoleOwner))
+			r.Get("/stats", h.Stats)
+		})
+
 		// 3.1, 3.3-3.7 — roles: owner (любой филиал), branch_owner (только
 		// свой филиал — руководитель филиала имеет тот же функционал по
 		// договорам, что и owner, кроме управления сетью филиалов как

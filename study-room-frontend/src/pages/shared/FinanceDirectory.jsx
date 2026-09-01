@@ -13,7 +13,7 @@ import SearchableSelect from "../../components/ui/SearchableSelect.jsx";
 import Pagination from "../../components/ui/Pagination.jsx";
 import { usePagination } from "../../utils/usePagination.js";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchContracts, createContract, updateContract, setContractStatus, setContractPaymentStatus } from "../../api/contracts.js";
+import { fetchContracts, fetchContractStats, createContract, updateContract, setContractStatus, setContractPaymentStatus, deleteContract } from "../../api/contracts.js";
 import { fetchMyPeople, fetchBranches, fetchParentChildren, createStudent } from "../../api/users.js";
 import { fetchCourses } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
@@ -94,6 +94,7 @@ export default function FinanceDirectory({ role }) {
   const { user } = useAuth();
 
   const [contracts, setContracts] = useState([]);
+  const [contractStats, setContractStats] = useState(null);
   const [studentsById, setStudentsById] = useState({});
   const [parentsById, setParentsById] = useState({});
   const [branchesById, setBranchesById] = useState({});
@@ -126,10 +127,11 @@ export default function FinanceDirectory({ role }) {
     setLoading(true);
     setError("");
     try {
-      const [contractsRes, peopleRes, coursesRes] = await Promise.all([
+      const [contractsRes, peopleRes, coursesRes, statsRes] = await Promise.all([
         fetchContracts(),
         fetchMyPeople(),
         fetchCourses().catch(() => ({ items: [] })),
+        isOwner ? fetchContractStats().catch(() => null) : Promise.resolve(null),
       ]);
       // Владелец сети сам выбирает филиал из полного списка сети (GET /branches,
       // доступен только owner). Руководитель филиала работает только в рамках
@@ -143,6 +145,7 @@ export default function FinanceDirectory({ role }) {
               : [],
           };
       setContracts(contractsRes?.items ?? []);
+      setContractStats(statsRes);
       setPeople({ students: peopleRes?.students ?? [], parents: peopleRes?.parents ?? [] });
       setBranches(branchesRes?.items ?? []);
       setCourses(coursesRes?.items ?? []);
@@ -317,6 +320,25 @@ export default function FinanceDirectory({ role }) {
     }
   }
 
+  async function handleDeleteContract() {
+    if (!editContract || editStatus === "deleting") return;
+    const confirmed = window.confirm(
+      `Удалить договор №${editContract.id}?\n\nДоговор исчезнет из обычных списков, но останется в статистике удалённых договоров. Отменить это действие через интерфейс нельзя.`
+    );
+    if (!confirmed) return;
+
+    setEditStatus("deleting");
+    try {
+      await deleteContract(editContract.id);
+      await load();
+      setEditContract(null);
+      setEditForm(null);
+      setEditStatus("");
+    } catch (err) {
+      setEditStatus(err.message || "Не удалось удалить договор");
+    }
+  }
+
   async function handleAddContract(e) {
     e.preventDefault();
     setAddFormError("");
@@ -393,7 +415,7 @@ export default function FinanceDirectory({ role }) {
           <div className="mb-6 p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
         )}
 
-        <div className={`grid grid-cols-1 sm:grid-cols-2 gap-6 mb-10 ${isOwner ? "xl:grid-cols-3" : ""}`}>
+        <div className={`grid grid-cols-1 sm:grid-cols-2 gap-6 mb-10 ${isOwner ? "xl:grid-cols-4" : ""}`}>
           {/* Выручку видит только owner (сеть в целом) — у branch_owner карточка
               скрыта, т.к. эти цифры относятся к финансам компании, а не филиала. */}
           {isOwner && (
@@ -403,6 +425,17 @@ export default function FinanceDirectory({ role }) {
               </div>
               <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-2">Общая выручка (оплачено)</p>
               <h3 className="font-display-lg text-display-lg text-on-surface">{loading ? "…" : formatMoney(totalRevenue)}</h3>
+            </div>
+          )}
+
+          {isOwner && (
+            <div className="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                <span className="material-symbols-outlined text-6xl text-on-surface-variant">delete_sweep</span>
+              </div>
+              <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-2">Удалённые договоры</p>
+              <h3 className="font-display-lg text-display-lg text-on-surface">{loading ? "…" : (contractStats?.deleted ?? 0)}</h3>
+              <p className="text-xs text-on-surface-variant mt-2">Сохранены в истории · {loading ? "…" : formatMoney(contractStats?.deleted_amount ?? 0)}</p>
             </div>
           )}
 
@@ -1012,10 +1045,18 @@ export default function FinanceDirectory({ role }) {
 
                 <button
                   type="submit"
-                  disabled={editStatus === "saving"}
+                  disabled={editStatus === "saving" || editStatus === "deleting"}
                   className="w-full bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60"
                 >
                   {editStatus === "saving" ? "Сохранение…" : "Сохранить изменения"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteContract}
+                  disabled={editStatus === "saving" || editStatus === "deleting"}
+                  className="w-full border border-red-300 text-red-700 bg-red-50 py-3 rounded-lg font-bold hover:bg-red-100 transition-all disabled:opacity-60"
+                >
+                  {editStatus === "deleting" ? "Удаление…" : "Удалить договор"}
                 </button>
               </form>
             )}

@@ -35,8 +35,9 @@ Service. Ссылки на пользователей и курсы (`student_id
 
 ## Права доступа
 
-- `POST/GET/PATCH/DELETE /contracts*` (3.1–3.2, 3.4–3.7) — только `owner`.
-- `GET /contracts/{id}` (3.3) — только `owner`, полный объект договора.
+- `POST/GET/PATCH/DELETE /contracts*` (3.1–3.2, 3.4–3.7) — `owner`; `branch_owner` — только договоры своего филиала. Удаление мягкое: запись сохраняется для статистики.
+- `GET /contracts/{id}` (3.3) — `owner` и `branch_owner` (только свой филиал), полный объект договора.
+- `GET /contracts/stats` — только `owner`, агрегированная статистика, включая удалённые договоры.
 - `GET /contracts/{id}/expiry` (3.3a) — облегчённая версия (только
   `contract_id`/`end_date`, без суммы и статуса оплаты) для:
   - `branch_owner` — только договоры своего филиала (`claims.branch_id ==

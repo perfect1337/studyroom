@@ -356,6 +356,39 @@ func TestDeleteContract_Owner(t *testing.T) {
 	e.mustOK(e.do(http.MethodGet, "/api/v1/contracts/"+id, nil, ownerToken), http.StatusNotFound)
 }
 
+func TestDeleteContract_BranchOwner_OwnBranchOnly(t *testing.T) {
+	e := getEnv(t)
+	ownerToken := e.accessToken(1, "owner", nil)
+	branchID := int64(1)
+	branchOwnerToken := e.accessToken(2, "branch_owner", &branchID)
+
+	foreign := e.do(http.MethodPost, "/api/v1/contracts", createContractBody(100, 300, 12, 2), ownerToken)
+	e.mustOK(foreign, http.StatusCreated)
+	foreignID := toPathID(foreign.Body["id"])
+	e.mustOK(e.do(http.MethodDelete, "/api/v1/contracts/"+foreignID, nil, branchOwnerToken), http.StatusForbidden)
+
+	owned := e.do(http.MethodPost, "/api/v1/contracts", createContractBody(101, 300, 12, 1), ownerToken)
+	e.mustOK(owned, http.StatusCreated)
+	ownedID := toPathID(owned.Body["id"])
+	e.mustOK(e.do(http.MethodDelete, "/api/v1/contracts/"+ownedID, nil, branchOwnerToken), http.StatusOK)
+	e.mustOK(e.do(http.MethodGet, "/api/v1/contracts/"+ownedID, nil, ownerToken), http.StatusNotFound)
+}
+
+func TestContractStats_IncludesDeleted(t *testing.T) {
+	e := getEnv(t)
+	ownerToken := e.accessToken(1, "owner", nil)
+	created := e.do(http.MethodPost, "/api/v1/contracts", createContractBody(102, 300, 12, 1), ownerToken)
+	e.mustOK(created, http.StatusCreated)
+	id := toPathID(created.Body["id"])
+	e.mustOK(e.do(http.MethodDelete, "/api/v1/contracts/"+id, nil, ownerToken), http.StatusOK)
+
+	res := e.do(http.MethodGet, "/api/v1/contracts/stats", nil, ownerToken)
+	e.mustOK(res, http.StatusOK)
+	if got, ok := res.Body["deleted"].(float64); !ok || got < 1 {
+		t.Fatalf("expected deleted >= 1, got %#v", res.Body["deleted"])
+	}
+}
+
 func TestDeleteContract_NonOwner_Forbidden(t *testing.T) {
 	e := getEnv(t)
 	parentToken := e.accessToken(300, "parent", nil)
