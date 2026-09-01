@@ -80,6 +80,10 @@ func NewRouter(d *Deps) http.Handler {
 		authRateLimit = 200
 	}
 	authLimiter := middleware.NewIPRateLimiter(authRateLimit, time.Minute)
+	// Registration has a stricter fixed limit: no more than 2 successful/attempted
+	// registration requests per minute from one client IP. The generic auth
+	// limiter remains in place for the other auth endpoints.
+	registerLimiter := middleware.NewIPRateLimiter(2, time.Minute)
 
 	r.Get("/openapi.yaml", openapi.SpecHandler)
 	r.Get("/docs", openapi.DocsHandler)
@@ -87,7 +91,7 @@ func NewRouter(d *Deps) http.Handler {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RateLimit(authLimiter))
-			r.Post("/auth/register", authHandler.Register)
+			r.With(middleware.RateLimit(registerLimiter)).Post("/auth/register", authHandler.Register)
 			r.Post("/auth/login", authHandler.Login)
 			r.Post("/auth/refresh", authHandler.Refresh)
 			r.Post("/auth/forgot-password", authHandler.ForgotPassword)

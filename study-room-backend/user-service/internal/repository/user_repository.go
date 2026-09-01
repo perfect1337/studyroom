@@ -13,6 +13,7 @@ import (
 
 var ErrNotFound = errors.New("not found")
 var ErrDuplicate = errors.New("already exists")
+var ErrChildLimit = errors.New("parent child limit reached")
 
 type UserRepository struct {
 	pool *pgxpool.Pool
@@ -259,7 +260,7 @@ func (r *UserRepository) CreateStudentWithParent(
 	defer tx.Rollback(ctx)
 
 	var parentRole models.Role
-	err = tx.QueryRow(ctx, `SELECT role FROM users WHERE id = $1`, parentID).Scan(&parentRole)
+	err = tx.QueryRow(ctx, `SELECT role FROM users WHERE id = $1 FOR UPDATE`, parentID).Scan(&parentRole)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -268,6 +269,14 @@ func (r *UserRepository) CreateStudentWithParent(
 	}
 	if parentRole != models.RoleParent {
 		return nil, ErrNotFound
+	}
+
+	var childCount int
+	if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM parent_student WHERE parent_id = $1`, parentID).Scan(&childCount); err != nil {
+		return nil, err
+	}
+	if childCount >= 10 {
+		return nil, ErrChildLimit
 	}
 
 	query := `INSERT INTO users (email, phone, password_hash, role, last_name, first_name,

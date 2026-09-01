@@ -670,6 +670,10 @@ func (h *UserHandler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "parent_id must be an existing parent")
 			return
 		}
+		if errors.Is(cErr, repository.ErrChildLimit) {
+			writeError(w, http.StatusConflict, "CHILD_LIMIT_REACHED", "a parent can have no more than 10 children")
+			return
+		}
 		if errors.Is(cErr, repository.ErrDuplicate) && attempt < 5 {
 			// Логин занят (тёзка) — добавляем короткий суффикс и пробуем снова.
 			token, tErr := auth.GenerateOpaqueToken()
