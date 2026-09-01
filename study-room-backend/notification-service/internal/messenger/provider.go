@@ -15,10 +15,9 @@ type Factory struct {
 
 // Config — конфигурация для всех мессенджеров.
 type Config struct {
-	TelegramBotToken   string
-	MaxAPIURL          string
-	MaxAppToken        string
-	WhatsAppPhoneID    string
+	TelegramBotToken    string
+	MaxAccessToken      string
+	WhatsAppPhoneID     string
 	WhatsAppAccessToken string
 }
 
@@ -31,7 +30,7 @@ func NewFactory(config Config) *Factory {
 func (f *Factory) Get(messenger string) (Provider, error) {
 	switch messenger {
 	case "max":
-		return NewMaxProvider(f.config.MaxAPIURL, f.config.MaxAppToken), nil
+		return NewMaxProvider(f.config.MaxAccessToken), nil
 	case "telegram":
 		return NewTelegramProvider(f.config.TelegramBotToken), nil
 	case "whatsapp":

@@ -92,8 +92,7 @@ func main() {
 	tm := auth.NewTokenManager(cfg.JWTSecret)
 	messengerCfg := messenger.Config{
 		TelegramBotToken:    cfg.TelegramBotToken,
-		MaxAPIURL:           cfg.MaxAPIURL,
-		MaxAppToken:         cfg.MaxAppToken,
+		MaxAccessToken:      cfg.MaxAccessToken,
 		WhatsAppPhoneID:     cfg.WhatsAppPhoneID,
 		WhatsAppAccessToken: cfg.WhatsAppAccessToken,
 	}
@@ -120,6 +119,26 @@ func main() {
 		}()
 	} else {
 		log.Println("telegram: TELEGRAM_BOT_TOKEN not set, skipping bot polling")
+	}
+
+	// MAX работает через Webhook. Сервис поднимает HTTP сразу, а GET /me и
+	// регистрация /subscriptions выполняются в фоне, чтобы временная
+	// недоступность MAX не блокировала notification-service.
+	if cfg.MaxAccessToken != "" && cfg.MaxWebhookURL != "" {
+		maxBot := messenger.NewMaxBot(cfg.MaxAccessToken, cfg.MaxWebhookSecret, deps.UsersRef, deps.MaxUser, deps.Settings)
+		deps.MaxBot = maxBot
+		go func() {
+			botCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+			defer cancel()
+			if err := maxBot.LoadSelf(botCtx); err != nil {
+				log.Printf("max: LoadSelf failed: %v (continuing; webhook can still authenticate by secret)", err)
+			}
+			if err := maxBot.Subscribe(botCtx, cfg.MaxWebhookURL); err != nil {
+				log.Printf("max: webhook subscription failed: %v (retry on next service restart)", err)
+			}
+		}()
+	} else {
+		log.Println("max: MAX_ACCESS_TOKEN or MAX_WEBHOOK_URL not set, skipping MAX bot")
 	}
 
 	// Подписка на NATS — best effort. Если брокер недоступен при старте,

@@ -32,3 +32,13 @@ export function fetchTelegramStatus() {
 export function unlinkTelegram() {
   return notificationsApi("/telegram/link", { method: "DELETE" });
 }
+
+
+// MAX
+export function fetchMaxStatus() {
+  return notificationsApi("/max/status");
+}
+
+export function unlinkMax() {
+  return notificationsApi("/max/link", { method: "DELETE" });
+}

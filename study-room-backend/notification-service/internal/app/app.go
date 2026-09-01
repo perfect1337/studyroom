@@ -29,6 +29,8 @@ type Deps struct {
 	Settings      *repository.SettingsRepository
 	UsersRef      *repository.UserRefRepository
 	TelegramUser  *repository.TelegramUserRepository
+	MaxUser       *repository.MaxUserRepository
+	MaxBot        *messenger.MaxBot
 
 	Notifier     *notifier.Notifier
 	TokenManager *auth.TokenManager
@@ -48,23 +50,25 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, serviceToken string, mai
 	settingsRepo := repository.NewSettingsRepository(pool)
 	usersRefRepo := repository.NewUserRefRepository(pool)
 	telegramUserRepo := repository.NewTelegramUserRepository(pool)
+	maxUserRepo := repository.NewMaxUserRepository(pool)
 
 	return &Deps{
-		Pool:           pool,
-		Notifications:  notificationsRepo,
-		Settings:       settingsRepo,
-		UsersRef:       usersRefRepo,
-		TelegramUser:   telegramUserRepo,
-		Notifier:       notifier.New(notificationsRepo, settingsRepo, usersRefRepo, mail, factory, smtpBatchHourlyLimit),
-		TokenManager:   tm,
-		ServiceToken:   serviceToken,
+		Pool:          pool,
+		Notifications: notificationsRepo,
+		Settings:      settingsRepo,
+		UsersRef:      usersRefRepo,
+		TelegramUser:  telegramUserRepo,
+		MaxUser:       maxUserRepo,
+		Notifier:      notifier.New(notificationsRepo, settingsRepo, usersRefRepo, mail, factory, smtpBatchHourlyLimit),
+		TokenManager:  tm,
+		ServiceToken:  serviceToken,
 	}
 }
 
 // NewRouter строит chi.Router со всеми эндпоинтами сервиса — идентично тому,
 // что раньше строилось прямо в main().
 func NewRouter(d *Deps) http.Handler {
-	notificationHandler := handlers.NewNotificationHandler(d.Notifications, d.Settings, d.TelegramUser, d.UsersRef)
+	notificationHandler := handlers.NewNotificationHandler(d.Notifications, d.Settings, d.TelegramUser, d.MaxUser, d.UsersRef)
 	internalHandler := handlers.NewInternalHandler(d.Notifier, d.UsersRef)
 
 	r := chi.NewRouter()
@@ -88,6 +92,17 @@ func NewRouter(d *Deps) http.Handler {
 			r.Patch("/notifications/settings", notificationHandler.UpdateSettings)
 			r.Get("/notifications/telegram/status", notificationHandler.GetTelegramStatus)
 			r.Delete("/notifications/telegram/link", notificationHandler.UnlinkTelegram)
+			r.Get("/notifications/max/status", notificationHandler.GetMaxStatus)
+			r.Delete("/notifications/max/link", notificationHandler.UnlinkMax)
+		})
+
+		// MAX Webhook — без JWT; MaxBot проверяет X-Max-Bot-Api-Secret.
+		r.Post("/notifications/max/webhook", func(w http.ResponseWriter, req *http.Request) {
+			if d.MaxBot == nil {
+				http.Error(w, "MAX bot is not configured", http.StatusServiceUnavailable)
+				return
+			}
+			d.MaxBot.HandleWebhook(w, req)
 		})
 
 		// --- Только service-to-service (X-Service-Token) ---

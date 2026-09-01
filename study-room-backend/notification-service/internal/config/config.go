@@ -44,12 +44,16 @@ type Config struct {
 	// Telegram Bot API
 	TelegramBotToken string // токен от @BotFather (например, 123456789:ABCdefGHIjklMNOpqrsTUVwxyz)
 
-	// MAX (MaxCore Solutions)
-	MaxAPIURL    string // URL MAX API (например, https://max.example.com/api/v1)
-	MaxAppToken  string // токен приложения для авторизации MAX
+	// MAX (MaxCore Solutions / VK) — Bot API, https://dev.max.ru
+	// Токен выдаётся при создании бота (MasterBot в MAX или «MAX для
+	// бизнеса» — команда «Получить токен»).
+	MaxAccessToken   string // токен бота (заголовок Authorization в запросах к platform-api2.max.ru)
+	MaxWebhookURL    string // публичный HTTPS URL webhook'а (например, https://mestudyroom64.ru/api/v1/notifications/max/webhook)
+	MaxWebhookSecret string // секрет для заголовка X-Max-Bot-Api-Secret (5–256 символов: A-Z a-z 0-9 - _)
+	MaxBotUsername   string // username бота в MAX (например, id6452127780_bot) — для ссылок на фронте
 
 	// WhatsApp Cloud API (Meta)
-	WhatsAppPhoneID    string // ID номера телефона из WhatsApp Business API (например, 1234567890)
+	WhatsAppPhoneID     string // ID номера телефона из WhatsApp Business API (например, 1234567890)
 	WhatsAppAccessToken string // access token из Meta Developer Console
 }
 
@@ -70,8 +74,10 @@ func Load() (*Config, error) {
 
 		// Мессенджеры (не обязательны для запуска — проверяются при первой отправке)
 		TelegramBotToken:    getEnv("TELEGRAM_BOT_TOKEN", ""),
-		MaxAPIURL:           getEnv("MAX_API_URL", ""),
-		MaxAppToken:         getEnv("MAX_APP_TOKEN", ""),
+		MaxAccessToken:      getEnv("MAX_ACCESS_TOKEN", ""),
+		MaxWebhookURL:       getEnv("MAX_WEBHOOK_URL", ""),
+		MaxWebhookSecret:    getEnv("MAX_WEBHOOK_SECRET", ""),
+		MaxBotUsername:      getEnv("MAX_BOT_USERNAME", ""),
 		WhatsAppPhoneID:     getEnv("WHATSAPP_PHONE_NUMBER_ID", ""),
 		WhatsAppAccessToken: getEnv("WHATSAPP_ACCESS_TOKEN", ""),
 	}

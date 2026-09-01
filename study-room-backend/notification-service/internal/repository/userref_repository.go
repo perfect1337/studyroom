@@ -23,8 +23,8 @@ func NewUserRefRepository(pool *pgxpool.Pool) *UserRefRepository {
 
 func (r *UserRefRepository) Upsert(ctx context.Context, u *models.UserRef) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO users_ref (id, email, first_name, last_name, parent_id, phone, telegram_id, whatsapp_id, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now())
+		INSERT INTO users_ref (id, email, first_name, last_name, parent_id, phone, telegram_id, max_id, whatsapp_id, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
 		ON CONFLICT (id) DO UPDATE SET
 			email = EXCLUDED.email,
 			first_name = CASE WHEN EXCLUDED.first_name = '' THEN users_ref.first_name ELSE EXCLUDED.first_name END,
@@ -32,18 +32,20 @@ func (r *UserRefRepository) Upsert(ctx context.Context, u *models.UserRef) error
 			parent_id = COALESCE(EXCLUDED.parent_id, users_ref.parent_id),
 			phone = COALESCE(EXCLUDED.phone, users_ref.phone),
 			telegram_id = COALESCE(EXCLUDED.telegram_id, users_ref.telegram_id),
+			max_id = COALESCE(EXCLUDED.max_id, users_ref.max_id),
 			whatsapp_id = COALESCE(EXCLUDED.whatsapp_id, users_ref.whatsapp_id),
 			updated_at = now()`,
-		u.ID, u.Email, u.FirstName, u.LastName, u.ParentID, u.Phone, u.TelegramID, u.WhatsAppID)
+		u.ID, u.Email, u.FirstName, u.LastName, u.ParentID, u.Phone, u.TelegramID, u.MaxID, u.WhatsAppID)
 	return err
 }
 
 // UpsertFromUserService — то же самое, что Upsert, но специально для
 // событий user.created/user.updated, которые публикует User Service (см.
 // events/subscriber.go, upsertUserRef). User Service вообще не знает о
-// существовании telegram_id/whatsapp_id — эти поля целиком принадлежат
+// существовании telegram_id/max_id/whatsapp_id — эти поля целиком принадлежат
 // Notification Service (заполняются только через TelegramBot.handleText
-// при привязке бота, см. messenger/telegram_bot.go). Раньше здесь
+// / MaxBot.handleText при привязке бота, см. messenger/telegram_bot.go и
+// messenger/max_bot.go). Раньше здесь
 // использовался общий Upsert с `COALESCE(EXCLUDED.telegram_id,
 // users_ref.telegram_id)` — но COALESCE защищает только от SQL NULL, а не
 // от пустой строки: поле TelegramID в Go — обычный string, его нулевое
@@ -53,12 +55,12 @@ func (r *UserRefRepository) Upsert(ctx context.Context, u *models.UserRef) error
 // профиля) молча затирало уже привязанный telegram_id/whatsapp_id на "" —
 // бот оставался "подключён" (таблица telegram_users не трогалась), но
 // notifier.Send() переставал слать в Telegram, т.к. проверяет именно
-// ref.TelegramID != "". Здесь telegram_id/whatsapp_id вообще не участвуют
+// ref.TelegramID != "". Здесь telegram_id/max_id/whatsapp_id вообще не участвуют
 // в UPDATE — синхронизация из User Service их не касается.
 func (r *UserRefRepository) UpsertFromUserService(ctx context.Context, u *models.UserRef) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO users_ref (id, email, first_name, last_name, parent_id, phone, telegram_id, whatsapp_id, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,'','', now())
+		INSERT INTO users_ref (id, email, first_name, last_name, parent_id, phone, telegram_id, max_id, whatsapp_id, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,'','','', now())
 		ON CONFLICT (id) DO UPDATE SET
 			email = EXCLUDED.email,
 			first_name = CASE WHEN EXCLUDED.first_name = '' THEN users_ref.first_name ELSE EXCLUDED.first_name END,
@@ -72,10 +74,10 @@ func (r *UserRefRepository) UpsertFromUserService(ctx context.Context, u *models
 
 func (r *UserRefRepository) GetByID(ctx context.Context, id int64) (*models.UserRef, error) {
 	row := r.pool.QueryRow(ctx,
-		`SELECT id, email, first_name, last_name, parent_id, phone, telegram_id, whatsapp_id FROM users_ref WHERE id = $1`, id)
+		`SELECT id, email, first_name, last_name, parent_id, phone, telegram_id, max_id, whatsapp_id FROM users_ref WHERE id = $1`, id)
 
 	var u models.UserRef
-	err := row.Scan(&u.ID, &u.Email, &u.FirstName, &u.LastName, &u.ParentID, &u.Phone, &u.TelegramID, &u.WhatsAppID)
+	err := row.Scan(&u.ID, &u.Email, &u.FirstName, &u.LastName, &u.ParentID, &u.Phone, &u.TelegramID, &u.MaxID, &u.WhatsAppID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -87,10 +89,10 @@ func (r *UserRefRepository) GetByID(ctx context.Context, id int64) (*models.User
 
 func (r *UserRefRepository) GetByEmail(ctx context.Context, email string) (*models.UserRef, error) {
 	row := r.pool.QueryRow(ctx,
-		`SELECT id, email, first_name, last_name, parent_id, phone, telegram_id, whatsapp_id FROM users_ref WHERE LOWER(email) = LOWER($1)`, email)
+		`SELECT id, email, first_name, last_name, parent_id, phone, telegram_id, max_id, whatsapp_id FROM users_ref WHERE LOWER(email) = LOWER($1)`, email)
 
 	var u models.UserRef
-	err := row.Scan(&u.ID, &u.Email, &u.FirstName, &u.LastName, &u.ParentID, &u.Phone, &u.TelegramID, &u.WhatsAppID)
+	err := row.Scan(&u.ID, &u.Email, &u.FirstName, &u.LastName, &u.ParentID, &u.Phone, &u.TelegramID, &u.MaxID, &u.WhatsAppID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -106,5 +108,12 @@ func (r *UserRefRepository) GetByEmail(ctx context.Context, email string) (*mode
 // старый, уже недействительный chat_id.
 func (r *UserRefRepository) ClearTelegramID(ctx context.Context, userID int64) error {
 	_, err := r.pool.Exec(ctx, `UPDATE users_ref SET telegram_id = '', updated_at = now() WHERE id = $1`, userID)
+	return err
+}
+
+// ClearMaxID — очищает max_id при отвязке MAX-бота (см.
+// NotificationHandler.UnlinkMax). Аналог ClearTelegramID.
+func (r *UserRefRepository) ClearMaxID(ctx context.Context, userID int64) error {
+	_, err := r.pool.Exec(ctx, `UPDATE users_ref SET max_id = '', updated_at = now() WHERE id = $1`, userID)
 	return err
 }
