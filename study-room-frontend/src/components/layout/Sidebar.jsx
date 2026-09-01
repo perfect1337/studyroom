@@ -17,7 +17,7 @@ export const NAV_ITEMS = {
     { to: "/student/tests", icon: "quiz", label: "Тесты" },
     { to: "/student/grades", icon: "grade", label: "Оценки" },
     { to: "/student/profile", icon: "person", label: "Профиль" },
-    { to: "/student/settings", icon: "settings", label: "Настройки" },
+    { to: "/student/settings", icon: "settings", label: "Настройки", end: true },
   ],
   tutor: [
     { to: "/tutor", icon: "dashboard", label: "Обзор", end: true },
@@ -25,14 +25,14 @@ export const NAV_ITEMS = {
     { to: "/tutor/schedule", icon: "calendar_today", label: "Расписание" },
     { to: "/tutor/homework", icon: "assignment", label: "Задания" },
     { to: "/tutor/tests", icon: "quiz", label: "Тесты" },
-    { to: "/tutor/settings", icon: "settings", label: "Настройки" },
+    { to: "/tutor/settings", icon: "settings", label: "Настройки", end: true },
   ],
   parent: [
     { to: "/parent", icon: "dashboard", label: "Обзор", end: true },
     { to: "/parent/children", icon: "family_restroom", label: "Дети" },
     { to: "/parent/schedule", icon: "calendar_month", label: "Расписание" },
     { to: "/parent/contracts", icon: "description", label: "Договоры" },
-    { to: "/parent/settings", icon: "settings", label: "Настройки" },
+    { to: "/parent/settings", icon: "settings", label: "Настройки", end: true },
   ],
   admin: [
     { to: "/admin", icon: "dashboard", label: "Обзор", end: true },
@@ -42,7 +42,7 @@ export const NAV_ITEMS = {
     { to: "/admin/finance", icon: "payments", label: "Финансы" },
     { to: "/admin/branches", icon: "store", label: "Филиалы" },
     { to: "/admin/courses", icon: "menu_book", label: "Курсы" },
-    { to: "/admin/settings", icon: "settings", label: "Настройки" },
+    { to: "/admin/settings", icon: "settings", label: "Настройки", end: true },
   ],
   branch_owner: [
     { to: "/branch", icon: "dashboard", label: "Обзор", end: true },
@@ -51,22 +51,22 @@ export const NAV_ITEMS = {
     { to: "/branch/courses", icon: "menu_book", label: "Курсы" },
     { to: "/branch/schedule", icon: "calendar_month", label: "Расписание" },
     { to: "/branch/finance", icon: "payments", label: "Финансы" },
-    { to: "/branch/settings", icon: "settings", label: "Настройки" },
+    { to: "/branch/settings", icon: "settings", label: "Настройки", end: true },
   ],
 };
 
 const linkClasses = ({ isActive }) =>
   [
-    "flex items-center gap-3 px-4 py-3 rounded-lg font-label-md text-label-md transition-all duration-200",
+    "flex items-center gap-3 px-4 py-3 rounded-lg font-label-md text-label-md transition-colors duration-200",
     isActive
       ? "bg-primary-container text-on-primary-container font-bold"
-      : "text-on-surface-variant hover:bg-surface-container-high hover:translate-x-1",
+      : "text-on-surface-variant hover:bg-surface-container-high",
   ].join(" ");
 
 function NavList({ role, onNavigate }) {
   const items = NAV_ITEMS[role] ?? [];
   return (
-    <nav className="flex-1 flex flex-col gap-1 overflow-y-auto">
+    <nav className="flex-1 flex flex-col gap-1 overflow-y-auto overflow-x-hidden">
       {items.map((item) => (
         <NavLink
           key={item.to}
