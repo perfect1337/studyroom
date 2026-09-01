@@ -46,18 +46,18 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, pub events.Publisher, ap
 		pub = events.NoopPublisher{}
 	}
 	return &Deps{
-		Pool:          pool,
-		TM:            tm,
-		Users:         repository.NewUserRepository(pool),
-		Branches:      repository.NewBranchRepository(pool),
-		Auth:          repository.NewAuthRepository(pool),
-		ParentChild:   repository.NewParentChildRepository(pool),
-		TutorProfiles: repository.NewTutorProfileRepository(pool),
+		Pool:            pool,
+		TM:              tm,
+		Users:           repository.NewUserRepository(pool),
+		Branches:        repository.NewBranchRepository(pool),
+		Auth:            repository.NewAuthRepository(pool),
+		ParentChild:     repository.NewParentChildRepository(pool),
+		TutorProfiles:   repository.NewTutorProfileRepository(pool),
 		StudentProfiles: repository.NewStudentProfileRepository(pool),
-		Events:        pub,
-		AppPublicURL:  appPublicURL,
-		AuthRateLimit: authRateLimit,
-		CookieOptions: cookieOpts,
+		Events:          pub,
+		AppPublicURL:    appPublicURL,
+		AuthRateLimit:   authRateLimit,
+		CookieOptions:   cookieOpts,
 	}
 }
 
@@ -106,6 +106,7 @@ func NewRouter(d *Deps) http.Handler {
 			r.Get("/users/{id}", userHandler.GetByID)
 			r.Patch("/users/{id}", userHandler.Update)
 			r.Get("/parents/{parentId}/children", userHandler.ListChildren)
+			r.Delete("/users/{id}", userHandler.Delete)
 			r.Post("/users/{id}/reset-credentials", userHandler.ResetStudentCredentials)
 			// Список филиалов — доступен любой аутентифицированной роли (только чтение,
 			// ничего чувствительного). Раньше был owner-only, но это мешало родителю

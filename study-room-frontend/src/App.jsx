@@ -45,6 +45,7 @@ import {
   ParentContracts,
   AdminOverview,
   AdminStudents,
+  AdminParents,
   AdminStudentDetail,
   AdminFinance,
   AdminTeachers,
@@ -126,6 +127,7 @@ function AppRoutes() {
             {/* Владелец сети филиалов (role: owner) — раздел /admin */}
             <Route path="/admin" element={<ProtectedRoute roles={["owner"]}><AdminOverview /></ProtectedRoute>} />
             <Route path="/admin/students" element={<ProtectedRoute roles={["owner"]}><AdminStudents /></ProtectedRoute>} />
+            <Route path="/admin/parents" element={<ProtectedRoute roles={["owner"]}><AdminParents /></ProtectedRoute>} />
             <Route path="/admin/students/:studentId" element={<ProtectedRoute roles={["owner"]}><AdminStudentDetail /></ProtectedRoute>} />
             <Route path="/admin/teachers" element={<ProtectedRoute roles={["owner"]}><AdminTeachers /></ProtectedRoute>} />
             <Route path="/admin/teachers/:teacherId" element={<ProtectedRoute roles={["owner"]}><AdminTeacherDetail /></ProtectedRoute>} />

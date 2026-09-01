@@ -36,6 +36,17 @@ export function setUserActive(id, is_active) {
   });
 }
 
+// Полностью удалить аккаунт родителя вместе со всеми его детьми.
+// Доступ разрешён только owner; User Service выполняет каскад атомарно.
+export function deleteUser(id) {
+  return usersApi(`/users/${id}`, { method: "DELETE" }).then((res) => {
+    invalidateQuery(["userById", id]);
+    invalidateQuery(["myPeople"]);
+    invalidateQuery(["parentChildren"]);
+    return res;
+  });
+}
+
 // 1.15 Изменить статус репетитора (active|vacation|sick_leave|inactive)
 export function setTutorStatus(id, status) {
   return usersApi(`/tutors/${id}/status`, { method: "PATCH", body: { status } }).then((res) => {

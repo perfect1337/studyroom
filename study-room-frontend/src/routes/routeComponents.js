@@ -40,6 +40,7 @@ export const ParentContracts = lazyPreload(() => import("../pages/parent/ParentC
 
 export const AdminOverview = lazyPreload(() => import("../pages/admin/AdminOverview.jsx"));
 export const AdminStudents = lazyPreload(() => import("../pages/admin/AdminStudents.jsx"));
+export const AdminParents = lazyPreload(() => import("../pages/admin/AdminParents.jsx"));
 export const AdminStudentDetail = lazyPreload(() => import("../pages/admin/AdminStudentDetail.jsx"));
 export const AdminFinance = lazyPreload(() => import("../pages/admin/AdminFinance.jsx"));
 export const AdminTeachers = lazyPreload(() => import("../pages/admin/AdminTeachers.jsx"));
@@ -86,6 +87,7 @@ export const ROUTE_COMPONENT_BY_PATH = {
 
   "/admin": AdminOverview,
   "/admin/students": AdminStudents,
+  "/admin/parents": AdminParents,
   "/admin/teachers": AdminTeachers,
   "/admin/schedule": AdminSchedule,
   "/admin/finance": AdminFinance,

@@ -145,6 +145,106 @@ func (r *UserRepository) Update(ctx context.Context, id int64, fields map[string
 	return updated, nil
 }
 
+// SetParentAndChildrenActive atomically changes the access status of a parent
+// and all students linked to that parent. The owner uses this for a family-wide
+// ban/unban, so the parent and children cannot end up in different states.
+func (r *UserRepository) SetParentAndChildrenActive(ctx context.Context, parentID int64, isActive bool) ([]*models.User, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	var parentRole models.Role
+	if err := tx.QueryRow(ctx, `SELECT role FROM users WHERE id = $1 FOR UPDATE`, parentID).Scan(&parentRole); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if parentRole != models.RoleParent {
+		return nil, ErrNotFound
+	}
+
+	if _, err := tx.Exec(ctx, `UPDATE users SET is_active = $1, updated_at = now() WHERE id = $2 OR id IN (SELECT student_id FROM parent_student WHERE parent_id = $2)`, isActive, parentID); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	rows, err := r.pool.Query(ctx, `SELECT id FROM users WHERE id = $1 OR id IN (SELECT student_id FROM parent_student WHERE parent_id = $1) ORDER BY id`, parentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*models.User
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		u, err := r.GetByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// DeleteParentCascade permanently deletes a parent and every student linked
+// to that parent in one transaction. A snapshot is returned so callers can
+// publish user.deleted for every affected account after commit.
+func (r *UserRepository) DeleteParentCascade(ctx context.Context, parentID int64) ([]*models.User, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	var role models.Role
+	if err := tx.QueryRow(ctx, `SELECT role FROM users WHERE id = $1 FOR UPDATE`, parentID).Scan(&role); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if role != models.RoleParent {
+		return nil, ErrNotFound
+	}
+
+	rows, err := tx.Query(ctx, `SELECT u.id, u.email, u.phone, u.password_hash, u.role, u.last_name, u.first_name, u.patronymic, u.avatar_url, u.branch_id, u.is_active, u.created_at, u.updated_at FROM users u WHERE u.id = $1 OR u.id IN (SELECT student_id FROM parent_student WHERE parent_id = $1) ORDER BY u.id`, parentID)
+	if err != nil {
+		return nil, err
+	}
+	var users []*models.User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	ids := make([]int64, len(users))
+	for i, u := range users {
+		ids[i] = u.ID
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM users WHERE id = ANY($1)`, ids); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
 // CreateStudentWithParent создаёт ученика, профиль и связь с родителем в одной транзакции.
 func (r *UserRepository) CreateStudentWithParent(
 	ctx context.Context,

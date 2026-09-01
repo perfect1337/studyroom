@@ -765,6 +765,51 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, updated)
 }
 
+// --- 1.14. DELETE /users/{id} ---
+// Owner-only physical deletion of a parent account together with all linked
+// student accounts. Events are published only after the DB transaction has
+// committed so Academic/Contracts services can clean up their local data.
+func (h *UserHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+	if claims.Role != models.RoleOwner {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only owner can delete users")
+		return
+	}
+
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id")
+		return
+	}
+
+	target, err := h.users.GetByID(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "user not found")
+		return
+	}
+	if target.Role != models.RoleParent {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only parent accounts can be deleted here")
+		return
+	}
+
+	deleted, err := h.users.DeleteParentCascade(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "user not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "delete failed")
+		return
+	}
+	for _, u := range deleted {
+		h.events.UserDeleted(events.DeletedUserInfo{
+			ID: u.ID, Email: u.Email, FirstName: u.FirstName, LastName: u.LastName,
+			Role: u.Role, BranchID: u.BranchID,
+		})
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // --- 1.14. PATCH /users/{id}/status ---
 func (h *UserHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 	claims, _ := middleware.FromContext(r.Context())
@@ -798,6 +843,28 @@ func (h *UserHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, "FORBIDDEN", "can only change status of tutors in your own branch")
 			return
 		}
+	}
+
+	if target.Role == models.RoleParent {
+		// Для родителя owner меняет доступ всей семьи: родитель + все
+		// привязанные ученики. Это атомарная операция в User Service.
+		updatedUsers, err := h.users.SetParentAndChildrenActive(r.Context(), target.ID, body.IsActive)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "NOT_FOUND", "user not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
+			return
+		}
+		for _, u := range updatedUsers {
+			h.events.UserUpdated(u)
+			if !u.IsActive {
+				_ = h.authRepo.RevokeAllRefreshTokens(r.Context(), u.ID)
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		return
 	}
 
 	if body.IsActive {

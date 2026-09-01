@@ -37,6 +37,7 @@ export const NAV_ITEMS = {
   admin: [
     { to: "/admin", icon: "dashboard", label: "Обзор", end: true },
     { to: "/admin/students", icon: "group", label: "Ученики" },
+    { to: "/admin/parents", icon: "family_restroom", label: "Родители" },
     { to: "/admin/teachers", icon: "school", label: "Учителя" },
     { to: "/admin/schedule", icon: "calendar_month", label: "Расписание" },
     { to: "/admin/finance", icon: "payments", label: "Финансы" },
