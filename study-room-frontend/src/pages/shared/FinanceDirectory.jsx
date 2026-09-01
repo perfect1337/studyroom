@@ -97,6 +97,7 @@ export default function FinanceDirectory({ role }) {
   const [studentsById, setStudentsById] = useState({});
   const [parentsById, setParentsById] = useState({});
   const [branchesById, setBranchesById] = useState({});
+  const [coursesById, setCoursesById] = useState({});
   const [people, setPeople] = useState({ students: [], parents: [] });
   const [branches, setBranches] = useState([]);
   const [courses, setCourses] = useState([]);
@@ -145,6 +146,9 @@ export default function FinanceDirectory({ role }) {
       setPeople({ students: peopleRes?.students ?? [], parents: peopleRes?.parents ?? [] });
       setBranches(branchesRes?.items ?? []);
       setCourses(coursesRes?.items ?? []);
+      const cMap = {};
+      (coursesRes?.items ?? []).forEach((course) => (cMap[course.id] = course));
+      setCoursesById(cMap);
       const sMap = {};
       (peopleRes?.students ?? []).forEach((s) => (sMap[s.id] = s));
       setStudentsById(sMap);
@@ -188,6 +192,11 @@ export default function FinanceDirectory({ role }) {
     return branchesById[c.branch_id]?.name ?? c.branch_name ?? (c.branch_id ? `Филиал #${c.branch_id}` : "—");
   }
 
+  function courseNameFor(c) {
+    const course = coursesById[c.course_id];
+    return course?.title ?? course?.subject ?? c.course_name ?? (c.course_id ? `Курс #${c.course_id}` : "—");
+  }
+
   const filteredContracts = useMemo(() => {
     const query = search.trim().toLowerCase();
     const base = showExpiringSoon ? expiringContracts : contracts;
@@ -202,9 +211,11 @@ export default function FinanceDirectory({ role }) {
       const studentName = student ? fullName(student).toLowerCase() : "";
       const parentName = parent ? fullName(parent).toLowerCase() : "";
       const contractNo = String(c.id ?? "").toLowerCase();
+      const courseName = courseNameFor(c).toLowerCase();
       return (
         studentName.includes(query) ||
         parentName.includes(query) ||
+        courseName.includes(query) ||
         contractNo.includes(query) ||
         `№${contractNo}`.includes(query)
       );
@@ -454,6 +465,7 @@ export default function FinanceDirectory({ role }) {
                       value={branchFilter}
                       onChange={(e) => setBranchFilter(e.target.value)}
                       className="appearance-none bg-surface border border-outline-variant rounded-lg pl-9 pr-8 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none w-full sm:w-48"
+                      style={{ appearance: "none", WebkitAppearance: "none", MozAppearance: "none", backgroundImage: "none" }}
                     >
                       <option value="">Все филиалы</option>
                       {branches.map((b) => (
@@ -493,6 +505,7 @@ export default function FinanceDirectory({ role }) {
                     {isOwner && (
                       <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Филиал</th>
                     )}
+                    <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Курс</th>
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Период</th>
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Сумма</th>
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Статус</th>
@@ -502,7 +515,7 @@ export default function FinanceDirectory({ role }) {
                 <tbody className="divide-y divide-surface-container-high">
                   {!loading && filteredContracts.length === 0 && (
                     <tr>
-                      <td colSpan={isOwner ? 7 : 6} className="px-6 py-8 text-center text-on-surface-variant">
+                      <td colSpan={isOwner ? 8 : 7} className="px-6 py-8 text-center text-on-surface-variant">
                         {contracts.length === 0 ? "Договоров пока нет" : "Ничего не найдено"}
                       </td>
                     </tr>
@@ -526,6 +539,7 @@ export default function FinanceDirectory({ role }) {
                         {isOwner && (
                           <td className="px-6 py-4 font-body-md text-body-md text-on-surface-variant">{branchNameFor(c)}</td>
                         )}
+                        <td className="px-6 py-4 font-body-md text-body-md text-on-surface-variant">{courseNameFor(c)}</td>
                         <td className="px-6 py-4 font-body-md text-body-md text-on-surface-variant">{formatDate(c.start_date)} — {formatDate(c.end_date)}</td>
                         <td className="px-6 py-4 font-body-md text-body-md font-semibold text-on-surface">{formatMoney(c.amount)}</td>
                         <td className="px-6 py-4">
@@ -570,6 +584,10 @@ export default function FinanceDirectory({ role }) {
                         <span className="truncate">{branchNameFor(c)}</span>
                       </div>
                     )}
+                    <div className="flex items-center gap-1 text-[12px] text-on-surface-variant">
+                      <span className="material-symbols-outlined text-[14px]">menu_book</span>
+                      <span className="truncate">{courseNameFor(c)}</span>
+                    </div>
                     <div className="flex items-center justify-between text-[13px]">
                       <span className="text-on-surface-variant">{formatDate(c.start_date)} — {formatDate(c.end_date)}</span>
                       <span className="font-semibold text-on-surface">{formatMoney(c.amount)}</span>
