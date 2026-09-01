@@ -17,6 +17,14 @@ type Provider interface {
 // rate limiter на конкретного бота. Раньше Get() создавал новый provider на
 // каждый вызов, из-за чего состояние троттлинга MAX/Telegram фактически
 // сбрасывалось между сообщениями.
+// Config — конфигурация для всех мессенджеров.
+type Config struct {
+	TelegramBotToken    string
+	MaxAccessToken      string
+	WhatsAppPhoneID     string
+	WhatsAppAccessToken string
+}
+
 type Factory struct {
 	config Config
 
