@@ -235,3 +235,61 @@ func TestContract_5_5_TelegramChannel(t *testing.T) {
 		t.Fatalf("expected 1 telegram notification, got %d", len(items))
 	}
 }
+
+// MAX: статус привязки и отвязка должны работать независимо от Telegram.
+func TestContract_MAXStatusAndUnlink(t *testing.T) {
+	e := getEnv(t)
+	e.seedUserRef(1, "max-user@example.com", "Max", "User")
+	token := e.accessToken(1)
+
+	// До привязки — disconnected.
+	status := e.do("GET", "/api/v1/notifications/max/status", nil, token)
+	e.mustOK(status, 200)
+	if status.Body["connected"] != false {
+		t.Fatalf("expected max disconnected, got %v", status.Body)
+	}
+
+	// Имитируем успешную привязку webhook-бота.
+	e.pool.Exec(e.ctx, `
+		INSERT INTO max_users (max_user_id, max_username, user_id, created_at, updated_at)
+		VALUES (987654321, 'studyroom_bot_user', 1, now(), now())
+		ON CONFLICT (max_user_id) DO UPDATE SET user_id = EXCLUDED.user_id, max_username = EXCLUDED.max_username, updated_at = now()`)
+	e.pool.Exec(e.ctx, `UPDATE users_ref SET max_id = '987654321', updated_at = now() WHERE id = 1`)
+	e.pool.Exec(e.ctx, `
+		INSERT INTO notification_settings (user_id, email_enabled, max_enabled, telegram_enabled, whatsapp_enabled, preferred_messenger)
+		VALUES (1, false, true, false, false, 'max')
+		ON CONFLICT (user_id) DO UPDATE SET max_enabled = true, preferred_messenger = 'max'`)
+
+	status = e.do("GET", "/api/v1/notifications/max/status", nil, token)
+	e.mustOK(status, 200)
+	if status.Body["connected"] != true {
+		t.Fatalf("expected max connected, got %v", status.Body)
+	}
+
+	unlink := e.do("DELETE", "/api/v1/notifications/max/link", nil, token)
+	e.mustOK(unlink, 200)
+	if unlink.Body["connected"] != false {
+		t.Fatalf("expected max disconnected after unlink, got %v", unlink.Body)
+	}
+
+	status = e.do("GET", "/api/v1/notifications/max/status", nil, token)
+	e.mustOK(status, 200)
+	if status.Body["connected"] != false {
+		t.Fatalf("expected max disconnected after unlink, got %v", status.Body)
+	}
+
+	var maxID, maxEnabled bool
+	_ = e.pool.QueryRow(e.ctx, `SELECT max_id = '' OR max_id IS NULL, NOT max_enabled FROM users_ref u JOIN notification_settings n ON n.user_id = u.id WHERE u.id = 1`).Scan(&maxID, &maxEnabled)
+	if !maxID || !maxEnabled {
+		t.Fatalf("max binding/settings were not cleared")
+	}
+}
+
+func TestContract_MAXStatusRequiresAuth(t *testing.T) {
+	e := getEnv(t)
+	res := e.do("GET", "/api/v1/notifications/max/status", nil, "")
+	e.mustOK(res, 401)
+	if errCode(res) != "UNAUTHORIZED" {
+		t.Fatalf("code=%s", errCode(res))
+	}
+}

@@ -2,9 +2,11 @@ import { useState, useEffect } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { updateMe, changePassword } from "../../api/auth.js";
-import { fetchNotificationSettings, updateNotificationSettings, unlinkTelegram } from "../../api/notifications.js";
+import { fetchNotificationSettings, updateNotificationSettings, unlinkTelegram, unlinkMax } from "../../api/notifications.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import { useTelegramStatus } from "../../hooks/useTelegramStatus.js";
+import { useMaxStatus } from "../../hooks/useMaxStatus.js";
+import { MAX_BOT_URL } from "../../api/config.js";
 import { TELEGRAM_BOT_URL } from "../../api/config.js";
 
 // role из JWT/контекста -> роль для сайдбара (у owner отдельный визуальный раздел "admin")
@@ -87,6 +89,7 @@ export default function SettingsPage({ role }) {
   const { user, updateUser } = useAuth();
 
   const { status: tgStatus, loading: tgLoading, refresh: refreshTg } = useTelegramStatus();
+  const { status: maxStatus, loading: maxLoading, refresh: refreshMax } = useMaxStatus();
 
   const [notifSettings, setNotifSettings] = useState(null);
   const [notifLoading, setNotifLoading] = useState(true);
@@ -117,13 +120,18 @@ export default function SettingsPage({ role }) {
     if (!notifSettings) return;
     const updated = { ...notifSettings, [key]: !notifSettings[key] };
     if (updated.telegram_enabled) updated.preferred_messenger = "telegram";
+    else if (updated.max_enabled) updated.preferred_messenger = "max";
+    else if (updated.whatsapp_enabled) updated.preferred_messenger = "whatsapp";
+    else if (updated.email_enabled) updated.preferred_messenger = "email";
+    else updated.preferred_messenger = "";
     setNotifSettings(updated);
     try {
       await updateNotificationSettings(updated);
       if (key === "telegram_enabled" && updated.telegram_enabled) {
-        try {
-          await refreshTg();
-        } catch {}
+        try { await refreshTg(); } catch {}
+      }
+      if (key === "max_enabled" && updated.max_enabled) {
+        try { await refreshMax(); } catch {}
       }
     } catch (e) {
       setNotifSettings(notifSettings);
@@ -152,6 +160,18 @@ export default function SettingsPage({ role }) {
     } finally {
       setTgUnlinking(false);
     }
+  }
+
+  const [maxUnlinking, setMaxUnlinking] = useState(false);
+  const [maxUnlinkError, setMaxUnlinkError] = useState("");
+  async function handleUnlinkMax() {
+    setMaxUnlinkError(""); setMaxUnlinking(true);
+    try {
+      await unlinkMax();
+      await refreshMax();
+      setNotifSettings((prev) => (prev ? { ...prev, max_enabled: false } : prev));
+    } catch (e) { setMaxUnlinkError(e.message || "Не удалось отвязать MAX"); }
+    finally { setMaxUnlinking(false); }
   }
 
   const isStudent = role === "student";
@@ -588,6 +608,20 @@ export default function SettingsPage({ role }) {
                     </button>
                     {tgUnlinkError && <p className="text-xs text-error">{tgUnlinkError}</p>}
                   </div>
+                ) : null}
+              </div>
+
+              {/* MAX */}
+              <div className="bg-surface rounded-xl p-3 sm:p-4 space-y-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0"><p className="font-label-md font-bold text-on-surface">MAX</p><p className="text-xs text-on-surface-variant">Уведомления о занятиях, оценках и платежах</p></div>
+                  <label className="relative inline-flex items-center cursor-pointer self-start shrink-0 sm:self-auto"><input type="checkbox" checked={!!notifSettings?.max_enabled} onChange={() => handleNotifToggle("max_enabled")} className="sr-only peer" /><div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div></label>
+                </div>
+                {maxStatus !== null && <div className={`flex items-center gap-2 text-xs font-bold ${maxStatus.connected ? "text-primary" : "text-warning"}`}><span className={`w-2 h-2 rounded-full shrink-0 ${maxStatus.connected ? "bg-primary" : "bg-warning"}`}></span>{maxStatus.connected ? "Подключено" : "Не подключено"}</div>}
+                {maxLoading ? <p className="text-xs text-on-surface-variant">Проверка статуса...</p> : !maxStatus?.connected && notifSettings?.max_enabled ? (
+                  <div className="bg-surface-container-low border border-outline-variant rounded-lg p-3 space-y-2"><p className="text-xs font-bold text-on-surface">👋 Для подключения:</p><ol className="text-xs text-on-surface-variant space-y-1 list-decimal list-inside"><li>Откройте бота Study Room в MAX</li><li>Нажмите Старт</li><li>Введите email, указанный при регистрации</li></ol><a href={MAX_BOT_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 bg-primary text-on-primary px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-90">Открыть бота</a></div>
+                ) : maxStatus?.connected ? (
+                  <div className="bg-primary/10 border border-primary/30 rounded-lg p-2 space-y-2"><div className="flex items-center gap-2"><span className="material-symbols-outlined text-primary text-[16px]">check_circle</span><p className="text-xs text-primary font-medium">{maxStatus.max_username ? `Подключено как @${maxStatus.max_username}` : "MAX подключён"}</p></div><button type="button" onClick={handleUnlinkMax} disabled={maxUnlinking} className="text-xs font-bold text-error hover:underline disabled:opacity-50">{maxUnlinking ? "Отвязываем..." : "Отвязать MAX"}</button>{maxUnlinkError && <p className="text-xs text-error">{maxUnlinkError}</p>}</div>
                 ) : null}
               </div>
 
