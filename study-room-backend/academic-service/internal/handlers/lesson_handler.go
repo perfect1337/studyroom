@@ -436,7 +436,8 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid lesson id")
 		return
 	}
-	if _, ok := h.checkLessonAccess(w, r, id); !ok {
+	lesson, ok := h.checkLessonAccess(w, r, id)
+	if !ok {
 		return
 	}
 
@@ -444,6 +445,50 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
 		return
+	}
+
+	// Перенос занятия на другую дату разрешён только на дату, когда у каждого
+	// участника есть активная запись на этот курс и дата попадает в период
+	// действия его договора. Проверка обязательна на backend, потому что
+	// фронтенд нельзя считать границей безопасности.
+	if req.LessonDate != nil && *req.LessonDate != lesson.LessonDate.Format("2006-01-02") {
+		newLessonDate, err := time.Parse("2006-01-02", *req.LessonDate)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "lesson_date must be YYYY-MM-DD")
+			return
+		}
+
+		participants, err := h.lessons.Participants(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load lesson participants")
+			return
+		}
+		enrollments, err := h.enrollments.List(r.Context(), repository.EnrollmentFilter{CourseID: &lesson.CourseID})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course enrollments")
+			return
+		}
+
+		for _, studentID := range participants {
+			valid := false
+			for _, e := range enrollments {
+				if e.StudentID != studentID || e.Status != models.EnrollmentActive {
+					continue
+				}
+				if e.StartDate != nil && newLessonDate.Before(*e.StartDate) {
+					continue
+				}
+				if e.EndDate != nil && newLessonDate.After(*e.EndDate) {
+					continue
+				}
+				valid = true
+				break
+			}
+			if !valid {
+				writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "Нельзя перенести занятие: на выбранную дату у ученика нет действующего договора.")
+				return
+			}
+		}
 	}
 
 	fields := map[string]any{}

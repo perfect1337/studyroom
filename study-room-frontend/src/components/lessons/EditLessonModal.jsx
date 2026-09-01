@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { updateLesson, cancelLesson } from "../../api/academic.js";
+import { updateLesson, cancelLesson, fetchEnrollments } from "../../api/academic.js";
 import { fullName } from "../../utils/userDisplay.js";
 
 /**
@@ -40,6 +40,7 @@ export default function EditLessonModal({
   const [cancelling, setCancelling] = useState(false);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [error, setError] = useState("");
+  const [contractEnrollments, setContractEnrollments] = useState([]);
 
   useEffect(() => {
     if (open && lesson) {
@@ -58,9 +59,54 @@ export default function EditLessonModal({
     }
   }, [open, lesson]);
 
+  // Получаем записи на курс, чтобы календарь редактирования показывал и
+  // проверял только даты, которые покрываются действующим договором всех
+  // участников занятия. Backend выполняет ту же проверку повторно.
+  useEffect(() => {
+    if (!open || !lesson?.course_id) {
+      setContractEnrollments([]);
+      return;
+    }
+    let cancelled = false;
+    fetchEnrollments({ course_id: lesson.course_id })
+      .then((res) => {
+        if (!cancelled) setContractEnrollments(res?.items ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setContractEnrollments([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, lesson?.course_id]);
+
   if (!open || !lesson || !form) return null;
 
   const isCancelled = lesson.status === "cancelled";
+
+  const participantIds = Array.isArray(lesson.participant_ids) ? lesson.participant_ids : [];
+  const relevantEnrollments = contractEnrollments.filter((e) => {
+    if (Number(e.course_id) !== Number(lesson.course_id)) return false;
+    return participantIds.length === 0 || participantIds.includes(e.student_id);
+  });
+
+  function isContractDateAllowed(dateValue) {
+    if (!dateValue) return true;
+    const ids = participantIds.length
+      ? participantIds
+      : [...new Set(relevantEnrollments.map((e) => e.student_id))];
+    // Если старый endpoint не отдал участников/договоры, окончательное решение
+    // всё равно принимает backend. Не блокируем старое занятие в UI вслепую.
+    if (ids.length === 0 || relevantEnrollments.length === 0) return true;
+    return ids.every((studentId) =>
+      relevantEnrollments.some((e) => {
+        if (e.student_id !== studentId || e.status !== "active") return false;
+        const start = e.start_date ? String(e.start_date).slice(0, 10) : null;
+        const end = e.end_date ? String(e.end_date).slice(0, 10) : null;
+        return (!start || dateValue >= start) && (!end || dateValue <= end);
+      })
+    );
+  }
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -74,6 +120,10 @@ export default function EditLessonModal({
     }
     if (form.end_time <= form.start_time) {
       setError("Время окончания должно быть позже времени начала");
+      return;
+    }
+    if (form.lesson_date !== lesson.lesson_date && !isContractDateAllowed(form.lesson_date)) {
+      setError("Нельзя перенести занятие: на выбранную дату у ученика нет действующего договора.");
       return;
     }
     setSaving(true);
@@ -183,7 +233,15 @@ export default function EditLessonModal({
                   required
                   type="date"
                   value={form.lesson_date}
-                  onChange={(e) => update("lesson_date", e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value && !isContractDateAllowed(value)) {
+                      setError("Нельзя перенести занятие: на выбранную дату у ученика нет действующего договора.");
+                      return;
+                    }
+                    setError("");
+                    update("lesson_date", value);
+                  }}
                   className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
                 />
               </div>
@@ -214,6 +272,9 @@ export default function EditLessonModal({
                 />
               </div>
             </div>
+            <p className="text-[11px] text-on-surface-variant">
+              Перенос возможен только на дату, покрытую действующим договором ученика.
+            </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="flex flex-col gap-stack-sm">

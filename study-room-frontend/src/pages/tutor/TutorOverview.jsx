@@ -99,6 +99,11 @@ export default function TutorOverview() {
     return map;
   }, [courses]);
 
+  const activeEnrollments = useMemo(
+    () => enrollments.filter((e) => e.status === "active"),
+    [enrollments]
+  );
+
   const now = nowHHMM();
 
   async function handleAssignHomework(e) {
@@ -216,10 +221,10 @@ export default function TutorOverview() {
               Все ученики
             </h2>
             <div className="flex flex-col gap-3">
-              {!loading && enrollments.length === 0 && (
-                <p className="text-on-surface-variant font-body-md text-sm">Пока нет закреплённых учеников.</p>
+              {!loading && activeEnrollments.length === 0 && (
+                <p className="text-on-surface-variant font-body-md text-sm">Пока нет активных учеников.</p>
               )}
-              {enrollments.slice(0, 6).map((e) => {
+              {activeEnrollments.slice(0, 6).map((e) => {
                 const student = studentsById[e.student_id];
                 const course = coursesById[e.course_id];
                 return (

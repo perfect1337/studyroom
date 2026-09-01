@@ -233,36 +233,73 @@ export default function PeopleDirectory({ role }) {
     return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
   }, [courses]);
 
+  // Для owner/branch_owner каждая строка — отдельный договор. Один ученик
+  // может поэтому отображаться несколько раз: курс, срок и статус относятся
+  // именно к конкретной записи договора, а не к "последнему" договору ученика.
   const filteredPeople = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return people.filter((p) => {
-      if (isOwner && branchFilter && String(p.branch_id) !== String(branchFilter)) return false;
-      if (subjectFilter) {
-        const pEnrollments = enrollmentsByStudent[p.id] ?? [];
-        const hasSubject = pEnrollments.some((e) => coursesById[e.course_id]?.subject === subjectFilter);
-        if (!hasSubject) return false;
+    const rows = [];
+
+    people.forEach((p) => {
+      if (isOwner && branchFilter && String(p.branch_id) !== String(branchFilter)) return;
+      if (query && !`${fullName(p)} ${p._fallbackName ?? ""}`.toLowerCase().includes(query)) return;
+
+      const pEnrollments = enrollmentsByStudent[p.id] ?? [];
+      const pContracts = contractsByStudent[p.id] ?? [];
+
+      if (showContracts) {
+        // В таблице договора должны быть отдельными строками. Фильтр предмета
+        // применяется к конкретному договору, а не ко всему ученику.
+        const matchingContracts = pContracts.filter((c) => {
+          if (!subjectFilter) return true;
+          return coursesById[c.course_id]?.subject === subjectFilter;
+        });
+
+        if (matchingContracts.length > 0) {
+          matchingContracts.forEach((contract) => {
+            const contractEnrollments = pEnrollments.filter((e) => e.course_id === contract.course_id);
+            rows.push({ p, contract, pEnrollments: contractEnrollments });
+          });
+        } else if (pContracts.length === 0 && !subjectFilter) {
+          rows.push({ p, contract: null, pEnrollments });
+        }
+        return;
       }
-      if (query && !`${fullName(p)} ${p._fallbackName ?? ""}`.toLowerCase().includes(query)) return false;
-      return true;
+
+      if (subjectFilter) {
+        const hasSubject = pEnrollments.some((e) => coursesById[e.course_id]?.subject === subjectFilter);
+        if (!hasSubject) return;
+      }
+      rows.push({ p, contract: null, pEnrollments });
     });
-  }, [people, isOwner, branchFilter, subjectFilter, search, enrollmentsByStudent, coursesById]);
+
+    return rows;
+  }, [
+    people,
+    isOwner,
+    branchFilter,
+    subjectFilter,
+    search,
+    enrollmentsByStudent,
+    contractsByStudent,
+    coursesById,
+    showContracts,
+  ]);
 
   const { page, setPage, pageItems: pagedPeople } = usePagination(filteredPeople, PAGE_SIZE);
 
   // Общие для десктопной таблицы и мобильных карточек вычисления по каждой
-  // строке — считаем один раз, чтобы не дублировать логику в двух местах.
+  // строке. Для owner/branch_owner прогресс берём только по курсу конкретного
+  // договора, чтобы соседние договоры одного ученика не смешивались.
   const pagedRows = useMemo(
     () =>
-      pagedPeople.map((p) => {
-        const pEnrollments = enrollmentsByStudent[p.id] ?? [];
+      pagedPeople.map(({ p, contract, pEnrollments }) => {
         const avg = pEnrollments.length
           ? Math.round(pEnrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / pEnrollments.length)
           : 0;
-        const pContracts = contractsByStudent[p.id] ?? [];
-        const latestContract = pContracts[0];
-        return { p, pEnrollments, avg, pContracts, latestContract };
+        return { p, pEnrollments, avg, contract };
       }),
-    [pagedPeople, enrollmentsByStudent, contractsByStudent]
+    [pagedPeople]
   );
 
   const avgProgress = enrollments.length
@@ -277,15 +314,19 @@ export default function PeopleDirectory({ role }) {
         { label: "Активные курсы", value: String(courses.length) },
       ];
 
-  function renderStatusBadge(pEnrollments, latestContract) {
+  function renderStatusBadge(pEnrollments, contract) {
     if (showContracts) {
+      const status = contract?.status;
+      const statusClass = status === "active"
+        ? "bg-green-100 text-green-700"
+        : status === "completed"
+          ? "bg-blue-100 text-blue-700"
+          : status === "terminated"
+            ? "bg-amber-100 text-amber-700"
+            : "bg-surface-variant text-on-surface-variant";
       return (
-        <span
-          className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase ${
-            !latestContract || latestContract.status === "active" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
-          }`}
-        >
-          {latestContract ? CONTRACT_STATUS_LABEL[latestContract.status] ?? latestContract.status : "Без договора"}
+        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase ${statusClass}`}>
+          {contract ? CONTRACT_STATUS_LABEL[status] ?? status : "Без договора"}
         </span>
       );
     }
@@ -441,10 +482,10 @@ export default function PeopleDirectory({ role }) {
                     </td>
                   </tr>
                 )}
-                {pagedRows.map(({ p, pEnrollments, avg, latestContract }) => {
+                {pagedRows.map(({ p, pEnrollments, avg, contract }) => {
                   return (
                     <tr
-                      key={p.id}
+                      key={contract ? `contract-${contract.id}` : `student-${p.id}`}
                       onClick={() => navigate(detailPath(p.id))}
                       className="hover:bg-surface-container-low transition-colors group cursor-pointer"
                     >
@@ -463,19 +504,27 @@ export default function PeopleDirectory({ role }) {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex flex-wrap gap-1">
-                          {pEnrollments.length === 0 && <span className="text-[12px] text-on-surface-variant">—</span>}
-                          {pEnrollments.map((e) => (
-                            <span key={e.id} className="px-2 py-1 bg-surface-variant rounded text-[11px] font-bold text-primary">
-                              {coursesById[e.course_id]?.title ?? coursesById[e.course_id]?.subject ?? `#${e.course_id}`}
-                            </span>
-                          ))}
+                          {showContracts ? (
+                            contract ? (
+                              <span className="px-2 py-1 bg-surface-variant rounded text-[11px] font-bold text-primary">
+                                {coursesById[contract.course_id]?.title ?? coursesById[contract.course_id]?.subject ?? `#${contract.course_id}`}
+                              </span>
+                            ) : <span className="text-[12px] text-on-surface-variant">—</span>
+                          ) : (
+                            pEnrollments.length === 0 ? <span className="text-[12px] text-on-surface-variant">—</span> :
+                            pEnrollments.map((e) => (
+                              <span key={e.id} className="px-2 py-1 bg-surface-variant rounded text-[11px] font-bold text-primary">
+                                {coursesById[e.course_id]?.title ?? coursesById[e.course_id]?.subject ?? `#${e.course_id}`}
+                              </span>
+                            ))
+                          )}
                         </div>
                       </td>
                       {showContracts && (
                         <td className="px-6 py-4">
                           <div className="text-[13px] text-on-surface">
-                            {latestContract
-                              ? `${formatContractDate(latestContract.start_date)} — ${formatContractDate(latestContract.end_date)}`
+                            {contract
+                              ? `${formatContractDate(contract.start_date)} — ${formatContractDate(contract.end_date)}`
                               : "—"}
                           </div>
                         </td>
@@ -496,7 +545,7 @@ export default function PeopleDirectory({ role }) {
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-4">{renderStatusBadge(pEnrollments, latestContract)}</td>
+                      <td className="px-6 py-4">{renderStatusBadge(pEnrollments, contract)}</td>
                     </tr>
                   );
                 })}
@@ -513,9 +562,9 @@ export default function PeopleDirectory({ role }) {
                   {isParent ? "У вас пока нет добавленных детей." : "Учеников не найдено"}
                 </div>
               )}
-              {pagedRows.map(({ p, pEnrollments, avg, latestContract }) => (
+              {pagedRows.map(({ p, pEnrollments, avg, contract }) => (
                 <div
-                  key={p.id}
+                  key={contract ? `contract-${contract.id}` : `student-${p.id}`}
                   onClick={() => navigate(detailPath(p.id))}
                   className="p-4 flex flex-col gap-3 active:bg-surface-container-low cursor-pointer"
                 >
@@ -529,11 +578,17 @@ export default function PeopleDirectory({ role }) {
                         {[p.class_info, p.school].filter(Boolean).join(" · ") || "—"}
                       </div>
                     </div>
-                    {renderStatusBadge(pEnrollments, latestContract)}
+                    {renderStatusBadge(pEnrollments, contract)}
                   </div>
 
                   <div className="flex flex-wrap gap-1">
-                    {pEnrollments.map((e) => (
+                    {showContracts ? (
+                      contract ? (
+                        <span className="px-2 py-1 bg-surface-variant rounded text-[11px] font-bold text-primary">
+                          {coursesById[contract.course_id]?.title ?? coursesById[contract.course_id]?.subject ?? `#${contract.course_id}`}
+                        </span>
+                      ) : <span className="text-[12px] text-on-surface-variant">—</span>
+                    ) : pEnrollments.map((e) => (
                       <span key={e.id} className="px-2 py-1 bg-surface-variant rounded text-[11px] font-bold text-primary">
                         {coursesById[e.course_id]?.title ?? coursesById[e.course_id]?.subject ?? `#${e.course_id}`}
                       </span>
@@ -556,8 +611,8 @@ export default function PeopleDirectory({ role }) {
                       <div className="col-span-2">
                         <span className="text-on-surface-variant block">Срок договора</span>
                         <span className="text-on-surface">
-                          {latestContract
-                            ? `${formatContractDate(latestContract.start_date)} — ${formatContractDate(latestContract.end_date)}`
+                          {contract
+                            ? `${formatContractDate(contract.start_date)} — ${formatContractDate(contract.end_date)}`
                             : "—"}
                         </span>
                       </div>
