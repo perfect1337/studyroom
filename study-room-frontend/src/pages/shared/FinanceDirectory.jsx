@@ -231,6 +231,12 @@ export default function FinanceDirectory({ role }) {
     UNPAID_PAGE_SIZE
   );
 
+  // При изменении поиска/фильтров всегда возвращаемся на первую страницу,
+  // чтобы не попадать на пустую страницу после сужения списка.
+  useEffect(() => {
+    setContractsPage(1);
+  }, [search, showExpiringSoon, branchFilter, setContractsPage]);
+
   function openAddModal() {
     setAddForm(
       isOwner ? EMPTY_CONTRACT_FORM : { ...EMPTY_CONTRACT_FORM, branch_id: user?.branch_id ? String(user.branch_id) : "" }
@@ -598,6 +604,13 @@ export default function FinanceDirectory({ role }) {
                       </span>
                       <StatusBadge status={PAYMENT_STATUS_LABEL[c.payment_status] ?? c.payment_status} />
                     </div>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); openEditModal(c); }}
+                      className="w-full min-h-11 mt-1 rounded-lg bg-primary text-on-primary text-sm font-bold active:brightness-95"
+                    >
+                      Открыть договор
+                    </button>
                   </div>
                 );
               })}
