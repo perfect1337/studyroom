@@ -58,7 +58,10 @@ type sendJob struct {
 }
 
 const (
-	defaultSendQueueSize = 128
+	// During the 09:00 bulk digest, workers are expected to wait on the
+	// provider rate limiter, so messenger jobs must stay queued rather than
+	// being rejected by a tiny in-memory buffer.
+	defaultSendQueueSize = 16384
 	defaultSendWorkers   = 4
 
 	// defaultBatchSendQueueSize — с запасом на дневной дайджест: в

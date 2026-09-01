@@ -97,6 +97,7 @@ func (r *EnrollmentRepository) GetByID(ctx context.Context, id int64) (*models.E
 // сервером принудительно, а не пользователем.
 type EnrollmentFilter struct {
 	StudentID *int64
+	Status    string
 	// StudentIDs — фильтр "IN (...)", используется для parent с несколькими
 	// детьми (см. handlers.EnrollmentHandler.List). Взаимоисключим со StudentID:
 	// если задан StudentIDs, StudentID игнорируется.
@@ -131,6 +132,11 @@ func (r *EnrollmentRepository) List(ctx context.Context, f EnrollmentFilter) ([]
 	if f.CourseID != nil {
 		query += " AND e.course_id = $" + strconv.Itoa(i)
 		args = append(args, *f.CourseID)
+		i++
+	}
+	if f.Status != "" {
+		query += " AND e.status = $" + strconv.Itoa(i)
+		args = append(args, f.Status)
 		i++
 	}
 	if f.BranchID != nil {
@@ -299,14 +305,12 @@ func (r *EnrollmentRepository) DeleteByStudent(ctx context.Context, studentID in
 	return tag.RowsAffected(), nil
 }
 
-// CompleteExpiredForCourse closes only enrollments whose stored contract end
-// date has actually passed. Expiration is a normal completion, not a manual
-// termination, so the enrollment becomes completed. The date check also
-// prevents a delayed contract.expired event from closing a freshly renewed
-// contract for the same student/course.
-func (r *EnrollmentRepository) CompleteExpiredForCourse(ctx context.Context, studentID, courseID int64) (int64, error) {
+// TerminateExpiredForCourse only closes enrollments whose stored contract
+// end date has actually passed. This prevents a delayed contract.expired event
+// from closing a freshly renewed contract for the same student/course.
+func (r *EnrollmentRepository) TerminateExpiredForCourse(ctx context.Context, studentID, courseID int64) (int64, error) {
 	tag, err := r.pool.Exec(ctx, `
-		UPDATE enrollments SET status = 'completed'
+		UPDATE enrollments SET status = 'terminated'
 		WHERE student_id = $1 AND course_id = $2
 		  AND status IN ('active', 'paused')
 		  AND end_date IS NOT NULL AND end_date < CURRENT_DATE
@@ -347,6 +351,23 @@ func (r *EnrollmentRepository) UpdateDatesForCourse(ctx context.Context, student
 		UPDATE enrollments SET start_date = $3, end_date = $4
 		WHERE student_id = $1 AND course_id = $2 AND status IN ('active', 'paused')`,
 		studentID, courseID, startDate, endDate)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// CompleteExpiredForCourse переводит enrollment в completed при естественном
+// окончании срока договора. Сверка end_date с датой из события защищает от
+// запоздалого события старого договора после продления курса.
+func (r *EnrollmentRepository) CompleteExpiredForCourse(ctx context.Context, studentID, courseID int64, endDate string) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE enrollments SET status = 'completed'
+		WHERE student_id = $1 AND course_id = $2
+		  AND status IN ('active', 'paused')
+		  AND end_date = $3::date
+		  AND end_date < CURRENT_DATE
+	`, studentID, courseID, endDate)
 	if err != nil {
 		return 0, err
 	}

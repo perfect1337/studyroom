@@ -109,14 +109,18 @@ var maxWebhookUpdateTypes = []string{
 // уже готовы к работе; регистрация подписки и GET /me выполняются отдельно
 // через LoadSelf/Subscribe — чтобы не блокировать старт HTTP-сервера, как и
 // инициализация Telegram-бота в main.go).
-func NewMaxBot(accessToken, webhookSecret string, userRefRepo *repository.UserRefRepository, maxUserRepo *repository.MaxUserRepository, settingsRepo *repository.SettingsRepository) *MaxBot {
+func NewMaxBot(accessToken, webhookSecret string, userRefRepo *repository.UserRefRepository, maxUserRepo *repository.MaxUserRepository, settingsRepo *repository.SettingsRepository, sharedProviders ...*MaxProvider) *MaxBot {
+	provider := NewMaxProvider(accessToken)
+	if len(sharedProviders) > 0 && sharedProviders[0] != nil {
+		provider = sharedProviders[0]
+	}
 	return &MaxBot{
 		accessToken:   accessToken,
 		webhookSecret: webhookSecret,
 		userRefRepo:   userRefRepo,
 		maxUserRepo:   maxUserRepo,
 		settingsRepo:  settingsRepo,
-		provider:      NewMaxProvider(accessToken),
+		provider:      provider,
 		chatLimiter:   newChatRateLimiter(5, 5*time.Minute, 5000),
 		lookupLimiter: newGlobalRateLimiter(60, time.Minute),
 	}

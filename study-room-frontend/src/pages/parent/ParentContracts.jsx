@@ -76,7 +76,7 @@ export default function ParentContracts() {
       setError("");
       try {
         const [contractsRes, coursesRes] = await Promise.all([
-          fetchMyContracts(),
+          fetchMyContracts({ status: "active" }),
           fetchCourses().catch(() => ({ items: [] })),
         ]);
         if (cancelled) return;
@@ -129,7 +129,6 @@ export default function ParentContracts() {
     const q = search.trim().toLowerCase();
     return contracts
       .filter((c) => {
-        if (c.status !== "active") return false;
         if (paymentFilter !== "all" && c.payment_status !== paymentFilter) return false;
         if (childFilter !== "all" && String(c.student_id) !== childFilter) return false;
         if (expiringOnly && !(isExpiringSoon(c.end_date) && c.status !== "terminated")) return false;
@@ -167,7 +166,6 @@ export default function ParentContracts() {
 
   function resetFilters() {
     setSearch("");
-    setStatusFilter("all");
     setPaymentFilter("all");
     setChildFilter("all");
     setExpiringOnly(false);
@@ -179,7 +177,7 @@ export default function ParentContracts() {
         <div>
           <h2 className="font-headline-md text-headline-md text-primary mb-1">Мои договоры</h2>
           <p className="font-body-md text-body-md text-on-surface-variant">
-            Договоры на обучение всех ваших детей.
+            Только активные договоры на обучение всех ваших детей.
           </p>
         </div>
 
@@ -251,6 +249,7 @@ export default function ParentContracts() {
                 </select>
               </div>
             )}
+
 
             <div className="relative">
               <select

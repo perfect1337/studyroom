@@ -2,6 +2,7 @@ package messenger
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,10 +16,11 @@ import (
 type TelegramProvider struct {
 	botToken string
 	client   *http.Client
+	limiter  *RateLimiter
 }
 
 type telegramRequest struct {
-	ChatID    interface{} `json:"chat_id"` // int64 или string (username/chat_id)
+	ChatID    interface{} `json:"chat_id"`
 	Text      string      `json:"text"`
 	ParseMode string      `json:"parse_mode,omitempty"`
 }
@@ -26,63 +28,93 @@ type telegramRequest struct {
 type telegramResponse struct {
 	Ok          bool   `json:"ok"`
 	Description string `json:"description,omitempty"`
+	Parameters  struct {
+		RetryAfter int `json:"retry_after,omitempty"`
+	} `json:"parameters,omitempty"`
 }
 
-// NewTelegramProvider создаёт провайдер для Telegram.
-// botToken — токен бота, полученный от @BotFather.
 func NewTelegramProvider(botToken string) *TelegramProvider {
+	return NewTelegramProviderWithLimiter(botToken, NewRateLimiter(providerGlobalRate, telegramPerChatRate))
+}
+
+func NewTelegramProviderWithLimiter(botToken string, limiter *RateLimiter) *TelegramProvider {
+	if limiter == nil {
+		limiter = NewRateLimiter(providerGlobalRate, telegramPerChatRate)
+	}
 	return &TelegramProvider{
 		botToken: botToken,
-		client: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+		limiter:  limiter,
+		client:   &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
 // Send отправляет сообщение через Telegram Bot API.
-// to — это telegram_chat_id (цифры или @username из users_ref.telegram_id)
-func (p *TelegramProvider) Send(userID int64, to, subject, body string) error {
+// Для массовой рассылки соблюдается общий лимит ~30 msg/sec, а также
+// отдельный лимит на один чат. При неожиданном 429 учитывается retry_after
+// и запрос повторяется, а не превращается сразу в failed.
+func (p *TelegramProvider) Send(_ int64, to, subject, body string) error {
 	var chatID interface{}
-	// Если to — это цифры, отправляем как int64 (стандартный chat_id)
-	// Иначе — как строку (@username или другой формат)
-	if _, err := strconv.ParseInt(to, 10, 64); err == nil {
-		chatID, _ = strconv.ParseInt(to, 10, 64)
+	if parsed, err := strconv.ParseInt(to, 10, 64); err == nil {
+		chatID = parsed
 	} else {
 		chatID = to
 	}
 
-	req := telegramRequest{
+	reqPayload := telegramRequest{
 		ChatID:    chatID,
 		Text:      formatMessage(subject, body),
 		ParseMode: "HTML",
 	}
 
-	payload, err := json.Marshal(req)
+	payload, err := json.Marshal(reqPayload)
 	if err != nil {
 		return fmt.Errorf("telegram marshal: %w", err)
 	}
 
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", p.botToken)
 
-	resp, err := p.client.Post(url, "application/json", bytes.NewBuffer(payload))
-	if err != nil {
-		return fmt.Errorf("telegram request: %w", err)
-	}
-	defer resp.Body.Close()
+	attempt := 0
+	for {
+		attempt++
+		if err := p.limiter.Wait(context.Background(), to); err != nil {
+			return fmt.Errorf("telegram rate limiter: %w", err)
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		resp, err := p.client.Post(url, "application/json", bytes.NewBuffer(payload))
+		if err != nil {
+			return fmt.Errorf("telegram request: %w", err)
+		}
+
+		bodyBytes, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			var tgResp telegramResponse
+			if err := json.Unmarshal(bodyBytes, &tgResp); err != nil {
+				return fmt.Errorf("telegram decode response: %w", err)
+			}
+			if !tgResp.Ok {
+				return fmt.Errorf("telegram api not ok: %s", tgResp.Description)
+			}
+			return nil
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			var tgResp telegramResponse
+			_ = json.Unmarshal(bodyBytes, &tgResp)
+			retryAfter := tgResp.Parameters.RetryAfter
+			if retryAfter <= 0 {
+				retryAfter = minInt(attempt, 30)
+			}
+			time.Sleep(time.Duration(retryAfter) * time.Second)
+			continue
+		}
+
+		if readErr != nil {
+			return fmt.Errorf("telegram api error: status=%d, body read failed: %w", resp.StatusCode, readErr)
+		}
 		return fmt.Errorf("telegram api error: status=%d, body=%s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var tgResp telegramResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tgResp); err != nil {
-		return fmt.Errorf("telegram decode response: %w", err)
-	}
-
-	if !tgResp.Ok {
-		return fmt.Errorf("telegram api not ok: %s", tgResp.Description)
-	}
-
-	return nil
+	return fmt.Errorf("telegram api rate limit: retry attempts exhausted")
 }

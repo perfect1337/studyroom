@@ -110,7 +110,7 @@ func main() {
 	// Теперь сервер поднимается сразу, а бот донастраивается параллельно.
 	if cfg.TelegramBotToken != "" {
 		go func() {
-			bot, err := messenger.NewTelegramBot(cfg.TelegramBotToken, deps.UsersRef, deps.TelegramUser, deps.Settings)
+			bot, err := messenger.NewTelegramBot(cfg.TelegramBotToken, deps.UsersRef, deps.TelegramUser, deps.Settings, factory.TelegramRateLimiter())
 			if err != nil {
 				log.Printf("telegram: bot init failed: %v (continuing without bot polling)", err)
 				return
@@ -125,18 +125,23 @@ func main() {
 	// регистрация /subscriptions выполняются в фоне, чтобы временная
 	// недоступность MAX не блокировала notification-service.
 	if cfg.MaxAccessToken != "" && cfg.MaxWebhookURL != "" {
-		maxBot := messenger.NewMaxBot(cfg.MaxAccessToken, cfg.MaxWebhookSecret, deps.UsersRef, deps.MaxUser, deps.Settings)
-		deps.MaxBot = maxBot
-		go func() {
-			botCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-			defer cancel()
-			if err := maxBot.LoadSelf(botCtx); err != nil {
-				log.Printf("max: LoadSelf failed: %v (continuing; webhook can still authenticate by secret)", err)
-			}
-			if err := maxBot.Subscribe(botCtx, cfg.MaxWebhookURL); err != nil {
-				log.Printf("max: webhook subscription failed: %v (retry on next service restart)", err)
-			}
-		}()
+		maxProvider, providerErr := factory.MaxProvider()
+		if providerErr != nil {
+			log.Printf("max: provider init failed: %v (continuing without MAX bot)", providerErr)
+		} else {
+			maxBot := messenger.NewMaxBot(cfg.MaxAccessToken, cfg.MaxWebhookSecret, deps.UsersRef, deps.MaxUser, deps.Settings, maxProvider)
+			deps.MaxBot = maxBot
+			go func() {
+				botCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+				defer cancel()
+				if err := maxBot.LoadSelf(botCtx); err != nil {
+					log.Printf("max: LoadSelf failed: %v (continuing; webhook can still authenticate by secret)", err)
+				}
+				if err := maxBot.Subscribe(botCtx, cfg.MaxWebhookURL); err != nil {
+					log.Printf("max: webhook subscription failed: %v (retry on next service restart)", err)
+				}
+			}()
+		}
 	} else {
 		log.Println("max: MAX_ACCESS_TOKEN or MAX_WEBHOOK_URL not set, skipping MAX bot")
 	}

@@ -196,6 +196,9 @@ func (h *EnrollmentHandler) List(w http.ResponseWriter, r *http.Request) {
 	case models.RoleStudent:
 		studentID := claims.UserID
 		filter.StudentID = &studentID
+		// Ученик видит только текущие активные записи на курсы.
+		// История completed/terminated доступна владельцу сети.
+		filter.Status = "active"
 	case models.RoleParent:
 		children, err := h.userClient.Children(r.Context(), bearerToken(r), claims.UserID)
 		if err != nil {
@@ -207,6 +210,9 @@ func (h *EnrollmentHandler) List(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		filter.StudentIDs = children
+		// Родитель видит только активные записи на текущие курсы.
+		// История завершённых/расторгнутых курсов оставляется staff-ролям.
+		filter.Status = "active"
 	default:
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "role not permitted")
 		return

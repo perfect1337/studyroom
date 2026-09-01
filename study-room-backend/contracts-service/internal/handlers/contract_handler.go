@@ -156,20 +156,16 @@ func (h *ContractHandler) ListMine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Родительский кабинет показывает только действующие договоры.
-	// Завершённые и расторгнутые договоры остаются в финансовой истории
-	// Owner, но не должны попадать в список договоров родителя.
-	active := make([]*models.Contract, 0, len(contracts))
+	// Родитель видит только текущие активные договоры. Ограничение применяется
+	// на сервере, а не только скрывается во фронтенде.
+	filtered := make([]*models.Contract, 0, len(contracts))
 	for _, c := range contracts {
 		if c.Status == models.StatusActive {
-			active = append(active, c)
+			filtered = append(filtered, c)
 		}
 	}
-	contracts = active
+	contracts = filtered
 
-	if status := r.URL.Query().Get("status"); status != "" && status != string(models.StatusActive) {
-		contracts = []*models.Contract{}
-	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": nonNilContracts(contracts)})
 }
 

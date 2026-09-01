@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import ProgressBar from "../../components/ui/ProgressBar.jsx";
 import Avatar from "../../components/ui/Avatar.jsx";
@@ -9,13 +9,11 @@ import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
 const STATUS_LABEL = {
   "active": "Активен",
-  "completed": "Завершён",
-  "paused": "На паузе",
 };
 
 /**
- * "Курсы ученика" — полный список записей ученика на курсы (см.
- * api-contracts.md 2.1 GET /courses, 2.5 GET /enrollments?student_id=).
+ * "Курсы ученика" показывает только текущие активные записи.
+ * История completed/terminated доступна staff в карточке ученика.
  */
 export default function StudentCourses() {
   const { user } = useAuth();
@@ -26,7 +24,6 @@ export default function StudentCourses() {
   const [courseTutorId, setCourseTutorId] = useState({}); // course_id -> tutor_id, из реально созданных занятий
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
 
   useEffect(() => {
     if (!user?.id) return;
@@ -45,11 +42,12 @@ export default function StudentCourses() {
         ]);
         if (cancelled) return;
 
-        const enrollItems = (enrollRes?.items ?? []).map(item => ({
-          ...item,
-          // Заменяем статус на русский сразу при получении
-          status: STATUS_LABEL[item.status] || item.status
-        }));
+        const enrollItems = (enrollRes?.items ?? [])
+          .filter((item) => item.status === "active")
+          .map((item) => ({
+            ...item,
+            status: STATUS_LABEL[item.status] || item.status,
+          }));
         
         setEnrollments(enrollItems);
 
@@ -96,14 +94,7 @@ export default function StudentCourses() {
     };
   }, [user?.id]);
 
-  const filtered = useMemo(
-    () => {
-      if (statusFilter === "all") return enrollments;
-      // Фильтруем по русскому статусу
-      return enrollments.filter((e) => e.status === statusFilter);
-    },
-    [enrollments, statusFilter]
-  );
+  const filtered = enrollments;
 
   return (
     <DashboardShell
@@ -132,26 +123,9 @@ export default function StudentCourses() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1">
           <h2 className="font-headline-md text-headline-md text-on-background">Мои курсы</h2>
-          <div className="relative w-full sm:w-64">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-sm font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-            >
-              {[
-                ["all", "Все"],
-                ["Активен", "Активные"],
-                ["На паузе", "На паузе"],
-                ["Завершён", "Завершённые"],
-              ].map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
+          <p className="text-sm text-on-surface-variant">Здесь отображаются только активные курсы.</p>
         </div>
 
         {error && (
@@ -164,7 +138,7 @@ export default function StudentCourses() {
           <p className="text-on-surface-variant font-body-md">Загрузка…</p>
         ) : filtered.length === 0 ? (
           <div className="bg-surface-container-lowest rounded-xl p-stack-lg shadow-sm border border-outline-variant text-on-surface-variant font-body-md text-center">
-            {statusFilter === "all" ? "Вы пока не записаны ни на один курс" : "Нет курсов с этим статусом"}
+            Вы пока не записаны ни на один активный курс
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-stack-md">

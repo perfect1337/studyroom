@@ -25,18 +25,19 @@ function initials(person) {
   return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
 }
 
-// Статус записи на курс — раньше бейдж всегда рисовался зелёным и для
-// нестандартных статусов ("paused" и т.п.) показывал непереведённое
-// английское слово поверх зелёного фона "Активен" — визуально ломало карточку.
+// Статусы записи на курс для staff-профиля ученика: здесь показываем
+// историю active/completed/terminated, а для parent backend отдаёт только active.
 const ENROLLMENT_STATUS_LABEL = {
   active: "Активен",
   paused: "Приостановлен",
   completed: "Завершён",
+  terminated: "Расторгнут",
 };
 const ENROLLMENT_STATUS_COLOR = {
   active: "green",
   paused: "amber",
   completed: "secondary",
+  terminated: "red",
 };
 
 const ROLE_CONFIG = {
@@ -171,7 +172,9 @@ export default function StudentDetail({ role = "parent" }) {
         if (cancelled) return;
         setChild(childRes);
         const childIdNum = Number(childId);
-        const childEnrollments = (enrollRes?.items ?? []).filter((e) => e.student_id === childIdNum);
+        const childEnrollments = (enrollRes?.items ?? [])
+          .filter((e) => e.student_id === childIdNum)
+          .filter((e) => role !== "parent" || e.status === "active");
         setEnrollments(childEnrollments);
         setCourses(coursesRes?.items ?? []);
 
