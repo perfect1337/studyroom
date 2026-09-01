@@ -64,7 +64,6 @@ export default function ParentContracts() {
   const [error, setError] = useState("");
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [paymentFilter, setPaymentFilter] = useState("all");
   const [childFilter, setChildFilter] = useState("all");
   const [expiringOnly, setExpiringOnly] = useState(false);
@@ -130,7 +129,7 @@ export default function ParentContracts() {
     const q = search.trim().toLowerCase();
     return contracts
       .filter((c) => {
-        if (statusFilter !== "all" && c.status !== statusFilter) return false;
+        if (c.status !== "active") return false;
         if (paymentFilter !== "all" && c.payment_status !== paymentFilter) return false;
         if (childFilter !== "all" && String(c.student_id) !== childFilter) return false;
         if (expiringOnly && !(isExpiringSoon(c.end_date) && c.status !== "terminated")) return false;
@@ -157,9 +156,9 @@ export default function ParentContracts() {
         if (aExpiring !== bExpiring) return aExpiring ? -1 : 1;
         return (a.end_date || "").localeCompare(b.end_date || "");
       });
-  }, [contracts, search, statusFilter, paymentFilter, childFilter, expiringOnly, childrenById, coursesById]);
+  }, [contracts, search, paymentFilter, childFilter, expiringOnly, childrenById, coursesById]);
 
-  const filtersActive = search.trim() !== "" || statusFilter !== "all" || paymentFilter !== "all" || childFilter !== "all" || expiringOnly;
+  const filtersActive = search.trim() !== "" || paymentFilter !== "all" || childFilter !== "all" || expiringOnly;
 
   const expiringCount = useMemo(
     () => contracts.filter((c) => isExpiringSoon(c.end_date) && c.status !== "terminated").length,
@@ -252,19 +251,6 @@ export default function ParentContracts() {
                 </select>
               </div>
             )}
-
-            <div className="relative">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="appearance-none pl-3 pr-9 py-2.5 rounded-lg border border-outline-variant bg-surface font-label-md text-label-md text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              >
-                <option value="all">Любой статус</option>
-                <option value="active">Активен</option>
-                <option value="completed">Завершён</option>
-                <option value="terminated">Расторгнут</option>
-              </select>
-            </div>
 
             <div className="relative">
               <select

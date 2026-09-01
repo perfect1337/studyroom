@@ -299,12 +299,14 @@ func (r *EnrollmentRepository) DeleteByStudent(ctx context.Context, studentID in
 	return tag.RowsAffected(), nil
 }
 
-// TerminateExpiredForCourse only closes enrollments whose stored contract
-// end date has actually passed. This prevents a delayed contract.expired event
-// from closing a freshly renewed contract for the same student/course.
-func (r *EnrollmentRepository) TerminateExpiredForCourse(ctx context.Context, studentID, courseID int64) (int64, error) {
+// CompleteExpiredForCourse closes only enrollments whose stored contract end
+// date has actually passed. Expiration is a normal completion, not a manual
+// termination, so the enrollment becomes completed. The date check also
+// prevents a delayed contract.expired event from closing a freshly renewed
+// contract for the same student/course.
+func (r *EnrollmentRepository) CompleteExpiredForCourse(ctx context.Context, studentID, courseID int64) (int64, error) {
 	tag, err := r.pool.Exec(ctx, `
-		UPDATE enrollments SET status = 'terminated'
+		UPDATE enrollments SET status = 'completed'
 		WHERE student_id = $1 AND course_id = $2
 		  AND status IN ('active', 'paused')
 		  AND end_date IS NOT NULL AND end_date < CURRENT_DATE
