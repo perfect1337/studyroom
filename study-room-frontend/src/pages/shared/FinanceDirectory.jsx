@@ -396,9 +396,9 @@ export default function FinanceDirectory({ role }) {
           <div className="flex items-center justify-center">
             <button
               onClick={openAddModal}
-              className="bg-primary text-on-primary px-4 py-2 sm:px-6 sm:py-2.5 rounded-lg font-label-md text-label-md flex items-center gap-1.5 sm:gap-2 hover:brightness-110 transition-all active:scale-95 shadow-sm"
+              className="bg-primary text-on-primary px-4 py-2 sm:px-6 sm:py-2.5 lg:px-8 lg:py-3.5 rounded-lg font-label-md text-label-md lg:text-base flex items-center gap-1.5 sm:gap-2 lg:gap-2.5 hover:brightness-110 transition-all active:scale-95 shadow-sm"
             >
-              <span className="material-symbols-outlined text-[18px] sm:text-[20px]">add</span>
+              <span className="material-symbols-outlined text-[18px] sm:text-[20px] lg:text-[24px]">add</span>
               Добавить договор
             </button>
           </div>
