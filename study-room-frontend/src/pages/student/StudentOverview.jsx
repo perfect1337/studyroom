@@ -279,16 +279,21 @@ export default function StudentOverview() {
           </div>
 
           <div className="lg:[grid-area:courses] flex flex-col gap-stack-md">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 pr-1">
               <h3 className="font-headline-sm text-headline-sm text-on-background">Текущие курсы</h3>
               <Link
                 to="/student/courses"
-                className="text-primary hover:text-primary-container font-label-md text-label-md flex items-center gap-1 transition-colors"
+                className="text-primary hover:text-primary-container font-label-md text-label-md flex items-center gap-1 transition-colors mr-2"
               >
                 Все курсы <span className="material-symbols-outlined text-sm">arrow_forward</span>
               </Link>
             </div>
-            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-stack-md content-start">
+            {/* auto-fit вместо фиксированного числа колонок: если карточек мало
+                (например, одна), она растягивается на всю ширину блока —
+                ровно до правого края, где стоит "Все курсы" — а не остаётся
+                маленькой в первой колонке с пустым местом справа. Когда карточек
+                больше, они сами укладываются в ряды по ~280px и растут вместе. */}
+            <div className="flex-1 grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-stack-md content-start">
               {enrollments.map((e) => {
                 const course = coursesById[e.course_id];
                 const tutor = tutorsById[e.tutor_id || courseTutorId[e.course_id]];
