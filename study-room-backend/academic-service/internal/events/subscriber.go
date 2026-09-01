@@ -63,6 +63,14 @@ type ContractTerminatedEvent struct {
 // момент написания — ежегодное автоудаление выпускников 11 класса (см.
 // user-service/internal/promotion), но обработчик не завязан на причину:
 // любой user.deleted с role=student запускает detachStudent.
+type ContractLifecycleEvent struct {
+	ContractID int64  `json:"id"`
+	StudentID  int64  `json:"student_id"`
+	CourseID   int64  `json:"course_id"`
+	StartDate  string `json:"start_date"`
+	EndDate    string `json:"end_date"`
+}
+
 type UserDeletedEvent struct {
 	ID   int64       `json:"id"`
 	Role models.Role `json:"role"`
@@ -114,6 +122,15 @@ func (s *Subscriber) Start(ctx context.Context) error {
 		return err
 	}
 	if _, err := s.nc.QueueSubscribe("contract.terminated", "academic-service", s.handleContractTerminated(ctx)); err != nil {
+		return err
+	}
+	if _, err := s.nc.QueueSubscribe("contract.expired", "academic-service", s.handleContractExpired(ctx)); err != nil {
+		return err
+	}
+	if _, err := s.nc.QueueSubscribe("contract.activated", "academic-service", s.handleContractActivated(ctx)); err != nil {
+		return err
+	}
+	if _, err := s.nc.QueueSubscribe("contract.updated", "academic-service", s.handleContractUpdated(ctx)); err != nil {
 		return err
 	}
 	if _, err := s.nc.QueueSubscribe("user.deleted", "academic-service", s.handleUserDeleted(ctx)); err != nil {
@@ -339,6 +356,66 @@ func (s *Subscriber) handleContractCreated(ctx context.Context) nats.MsgHandler 
 		}
 		if _, err := s.enrollRepo.CreateFromContract(ctx, ev.StudentID, ev.CourseID, ev.TutorID, ev.StartDate, ev.EndDate); err != nil {
 			log.Printf("[events] create enrollment from contract %d error: %v", ev.ContractID, err)
+		}
+	}
+}
+
+func (s *Subscriber) handleContractExpired(ctx context.Context) nats.MsgHandler {
+	return func(msg *nats.Msg) {
+		var ev ContractLifecycleEvent
+		if err := json.Unmarshal(msg.Data, &ev); err != nil {
+			log.Printf("[events] contract.expired unmarshal error: %v", err)
+			return
+		}
+		if ev.StudentID == 0 || ev.CourseID == 0 {
+			return
+		}
+		endDate, err := time.Parse("2006-01-02", ev.EndDate)
+		if err != nil {
+			log.Printf("[events] contract %d expired: invalid end_date %q: %v", ev.ContractID, ev.EndDate, err)
+			return
+		}
+		if n, err := s.lessonRepo.CancelForStudentAndCourseAfterDate(ctx, ev.StudentID, ev.CourseID, endDate); err != nil {
+			log.Printf("[events] contract %d expired: cancel post-expiry lessons error: %v", ev.ContractID, err)
+		}
+		if n, err := s.enrollRepo.TerminateExpiredForCourse(ctx, ev.StudentID, ev.CourseID); err != nil {
+			log.Printf("[events] contract %d expired: terminate enrollment error: %v", ev.ContractID, err)
+		} else if n > 0 {
+			log.Printf("[events] contract %d expired: terminated enrollment for student %d/course %d", ev.ContractID, ev.StudentID, ev.CourseID)
+		}
+	}
+}
+
+func (s *Subscriber) handleContractActivated(ctx context.Context) nats.MsgHandler {
+	return func(msg *nats.Msg) {
+		var ev ContractLifecycleEvent
+		if err := json.Unmarshal(msg.Data, &ev); err != nil {
+			log.Printf("[events] contract.activated unmarshal error: %v", err)
+			return
+		}
+		if ev.StudentID == 0 || ev.CourseID == 0 {
+			return
+		}
+		if n, err := s.enrollRepo.ActivateForCourse(ctx, ev.StudentID, ev.CourseID, &ev.StartDate, &ev.EndDate); err != nil {
+			log.Printf("[events] contract %d activated: activate enrollment error: %v", ev.ContractID, err)
+		} else if n == 0 {
+			log.Printf("[events] contract %d activated: no enrollment to reactivate for student %d/course %d", ev.ContractID, ev.StudentID, ev.CourseID)
+		}
+	}
+}
+
+func (s *Subscriber) handleContractUpdated(ctx context.Context) nats.MsgHandler {
+	return func(msg *nats.Msg) {
+		var ev ContractLifecycleEvent
+		if err := json.Unmarshal(msg.Data, &ev); err != nil {
+			log.Printf("[events] contract.updated unmarshal error: %v", err)
+			return
+		}
+		if ev.StudentID == 0 || ev.CourseID == 0 {
+			return
+		}
+		if _, err := s.enrollRepo.UpdateDatesForCourse(ctx, ev.StudentID, ev.CourseID, &ev.StartDate, &ev.EndDate); err != nil {
+			log.Printf("[events] contract %d updated: update enrollment dates error: %v", ev.ContractID, err)
 		}
 	}
 }

@@ -237,6 +237,31 @@ func (r *ContractRepository) ListExpiringSoon(ctx context.Context, withinDays in
 	return out, rows.Err()
 }
 
+// ExpireDue marks active contracts whose end date has passed as completed.
+// The end date is inclusive: a contract ending today is valid through today
+// and becomes completed on the following day.
+func (r *ContractRepository) ExpireDue(ctx context.Context) ([]*models.Contract, error) {
+	rows, err := r.pool.Query(ctx, `
+		UPDATE contracts
+		SET status = 'completed'
+		WHERE status = 'active' AND end_date < CURRENT_DATE
+		RETURNING `+contractColumns)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*models.Contract
+	for rows.Next() {
+		c, err := scanContract(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 func (r *ContractRepository) MarkExpiryNotified(ctx context.Context, id int64) error {
 	_, err := r.pool.Exec(ctx, `UPDATE contracts SET expiry_notified_at = now() WHERE id = $1`, id)
 	return err

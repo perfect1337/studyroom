@@ -93,8 +93,8 @@ func (r *LessonRepository) GetByID(ctx context.Context, id int64) (*models.Lesso
 // привязаны к филиалу, поэтому фильтруем по филиалу преподавателя занятия
 // через user_refs), не часть публичного query-контракта.
 type LessonFilter struct {
-	TutorID    *int64
-	StudentID  *int64
+	TutorID   *int64
+	StudentID *int64
 	// StudentIDs — фильтр "IN (...)" для parent с несколькими детьми,
 	// взаимоисключим со StudentID (см. EnrollmentFilter для того же паттерна).
 	StudentIDs []int64
@@ -365,6 +365,45 @@ func (r *LessonRepository) AutoCompletePast(ctx context.Context) ([]StudentCours
 //
 // Возвращает количество занятий, реально помеченных отменёнными (для лога
 // в подписчике), не считая тех, откуда ученика просто тихо убрали.
+// CancelForStudentAndCourseAfterDate is used when a contract expires. Only
+// scheduled lessons after the contract end date are affected; lessons within
+// the paid contract period remain historical records.
+func (r *LessonRepository) CancelForStudentAndCourseAfterDate(ctx context.Context, studentID, courseID int64, endDate time.Time) (int64, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+
+	tag, err := tx.Exec(ctx, `
+		UPDATE lessons SET status = 'cancelled'
+		WHERE course_id = $2 AND status = 'scheduled' AND lesson_date > $3
+		  AND id IN (SELECT lesson_id FROM lesson_participants WHERE student_id = $1)
+		  AND id IN (SELECT lesson_id FROM lesson_participants GROUP BY lesson_id HAVING COUNT(*) = 1)
+	`, studentID, courseID, endDate)
+	if err != nil {
+		return 0, err
+	}
+	cancelled := tag.RowsAffected()
+
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM lesson_participants
+		WHERE student_id = $1
+		  AND lesson_id IN (
+		    SELECT l.id FROM lessons l
+		    JOIN lesson_participants lp ON lp.lesson_id = l.id AND lp.student_id = $1
+		    WHERE l.course_id = $2 AND l.status = 'scheduled' AND l.lesson_date > $3
+		  )
+	`, studentID, courseID, endDate); err != nil {
+		return 0, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return cancelled, nil
+}
+
 func (r *LessonRepository) CancelForStudentAndCourse(ctx context.Context, studentID, courseID int64) (int64, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {

@@ -290,6 +290,10 @@ func (h *ContractHandler) UpdateFields(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to update contract")
 		return
 	}
+	// Keep Academic Service's enrollment dates in sync with contract dates.
+	h.events.ContractUpdated(contract.ID, contract.StudentID, contract.CourseID,
+		contract.StartDate.Format(dateLayout), contract.EndDate.Format(dateLayout))
+
 	writeJSON(w, http.StatusOK, contract)
 }
 
@@ -340,17 +344,20 @@ func (h *ContractHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	// меняются самим UpdateStatus, но GetByID после успешного апдейта не
 	// вернёт ничего нового и лишь добавляет ещё один запрос к БД впустую;
 	// читаем его один раз заранее.
-	var contract *models.Contract
-	if req.Status == string(models.StatusTerminated) {
-		contract, err = h.repo.GetByID(r.Context(), id)
-		if err != nil {
-			if errors.Is(err, repository.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "NOT_FOUND", "contract not found")
-				return
-			}
-			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load contract")
+	// Load the contract for every lifecycle transition: Academic Service needs
+	// the student/course pair for activation, termination and expiry handling.
+	contract, err := h.repo.GetByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "contract not found")
 			return
 		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load contract")
+		return
+	}
+	if req.Status == string(models.StatusActive) && contract.EndDate.Format(dateLayout) < time.Now().Format(dateLayout) {
+		writeError(w, http.StatusBadRequest, "CONTRACT_EXPIRED", "cannot activate an expired contract; extend the end date first")
+		return
 	}
 
 	if err := h.repo.UpdateStatus(r.Context(), id, req.Status); err != nil {
@@ -362,8 +369,12 @@ func (h *ContractHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if contract != nil {
+	switch req.Status {
+	case string(models.StatusTerminated):
 		h.events.ContractTerminated(contract.ID, contract.StudentID, contract.CourseID)
+	case string(models.StatusActive):
+		h.events.ContractActivated(contract.ID, contract.StudentID, contract.CourseID,
+			contract.StartDate.Format(dateLayout), contract.EndDate.Format(dateLayout))
 	}
 
 	w.WriteHeader(http.StatusOK)

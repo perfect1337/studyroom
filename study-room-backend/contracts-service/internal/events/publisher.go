@@ -14,12 +14,18 @@ const (
 	SubjectContractCreated      = "contract.created"
 	SubjectContractExpiringSoon = "contract.expiring_soon"
 	SubjectContractTerminated   = "contract.terminated"
+	SubjectContractExpired      = "contract.expired"
+	SubjectContractActivated    = "contract.activated"
+	SubjectContractUpdated      = "contract.updated"
 )
 
 type Publisher interface {
 	ContractCreated(id, studentID, courseID int64, tutorID *int64, startDate, endDate *string)
 	ContractExpiringSoon(userID int64, studentId int64, contractNumber, endDate string)
 	ContractTerminated(id, studentID, courseID int64)
+	ContractExpired(id, studentID, courseID int64, endDate string)
+	ContractActivated(id, studentID, courseID int64, startDate, endDate string)
+	ContractUpdated(id, studentID, courseID int64, startDate, endDate string)
 }
 
 type NoopPublisher struct{}
@@ -27,6 +33,9 @@ type NoopPublisher struct{}
 func (NoopPublisher) ContractCreated(int64, int64, int64, *int64, *string, *string) {}
 func (NoopPublisher) ContractExpiringSoon(int64, int64, string, string)             {}
 func (NoopPublisher) ContractTerminated(int64, int64, int64)                        {}
+func (NoopPublisher) ContractExpired(int64, int64, int64, string)                   {}
+func (NoopPublisher) ContractActivated(int64, int64, int64, string, string)         {}
+func (NoopPublisher) ContractUpdated(int64, int64, int64, string, string)           {}
 
 type contractCreatedPayload struct {
 	ID        int64   `json:"id"`
@@ -54,6 +63,14 @@ type contractTerminatedPayload struct {
 	ID        int64 `json:"id"`
 	StudentID int64 `json:"student_id"`
 	CourseID  int64 `json:"course_id"`
+}
+
+type contractLifecyclePayload struct {
+	ID        int64  `json:"id"`
+	StudentID int64  `json:"student_id"`
+	CourseID  int64  `json:"course_id"`
+	StartDate string `json:"start_date"`
+	EndDate   string `json:"end_date"`
 }
 
 type NATSPublisher struct {
@@ -110,5 +127,28 @@ func (p *NATSPublisher) ContractTerminated(id, studentID, courseID int64) {
 	}
 	if err := p.nc.Publish(SubjectContractTerminated, data); err != nil {
 		log.Printf("[events] publish contract.terminated error: %v", err)
+	}
+}
+
+func (p *NATSPublisher) ContractExpired(id, studentID, courseID int64, endDate string) {
+	p.publishLifecycle(SubjectContractExpired, contractLifecyclePayload{ID: id, StudentID: studentID, CourseID: courseID, EndDate: endDate})
+}
+
+func (p *NATSPublisher) ContractActivated(id, studentID, courseID int64, startDate, endDate string) {
+	p.publishLifecycle(SubjectContractActivated, contractLifecyclePayload{ID: id, StudentID: studentID, CourseID: courseID, StartDate: startDate, EndDate: endDate})
+}
+
+func (p *NATSPublisher) ContractUpdated(id, studentID, courseID int64, startDate, endDate string) {
+	p.publishLifecycle(SubjectContractUpdated, contractLifecyclePayload{ID: id, StudentID: studentID, CourseID: courseID, StartDate: startDate, EndDate: endDate})
+}
+
+func (p *NATSPublisher) publishLifecycle(subject string, payload contractLifecyclePayload) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("[events] marshal %s error: %v", subject, err)
+		return
+	}
+	if err := p.nc.Publish(subject, data); err != nil {
+		log.Printf("[events] publish %s error: %v", subject, err)
 	}
 }

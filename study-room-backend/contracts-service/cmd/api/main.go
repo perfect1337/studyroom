@@ -19,6 +19,7 @@ import (
 
 const expiringSoonWithinDays = 1
 const expiringSoonCheckInterval = 24 * time.Hour
+const contractExpiryCheckInterval = time.Minute
 
 func main() {
 	ctx := context.Background()
@@ -61,6 +62,12 @@ func main() {
 	} else {
 		log.Println("events: NATS_URL not set, skipping event subscription and contract.expiring_soon job")
 	}
+
+	// Contract expiration is a data integrity rule, not only a notification feature,
+	// so it runs even when NATS is disabled. When NATS is available the job also
+	// publishes contract.expired so Academic Service immediately closes access to lessons.
+	stopContractExpiryJob := startContractExpiryJob(ctx, deps)
+	defer stopContractExpiryJob()
 
 	if cfg.UserServiceURL == "" {
 		log.Println("WARNING: USER_SERVICE_URL is not set — GET /contracts/{id}/expiry for role=parent will fail (403/502)")
@@ -107,6 +114,40 @@ func startExpiringSoonJob(ctx context.Context, deps *app.Deps) func() {
 	return func() {
 		ticker.Stop()
 		close(done)
+	}
+}
+
+func startContractExpiryJob(ctx context.Context, deps *app.Deps) func() {
+	ticker := time.NewTicker(contractExpiryCheckInterval)
+	done := make(chan struct{})
+
+	go func() {
+		checkContractExpiry(ctx, deps)
+		for {
+			select {
+			case <-ticker.C:
+				checkContractExpiry(ctx, deps)
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	return func() {
+		ticker.Stop()
+		close(done)
+	}
+}
+
+func checkContractExpiry(ctx context.Context, deps *app.Deps) {
+	contracts, err := deps.Contracts.ExpireDue(ctx)
+	if err != nil {
+		log.Printf("[contract-expiry-job] expire due contracts error: %v", err)
+		return
+	}
+	for _, c := range contracts {
+		deps.Events.ContractExpired(c.ID, c.StudentID, c.CourseID, c.EndDate.Format("2006-01-02"))
+		log.Printf("[contract-expiry-job] contract %d completed after end date (student=%d course=%d)", c.ID, c.StudentID, c.CourseID)
 	}
 }
 

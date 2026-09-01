@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"studyroom/academic-service/internal/events"
@@ -250,6 +251,12 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	lessonDate, err := time.Parse("2006-01-02", req.LessonDate)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "lesson_date must be YYYY-MM-DD")
+		return
+	}
+
 	var participantIDs []int64
 	switch {
 	case req.SubgroupID != nil:
@@ -316,6 +323,31 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 			if e.Status == models.EnrollmentActive {
 				participantIDs = append(participantIDs, e.StudentID)
 			}
+		}
+	}
+
+	// A lesson may only be scheduled while every participant has an active
+	// enrollment and the lesson date is inside that enrollment's contract
+	// period. This remains effective even if contract.expired is delayed.
+	activeEnrollments := make(map[int64]*models.Enrollment, len(enrollments))
+	for _, e := range enrollments {
+		if e.Status == models.EnrollmentActive {
+			activeEnrollments[e.StudentID] = e
+		}
+	}
+	for _, studentID := range participantIDs {
+		e := activeEnrollments[studentID]
+		if e == nil {
+			writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "student does not have an active contract for this course")
+			return
+		}
+		if e.StartDate != nil && lessonDate.Before(*e.StartDate) {
+			writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "lesson date is before the contract start date")
+			return
+		}
+		if e.EndDate != nil && lessonDate.After(*e.EndDate) {
+			writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "student's contract has expired for this lesson date")
+			return
 		}
 	}
 

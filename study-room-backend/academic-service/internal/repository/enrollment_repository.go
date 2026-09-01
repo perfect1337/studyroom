@@ -299,12 +299,58 @@ func (r *EnrollmentRepository) DeleteByStudent(ctx context.Context, studentID in
 	return tag.RowsAffected(), nil
 }
 
+// TerminateExpiredForCourse only closes enrollments whose stored contract
+// end date has actually passed. This prevents a delayed contract.expired event
+// from closing a freshly renewed contract for the same student/course.
+func (r *EnrollmentRepository) TerminateExpiredForCourse(ctx context.Context, studentID, courseID int64) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE enrollments SET status = 'terminated'
+		WHERE student_id = $1 AND course_id = $2
+		  AND status IN ('active', 'paused')
+		  AND end_date IS NOT NULL AND end_date < CURRENT_DATE
+	`, studentID, courseID)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 // TerminateForCourse — переводит enrollment(ы) ученика на конкретном курсе
 // в status='terminated' (см. events/subscriber.go, handleContractTerminated —
 // реакция на расторжение договора). Затрагивает только active/paused
 // записи: уже completed (курс пройден штатно) расторжением договора задним
 // числом не переписывается — это исторический факт, а не текущее состояние.
 // Возвращает количество затронутых строк (для лога в подписчике).
+// ActivateForCourse restores the enrollment for a renewed/continued contract.
+// Existing progress and tutor assignment are preserved.
+func (r *EnrollmentRepository) ActivateForCourse(ctx context.Context, studentID, courseID int64, startDate, endDate *string) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE enrollments
+		SET status = 'active', start_date = $3, end_date = $4
+		WHERE id = (
+			SELECT id FROM enrollments
+			WHERE student_id = $1 AND course_id = $2
+			ORDER BY CASE WHEN status = 'terminated' THEN 0 ELSE 1 END, id DESC
+			LIMIT 1
+		)`, studentID, courseID, startDate, endDate)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// UpdateDatesForCourse keeps enrollment dates aligned with the contract.
+func (r *EnrollmentRepository) UpdateDatesForCourse(ctx context.Context, studentID, courseID int64, startDate, endDate *string) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE enrollments SET start_date = $3, end_date = $4
+		WHERE student_id = $1 AND course_id = $2 AND status IN ('active', 'paused')`,
+		studentID, courseID, startDate, endDate)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (r *EnrollmentRepository) TerminateForCourse(ctx context.Context, studentID, courseID int64) (int64, error) {
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE enrollments SET status = 'terminated'
