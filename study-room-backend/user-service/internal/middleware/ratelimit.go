@@ -132,7 +132,7 @@ func RateLimit(limiter *IPRateLimiter) func(http.Handler) http.Handler {
 			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
 			if !allowed {
 				w.Header().Set("Retry-After", strconv.Itoa(int(limiter.window.Seconds())))
-				writeError(w, http.StatusTooManyRequests, "TOO_MANY_REQUESTS", "rate limit exceeded")
+				writeError(w, http.StatusTooManyRequests, "TOO_MANY_REQUESTS", "Слишком много запросов. Попробуйте снова через минуту.")
 				return
 			}
 			next.ServeHTTP(w, r)

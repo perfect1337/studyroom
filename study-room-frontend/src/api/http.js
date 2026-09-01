@@ -197,7 +197,13 @@ export async function request(baseUrl, path, options = {}) {
         status: res.status,
       });
     }
-    throw new ApiError(data.error.message, { code: data.error.code, status: res.status });
+    const messages = {
+      CHILD_LIMIT_REACHED: "У этого родителя уже максимальное количество детей — 10.",
+      TOO_MANY_REQUESTS: "Слишком много запросов. Попробуйте снова через минуту.",
+      RATE_LIMITED: "Слишком много запросов. Попробуйте снова через минуту.",
+    };
+    const message = messages[data.error.code] ?? data.error.message;
+    throw new ApiError(message, { code: data.error.code, status: res.status });
   }
 
   return data;
