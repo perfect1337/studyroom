@@ -96,6 +96,7 @@ export default function FinanceDirectory({ role }) {
   const [contracts, setContracts] = useState([]);
   const [studentsById, setStudentsById] = useState({});
   const [parentsById, setParentsById] = useState({});
+  const [branchesById, setBranchesById] = useState({});
   const [people, setPeople] = useState({ students: [], parents: [] });
   const [branches, setBranches] = useState([]);
   const [courses, setCourses] = useState([]);
@@ -111,6 +112,10 @@ export default function FinanceDirectory({ role }) {
 
   const [search, setSearch] = useState("");
   const [showExpiringSoon, setShowExpiringSoon] = useState(false);
+  // Фильтр по филиалу в списке договоров — доступен только owner (у
+  // branch_owner все договоры и так относятся к его единственному филиалу,
+  // сервер сам это гарантирует, поэтому фильтр ему не нужен).
+  const [branchFilter, setBranchFilter] = useState("");
 
   const [editContract, setEditContract] = useState(null);
   const [editForm, setEditForm] = useState(null);
@@ -146,6 +151,9 @@ export default function FinanceDirectory({ role }) {
       const pMap = {};
       (peopleRes?.parents ?? []).forEach((p) => (pMap[p.id] = p));
       setParentsById(pMap);
+      const bMap = {};
+      (branchesRes?.items ?? []).forEach((b) => (bMap[b.id] = b));
+      setBranchesById(bMap);
     } catch (e) {
       setError(e.message || "Не удалось загрузить финансовые данные");
     } finally {
@@ -173,11 +181,22 @@ export default function FinanceDirectory({ role }) {
     [contracts]
   );
 
+  // Название филиала договора: сперва пробуем список филиалов (owner —
+  // полный список сети через /branches), иначе — то, что уже пришло в
+  // самом договоре (branch_owner видит только свой филиал), иначе — заглушка.
+  function branchNameFor(c) {
+    return branchesById[c.branch_id]?.name ?? c.branch_name ?? (c.branch_id ? `Филиал #${c.branch_id}` : "—");
+  }
+
   const filteredContracts = useMemo(() => {
     const query = search.trim().toLowerCase();
     const base = showExpiringSoon ? expiringContracts : contracts;
-    if (!query) return base;
-    return base.filter((c) => {
+    const byBranch =
+      isOwner && branchFilter
+        ? base.filter((c) => String(c.branch_id) === String(branchFilter))
+        : base;
+    if (!query) return byBranch;
+    return byBranch.filter((c) => {
       const student = studentsById[c.student_id];
       const parent = parentsById[c.parent_id];
       const studentName = student ? fullName(student).toLowerCase() : "";
@@ -190,7 +209,7 @@ export default function FinanceDirectory({ role }) {
         `№${contractNo}`.includes(query)
       );
     });
-  }, [contracts, expiringContracts, search, showExpiringSoon, studentsById, parentsById]);
+  }, [contracts, expiringContracts, search, showExpiringSoon, studentsById, parentsById, isOwner, branchFilter, branchesById]);
 
   const { page: contractsPage, setPage: setContractsPage, pageItems: pagedContracts } = usePagination(
     filteredContracts,
@@ -421,17 +440,43 @@ export default function FinanceDirectory({ role }) {
                   </button>
                 )}
               </div>
-              <div className="relative">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">
-                  search
-                </span>
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Поиск по ФИО или № договора..."
-                  className="bg-surface border border-outline-variant rounded-lg pl-9 pr-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none w-full md:w-72"
-                />
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
+                {/* Фильтр по филиалу — только у owner: у него один список
+                    договоров на всю сеть, поэтому нужен способ сузить его
+                    до конкретного филиала. У branch_owner фильтр скрыт —
+                    в его списке и так только договоры своего филиала. */}
+                {isOwner && (
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px] pointer-events-none">
+                      storefront
+                    </span>
+                    <select
+                      value={branchFilter}
+                      onChange={(e) => setBranchFilter(e.target.value)}
+                      className="appearance-none bg-surface border border-outline-variant rounded-lg pl-9 pr-8 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none w-full sm:w-48"
+                    >
+                      <option value="">Все филиалы</option>
+                      {branches.map((b) => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px] pointer-events-none">
+                      expand_more
+                    </span>
+                  </div>
+                )}
+                <div className="relative w-full sm:w-auto">
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">
+                    search
+                  </span>
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Поиск по ФИО или № договора..."
+                    className="bg-surface border border-outline-variant rounded-lg pl-9 pr-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none w-full md:w-72"
+                  />
+                </div>
               </div>
             </div>
             {/* Полная таблица показывается только там, где реально хватает
@@ -445,6 +490,9 @@ export default function FinanceDirectory({ role }) {
                   <tr className="bg-surface-container-low/50">
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">№</th>
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Ученик / Родитель</th>
+                    {isOwner && (
+                      <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Филиал</th>
+                    )}
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Период</th>
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Сумма</th>
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Статус</th>
@@ -454,7 +502,7 @@ export default function FinanceDirectory({ role }) {
                 <tbody className="divide-y divide-surface-container-high">
                   {!loading && filteredContracts.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-6 py-8 text-center text-on-surface-variant">
+                      <td colSpan={isOwner ? 7 : 6} className="px-6 py-8 text-center text-on-surface-variant">
                         {contracts.length === 0 ? "Договоров пока нет" : "Ничего не найдено"}
                       </td>
                     </tr>
@@ -475,6 +523,9 @@ export default function FinanceDirectory({ role }) {
                           </div>
                           <div className="text-xs text-on-surface-variant">{parent ? fullName(parent) : `Родитель #${c.parent_id}`}</div>
                         </td>
+                        {isOwner && (
+                          <td className="px-6 py-4 font-body-md text-body-md text-on-surface-variant">{branchNameFor(c)}</td>
+                        )}
                         <td className="px-6 py-4 font-body-md text-body-md text-on-surface-variant">{formatDate(c.start_date)} — {formatDate(c.end_date)}</td>
                         <td className="px-6 py-4 font-body-md text-body-md font-semibold text-on-surface">{formatMoney(c.amount)}</td>
                         <td className="px-6 py-4">
@@ -513,6 +564,12 @@ export default function FinanceDirectory({ role }) {
                       </div>
                       <span className="shrink-0 text-xs text-on-surface-variant">№{c.id}</span>
                     </div>
+                    {isOwner && (
+                      <div className="flex items-center gap-1 text-[12px] text-on-surface-variant">
+                        <span className="material-symbols-outlined text-[14px]">storefront</span>
+                        <span className="truncate">{branchNameFor(c)}</span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between text-[13px]">
                       <span className="text-on-surface-variant">{formatDate(c.start_date)} — {formatDate(c.end_date)}</span>
                       <span className="font-semibold text-on-surface">{formatMoney(c.amount)}</span>
