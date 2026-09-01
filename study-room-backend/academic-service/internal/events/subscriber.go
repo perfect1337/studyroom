@@ -375,7 +375,7 @@ func (s *Subscriber) handleContractExpired(ctx context.Context) nats.MsgHandler 
 			log.Printf("[events] contract %d expired: invalid end_date %q: %v", ev.ContractID, ev.EndDate, err)
 			return
 		}
-		if n, err := s.lessonRepo.CancelForStudentAndCourseAfterDate(ctx, ev.StudentID, ev.CourseID, endDate); err != nil {
+		if _, err := s.lessonRepo.CancelForStudentAndCourseAfterDate(ctx, ev.StudentID, ev.CourseID, endDate); err != nil {
 			log.Printf("[events] contract %d expired: cancel post-expiry lessons error: %v", ev.ContractID, err)
 		}
 		if n, err := s.enrollRepo.TerminateExpiredForCourse(ctx, ev.StudentID, ev.CourseID); err != nil {
