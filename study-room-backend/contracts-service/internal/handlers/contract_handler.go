@@ -355,6 +355,10 @@ func (h *ContractHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load contract")
 		return
 	}
+	if contract.Status == models.StatusTerminated && req.Status != string(models.StatusTerminated) {
+		writeError(w, http.StatusConflict, "CONTRACT_TERMINATED", "Расторгнутый договор нельзя перевести обратно в другой статус.")
+		return
+	}
 	if req.Status == string(models.StatusActive) && contract.EndDate.Format(dateLayout) < time.Now().Format(dateLayout) {
 		writeError(w, http.StatusBadRequest, "CONTRACT_EXPIRED", "cannot activate an expired contract; extend the end date first")
 		return

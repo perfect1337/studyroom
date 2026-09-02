@@ -26,6 +26,13 @@ export function fetchContracts({ branch_id, student_id, status } = {}) {
   );
 }
 
+// Принудительная загрузка списка договоров без клиентского кэша —
+// используется финансовой таблицей, где статус должен сразу соответствовать
+// фактическому статусу конкретного договора в backend.
+export function fetchContractsFresh({ branch_id, student_id, status } = {}) {
+  return contractsApi("", { params: { branch_id, student_id, status } });
+}
+
 // 3.3 Договор по id (owner only)
 export function fetchContractById(id) {
   return contractsApi(`/${id}`);
@@ -77,10 +84,4 @@ export function deleteContract(id) {
     invalidateQuery(["myContracts"]);
     return res;
   });
-}
-
-
-// Статистика договоров — только owner. Учитывает soft-deleted договоры.
-export function fetchContractStats() {
-  return contractsApi("/stats");
 }

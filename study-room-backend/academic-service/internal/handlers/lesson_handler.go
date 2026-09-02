@@ -7,12 +7,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"studyroom/academic-service/internal/events"
 	"studyroom/academic-service/internal/middleware"
 	"studyroom/academic-service/internal/models"
 	"studyroom/academic-service/internal/repository"
-
-	"github.com/go-chi/chi/v5"
 )
 
 type LessonHandler struct {
@@ -330,24 +329,40 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// A lesson may only be scheduled while every participant has an active
 	// enrollment and the lesson date is inside that enrollment's contract
 	// period. This remains effective even if contract.expired is delayed.
-	activeEnrollments := make(map[int64]*models.Enrollment, len(enrollments))
-	for _, e := range enrollments {
-		if e.Status == models.EnrollmentActive {
-			activeEnrollments[e.StudentID] = e
-		}
-	}
 	for _, studentID := range participantIDs {
-		e := activeEnrollments[studentID]
-		if e == nil {
-			writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "У ученика нет действующего договора на этот курс.")
-			return
+		// При нескольких активных периодах по одному курсу достаточно одного
+		// договора, который покрывает дату занятия. Раньше map затирала более
+		// подходящий enrollment последним найденным, из-за чего валидная дата
+		// могла случайно считаться недопустимой.
+		validForDate := false
+		for _, e := range enrollments {
+			if e.StudentID != studentID || e.Status != models.EnrollmentActive {
+				continue
+			}
+			if e.StartDate == nil || e.EndDate == nil {
+				continue
+			}
+			if lessonDate.Before(*e.StartDate) || lessonDate.After(*e.EndDate) {
+				continue
+			}
+			validForDate = true
+			break
 		}
-		if e.StartDate != nil && lessonDate.Before(*e.StartDate) {
-			writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "Дата занятия раньше даты начала договора.")
-			return
-		}
-		if e.EndDate != nil && lessonDate.After(*e.EndDate) {
-			writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "Срок действия договора ученика истёк на дату этого занятия.")
+		if !validForDate {
+			hasActive := false
+			for _, e := range enrollments {
+				if e.StudentID == studentID && e.Status == models.EnrollmentActive {
+					hasActive = true
+					break
+				}
+			}
+			if !hasActive {
+				writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "У ученика нет действующего договора на этот курс.")
+				return
+			}
+			// Даты договора обязательны для планирования занятия: иначе backend
+			// не может доказать, что дата попадает в оплачиваемый период.
+			writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "На выбранную дату у ученика нет действующего договора по этому курсу.")
 			return
 		}
 	}
@@ -473,13 +488,10 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 		for _, studentID := range participants {
 			valid := false
 			for _, e := range enrollments {
-				if e.StudentID != studentID || e.Status != models.EnrollmentActive {
+				if e.StudentID != studentID || e.Status != models.EnrollmentActive || e.StartDate == nil || e.EndDate == nil {
 					continue
 				}
-				if e.StartDate != nil && newLessonDate.Before(*e.StartDate) {
-					continue
-				}
-				if e.EndDate != nil && newLessonDate.After(*e.EndDate) {
+				if newLessonDate.Before(*e.StartDate) || newLessonDate.After(*e.EndDate) {
 					continue
 				}
 				valid = true
@@ -521,7 +533,7 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 		fields["tutor_id"] = *req.TutorID
 	}
 
-	lesson, err = h.lessons.Update(r.Context(), id, fields)
+	lesson, err := h.lessons.Update(r.Context(), id, fields)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to update lesson")
 		return

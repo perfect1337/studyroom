@@ -157,6 +157,49 @@ export default function TutorNewLesson() {
     return courses.filter((c) => courseIds.has(c.id));
   }, [enrollments, courses, selectedStudentId]);
 
+  // Для выбранного ученика/курса разрешены только даты, попадающие хотя бы в
+  // одну активную запись enrollment этого ученика. Даты вне договора не просто
+  // отклоняются backend'ом при submit — они сразу недоступны в календаре.
+  const selectedCourseEnrollments = useMemo(() => {
+    if (!selectedStudentId || !selectedCourseId) return [];
+    return enrollments.filter(
+      (e) =>
+        e.status === "active" &&
+        String(e.student_id) === String(selectedStudentId) &&
+        String(e.course_id) === String(selectedCourseId)
+    );
+  }, [enrollments, selectedStudentId, selectedCourseId]);
+
+  function isDateAllowedForEnrollments(iso, items) {
+    return items.some((e) => {
+      const start = e.start_date ? String(e.start_date).slice(0, 10) : null;
+      const end = e.end_date ? String(e.end_date).slice(0, 10) : null;
+      if (start && iso < start) return false;
+      if (end && iso > end) return false;
+      return true;
+    });
+  }
+
+  const allowedSelectedDates = useMemo(() => {
+    if (participantMode === "student") {
+      return selectedDates.filter((iso) => isDateAllowedForEnrollments(iso, selectedCourseEnrollments));
+    }
+    if (!selectedSubgroupId || !selectedCourseId) return [];
+    const subgroup = subgroups.find((sg) => String(sg.id) === String(selectedSubgroupId));
+    const ids = subgroup?.student_ids ?? [];
+    return selectedDates.filter((iso) =>
+      ids.length > 0 &&
+      ids.every((studentId) =>
+        isDateAllowedForEnrollments(
+          iso,
+          enrollments.filter(
+            (e) => e.status === "active" && String(e.student_id) === String(studentId) && String(e.course_id) === String(selectedCourseId)
+          )
+        )
+      )
+    );
+  }, [selectedDates, selectedCourseEnrollments, participantMode, selectedSubgroupId, selectedCourseId, subgroups, enrollments]);
+
   // Курсы с групповым форматом — только на них имеет смысл подгруппа.
   const groupCourses = useMemo(() => courses.filter((c) => c.format === "group"), [courses]);
 
@@ -302,6 +345,32 @@ export default function TutorNewLesson() {
 
   function toggleDate(iso) {
     if (iso < todayISO) return; // прошедшие дни выбрать нельзя
+
+    if (participantMode === "student" && selectedStudentId && selectedCourseId) {
+      if (!isDateAllowedForEnrollments(iso, selectedCourseEnrollments)) {
+        setSubmitError("На выбранную дату у ученика нет действующего договора по этому курсу.");
+        return;
+      }
+    }
+
+    if (participantMode === "group" && selectedSubgroupId && selectedCourseId) {
+      const subgroup = subgroups.find((sg) => String(sg.id) === String(selectedSubgroupId));
+      const ids = subgroup?.student_ids ?? [];
+      const allAllowed = ids.length > 0 && ids.every((studentId) =>
+        isDateAllowedForEnrollments(
+          iso,
+          enrollments.filter(
+            (e) => e.status === "active" && String(e.student_id) === String(studentId) && String(e.course_id) === String(selectedCourseId)
+          )
+        )
+      );
+      if (!allAllowed) {
+        setSubmitError("На выбранную дату у одного или нескольких учеников группы нет действующего договора.");
+        return;
+      }
+    }
+
+    setSubmitError("");
     setSelectedDates((prev) =>
       prev.includes(iso) ? prev.filter((d) => d !== iso) : [...prev, iso].sort()
     );
@@ -333,6 +402,13 @@ export default function TutorNewLesson() {
     }
     if (!form.startTime) {
       setSubmitError("Укажите время начала занятия");
+      return;
+    }
+
+    const invalidSelectedDates = selectedDates.filter((iso) => !allowedSelectedDates.includes(iso));
+    if (invalidSelectedDates.length > 0) {
+      setSubmitError("Среди выбранных дат есть даты вне периода действия договора. Уберите их и выберите допустимые даты.");
+      setSelectedDates((prev) => prev.filter((iso) => allowedSelectedDates.includes(iso)));
       return;
     }
 
@@ -673,14 +749,25 @@ export default function TutorNewLesson() {
                       const isSelected = selectedDates.includes(iso);
                       const isToday = day === todayDay;
                       const isPast = iso < todayISO;
+                      const isContractDateAllowed =
+                        participantMode === "student"
+                          ? !selectedStudentId || !selectedCourseId || isDateAllowedForEnrollments(iso, selectedCourseEnrollments)
+                          : !selectedSubgroupId || !selectedCourseId || (subgroups.find((sg) => String(sg.id) === String(selectedSubgroupId))?.student_ids ?? []).every((studentId) =>
+                              isDateAllowedForEnrollments(
+                                iso,
+                                enrollments.filter((e) => e.status === "active" && String(e.student_id) === String(studentId) && String(e.course_id) === String(selectedCourseId))
+                              )
+                            );
+                      const isDisabled = isPast || !isContractDateAllowed;
                       return (
                         <button
                           type="button"
                           key={day}
-                          disabled={isPast}
+                          disabled={isDisabled}
                           onClick={() => toggleDate(iso)}
+                          title={!isPast && !isContractDateAllowed ? "На эту дату нет действующего договора" : undefined}
                           className={`h-8 rounded-md font-label-md text-[12px] transition-all border
-                            ${isPast ? "text-outline-variant cursor-not-allowed" : "text-on-surface hover:bg-primary-container/30"}
+                            ${isDisabled ? "text-outline-variant cursor-not-allowed" : "text-on-surface hover:bg-primary-container/30"}
                             ${isSelected ? "bg-primary text-on-primary border-primary" : "border-transparent"}
                             ${isToday && !isSelected ? "border-primary" : ""}
                           `}
