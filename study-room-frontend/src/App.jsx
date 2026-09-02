@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
-import { AuthProvider } from "./context/AuthContext.jsx";
+import { AuthProvider, useAuth, ROLE_HOME_ROUTE } from "./context/AuthContext.jsx";
 import ProtectedRoute from "./components/routing/ProtectedRoute.jsx";
 import RouteFallback from "./components/routing/RouteFallback.jsx";
 import ErrorBoundary from "./components/routing/ErrorBoundary.jsx";
@@ -64,6 +64,25 @@ import {
   SettingsPage,
 } from "./routes/routeComponents.js";
 
+// Универсальная ссылка для Tilda: авторизованный пользователь попадает
+// в свой раздел/профиль, неавторизованный — на вход с сохранением исходного URL.
+function ProfileRedirect() {
+  const { user, loading, isAuthenticated } = useAuth();
+  const location = useLocation();
+
+  if (loading) return <RouteFallback />;
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
+  const profileRoute = {
+    student: "/student/profile",
+  }[user.role];
+
+  return <Navigate to={profileRoute ?? ROLE_HOME_ROUTE[user.role] ?? "/login"} replace />;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -92,6 +111,7 @@ function AppRoutes() {
         <Routes>
             {/* Точка входа — единая страница логина для всех ролей (см. ТЗ п.6.1) */}
             <Route path="/" element={<Navigate to="/login" replace />} />
+            <Route path="/profile" element={<ProfileRedirect />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />

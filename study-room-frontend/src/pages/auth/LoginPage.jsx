@@ -26,9 +26,15 @@ export default function LoginPage() {
       // POST /api/v1/users/auth/login — роль приходит с бэкенда в user.role,
       // по ней определяем, в какой раздел вести пользователя.
       const user = await login(form.login, form.password);
-      const from = location.state?.from?.pathname;
+      const from = location.state?.from;
+      const fromPath = from?.pathname;
+      const fromSearch = from?.search ?? "";
+      const fromHash = from?.hash ?? "";
       const home = ROLE_HOME_ROUTE[user.role] ?? "/login";
-      navigate(from && from !== "/login" ? from : home, { replace: true });
+      const destination = fromPath && fromPath !== "/login"
+        ? `${fromPath}${fromSearch}${fromHash}`
+        : home;
+      navigate(destination, { replace: true });
     } catch (err) {
       // Обработка специфичных ошибок с бэкенда
       const errorMessage = err.message || err.response?.data?.message || "";
