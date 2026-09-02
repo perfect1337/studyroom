@@ -3,6 +3,8 @@ import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchTests, submitTest } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+import { usePagination } from "../../utils/usePagination.js";
+import Pagination from "../../components/ui/Pagination.jsx";
 import CourseTag from "../../components/ui/CourseTag.jsx";
 
 const FILTERS = ["Все", "Сдан", "Не сдан"];
@@ -31,7 +33,7 @@ export default function StudentTests() {
       .then((res) => !cancelled && setTests(res?.items ?? []))
       .catch((e) => !cancelled && setError(e.message || "Не удалось загрузить тесты"))
       .finally(() => !cancelled && setLoading(false));
-    return () => {
+  return () => {
       cancelled = true;
     };
   }, [user?.id]);
@@ -41,6 +43,8 @@ export default function StudentTests() {
     if (filter === "Не сдан") return t.status !== "submitted";
     return t.status === "submitted";
   });
+
+  const { page, setPage, pageItems: pagedItems } = usePagination(items, 10);
 
   async function handleSubmit(t) {
     if (t.status === "submitted") return;

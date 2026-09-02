@@ -6,6 +6,8 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchCourses, fetchEnrollments, fetchLessons } from "../../api/academic.js";
 import { fetchUserById } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+import { usePagination } from "../../utils/usePagination.js";
+import Pagination from "../../components/ui/Pagination.jsx";
 
 const STATUS_LABEL = {
   "active": "Активен",
@@ -95,6 +97,7 @@ export default function StudentCourses() {
   }, [user?.id]);
 
   const filtered = enrollments;
+  const { page, setPage, pageItems: pagedCourses } = usePagination(filtered, 9);
 
   return (
     <DashboardShell
@@ -142,7 +145,7 @@ export default function StudentCourses() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-stack-md">
-            {filtered.map((e) => {
+            {pagedCourses.map((e) => {
               const course = coursesById[e.course_id];
               const tutor = tutorsById[e.tutor_id || courseTutorId[e.course_id]];
               return (
@@ -190,6 +193,7 @@ export default function StudentCourses() {
               );
             })}
           </div>
+        <Pagination page={page} pageSize={9} total={filtered.length} onPageChange={setPage} itemLabel="курсов" />
         )}
       </div>
     </DashboardShell>

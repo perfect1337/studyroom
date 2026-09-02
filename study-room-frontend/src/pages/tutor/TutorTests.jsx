@@ -5,6 +5,8 @@ import { assignTest, fetchCourses, fetchLessons, fetchTests, gradeTest } from ".
 import { fetchMyPeople } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import CourseTag from "../../components/ui/CourseTag.jsx";
+import { usePagination } from "../../utils/usePagination.js";
+import Pagination from "../../components/ui/Pagination.jsx";
 
 const STATUS_LABEL = {
   assigned: "Не сдан",
@@ -119,6 +121,8 @@ export default function TutorTests() {
       return true;
     });
   }, [sorted, statusFilter, studentFilter, courseFilter, search, studentsById]);
+
+  const { page, setPage, pageItems: pagedTests } = usePagination(filteredSorted, 10);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -329,7 +333,7 @@ export default function TutorTests() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/30">
-                {filteredSorted.map((t) => {
+                {pagedTests.map((t) => {
                   const student = studentsById[t.student_id];
                   const isSubmitted = t.status === "submitted";
                   return (
@@ -392,7 +396,7 @@ export default function TutorTests() {
 
             {/* Мобильные карточки */}
             <div className="md:hidden divide-y divide-outline-variant/30">
-              {filteredSorted.map((t) => {
+              {pagedTests.map((t) => {
                 const student = studentsById[t.student_id];
                 const isSubmitted = t.status === "submitted";
                 return (
@@ -448,6 +452,7 @@ export default function TutorTests() {
                 );
               })}
             </div>
+            <Pagination page={page} pageSize={10} total={filteredSorted.length} onPageChange={setPage} itemLabel="тестов" />
             </>
           )}
         </section>

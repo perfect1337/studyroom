@@ -6,6 +6,8 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchBranches, createBranch, deleteBranch, createBranchOwner, fetchMyPeople, setUserActive, fetchDeletedBranches } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import { sanitizePhoneInput, isValidPhone } from "../../utils/phone.js";
+import { usePagination } from "../../utils/usePagination.js";
+import Pagination from "../../components/ui/Pagination.jsx";
 
 const EMPTY_FORM = { name: "", city: "", address: "", phone: "" };
 
@@ -64,6 +66,8 @@ export default function AdminBranches() {
   const [expandedDeletedId, setExpandedDeletedId] = useState(null);
   // members[branchId] = { loading, error, tutors: [], students: [] }
   const [deletedMembers, setDeletedMembers] = useState({});
+
+  const { page, setPage, pageItems: pagedBranches } = usePagination(branches, 10);
 
   async function loadDeletedBranches() {
     setDeletedLoading(true);
@@ -317,7 +321,7 @@ export default function AdminBranches() {
                     </td>
                   </tr>
                 )}
-                {branches.map((b) => (
+                {pagedBranches.map((b) => (
                   <tr key={b.id} className="hover:bg-surface-container-low transition-colors">
                     <td className="px-6 py-4">
                       <div className="font-label-md text-label-md font-bold text-on-surface">{b.name}</div>
@@ -351,7 +355,7 @@ export default function AdminBranches() {
               <div className="px-4 py-10 text-center text-on-surface-variant">Филиалов пока нет</div>
             )}
             {loading && <div className="px-4 py-10 text-center text-on-surface-variant">Загрузка...</div>}
-            {branches.map((b) => (
+            {pagedBranches.map((b) => (
               <div key={b.id} className="p-4 flex flex-col gap-2">
                 <div className="flex items-start justify-between gap-2">
                   <div>
@@ -375,6 +379,7 @@ export default function AdminBranches() {
             ))}
           </div>
         </div>
+        <Pagination page={page} pageSize={10} total={branches.length} onPageChange={setPage} itemLabel="филиалов" />
 
         <div>
           <h2 className="font-headline-md text-headline-md text-primary mb-1">Руководители филиалов</h2>

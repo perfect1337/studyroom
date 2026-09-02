@@ -3,6 +3,8 @@ import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchHomework, markHomeworkOpened } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+import { usePagination } from "../../utils/usePagination.js";
+import Pagination from "../../components/ui/Pagination.jsx";
 
 const FILTERS = ["Все", "Сделано ", "Не сделано"];
 
@@ -30,7 +32,7 @@ export default function StudentHomework() {
       .then((res) => !cancelled && setHomework(res?.items ?? []))
       .catch((e) => !cancelled && setError(e.message || "Не удалось загрузить задания"))
       .finally(() => !cancelled && setLoading(false));
-    return () => {
+  return () => {
       cancelled = true;
     };
   }, [user?.id]);
@@ -40,6 +42,8 @@ export default function StudentHomework() {
     if (filter === "Не сделано") return hw.status !== "viewed";
     return hw.status === "viewed";
   });
+
+  const { page, setPage, pageItems: pagedItems } = usePagination(items, 10);
 
   function handleOpen(hw) {
     window.open(hw.link_url, "_blank", "noopener");

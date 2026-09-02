@@ -5,6 +5,8 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople } from "../../api/users.js";
 import { fetchCourses, createCourse, deleteCourse } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+import { usePagination } from "../../utils/usePagination.js";
+import Pagination from "../../components/ui/Pagination.jsx";
 
 const FORMAT_LABEL = { individual: "Индивидуально", group: "Группа" };
 
@@ -51,10 +53,12 @@ export default function CoursesDirectory({ role }) {
       .catch(() => {
         if (!cancelled) setTutors([]);
       });
-    return () => {
+  return () => {
       cancelled = true;
     };
   }, [isOwner]);
+
+  const { page, setPage, pageItems: pagedCourses } = usePagination(courses, 10);
 
   async function load() {
     setLoading(true);
@@ -180,7 +184,7 @@ export default function CoursesDirectory({ role }) {
                   </tr>
                 )}
                 {!loading &&
-                  courses.map((c) => (
+                  pagedCourses.map((c) => (
                     <tr key={c.id} className="hover:bg-surface-container-low transition-colors">
                       <td className="px-6 py-4">
                         <div className="font-bold text-on-surface">{c.title}</div>
@@ -240,7 +244,7 @@ export default function CoursesDirectory({ role }) {
               <div className="px-4 py-10 text-center text-on-surface-variant">Курсы не найдены</div>
             )}
             {loading && <div className="px-4 py-10 text-center text-on-surface-variant">Загрузка...</div>}
-            {courses.map((c) => (
+            {pagedCourses.map((c) => (
               <div key={c.id} className="p-4 flex flex-col gap-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">

@@ -4,6 +4,8 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import { assignHomework, fetchHomework, fetchLessons } from "../../api/academic.js";
 import { fetchMyPeople } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+import { usePagination } from "../../utils/usePagination.js";
+import Pagination from "../../components/ui/Pagination.jsx";
 
 const STATUS_LABEL = {
   assigned: "Не сделано учеником",
@@ -97,6 +99,8 @@ export default function TutorHomework() {
     }
   }
 
+  const { page, setPage, pageItems: pagedHomework } = usePagination(sorted, 10);
+
   return (
     <DashboardShell
       role="tutor"
@@ -169,7 +173,7 @@ export default function TutorHomework() {
             <p className="p-stack-md text-on-surface-variant font-body-md">Вы пока не выдали ни одного задания</p>
           ) : (
             <ul className="divide-y divide-outline-variant">
-              {sorted.map((hw) => {
+              {pagedHomework.map((hw) => {
                 const student = studentsById[hw.student_id];
                 const isViewed = hw.status === "viewed";
                 return (
@@ -199,6 +203,9 @@ export default function TutorHomework() {
               })}
             </ul>
           )}
+        {!loading && sorted.length > 0 && (
+          <Pagination page={page} pageSize={10} total={sorted.length} onPageChange={setPage} itemLabel="заданий" />
+        )}
         </section>
       </div>
     </DashboardShell>

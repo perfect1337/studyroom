@@ -5,6 +5,8 @@ import { fetchMyContracts } from "../../api/contracts.js";
 import { fetchUserById } from "../../api/users.js";
 import { fetchCourses } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+import { usePagination } from "../../utils/usePagination.js";
+import Pagination from "../../components/ui/Pagination.jsx";
 
 const PAYMENT_STATUS_LABEL = {
   paid: "Оплачено",
@@ -158,6 +160,7 @@ export default function ParentContracts() {
   }, [contracts, search, paymentFilter, childFilter, expiringOnly, childrenById, coursesById]);
 
   const filtersActive = search.trim() !== "" || paymentFilter !== "all" || childFilter !== "all" || expiringOnly;
+  const { page, setPage, pageItems: pagedContracts } = usePagination(filteredContracts, 10);
 
   const expiringCount = useMemo(
     () => contracts.filter((c) => isExpiringSoon(c.end_date) && c.status !== "terminated").length,
@@ -326,7 +329,7 @@ export default function ParentContracts() {
                   </td>
                 </tr>
               )}
-              {!loading && filteredContracts.map((c, idx) => {
+              {!loading && pagedContracts.map((c, idx) => {
                 const child = childrenById[c.student_id];
                 const course = coursesById[c.course_id];
                 const expiring = isExpiringSoon(c.end_date) && c.status !== "terminated";
@@ -385,7 +388,7 @@ export default function ParentContracts() {
                 </button>
               </div>
             )}
-            {!loading && filteredContracts.map((c) => {
+            {!loading && pagedContracts.map((c) => {
               const child = childrenById[c.student_id];
               const course = coursesById[c.course_id];
               const expiring = isExpiringSoon(c.end_date) && c.status !== "terminated";
@@ -417,6 +420,7 @@ export default function ParentContracts() {
               );
             })}
           </div>
+        <Pagination page={page} pageSize={10} total={filteredContracts.length} onPageChange={setPage} itemLabel="договоров" />
         </div>
 
         <footer className="pt-6 text-center border-t border-outline-variant/30 text-on-surface-variant text-[13px] opacity-60">

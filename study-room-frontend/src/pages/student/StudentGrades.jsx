@@ -3,6 +3,8 @@ import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchTests } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+import { usePagination } from "../../utils/usePagination.js";
+import Pagination from "../../components/ui/Pagination.jsx";
 import CourseTag from "../../components/ui/CourseTag.jsx";
 
 function formatDate(iso) {
@@ -33,7 +35,7 @@ export default function StudentGrades() {
       .then((res) => !cancelled && setTests(res?.items ?? []))
       .catch((e) => !cancelled && setError(e.message || "Не удалось загрузить успеваемость"))
       .finally(() => !cancelled && setLoading(false));
-    return () => {
+  return () => {
       cancelled = true;
     };
   }, [user?.id]);
@@ -42,6 +44,8 @@ export default function StudentGrades() {
     () => tests.slice().sort((a, b) => (b.created_at || "").localeCompare(a.created_at || "")),
     [tests]
   );
+  const { page, setPage, pageItems: pagedItems } = usePagination(sorted, 10);
+
   const graded = sorted.filter((t) => t.grade != null);
   const avgGrade = graded.length ? graded.reduce((s, t) => s + t.grade, 0) / graded.length : null;
 
@@ -206,6 +210,9 @@ export default function StudentGrades() {
                 );
               })}
           </div>
+        {!loading && sorted.length > 0 && (
+          <Pagination page={page} pageSize={10} total={sorted.length} onPageChange={setPage} itemLabel="оценок" />
+        )}
         </section>
       </div>
     </DashboardShell>
