@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,10 +36,11 @@ type TelegramBot struct {
 	// telegram_ratelimit.go — Telegram-чаты бесплатны и их можно наплодить
 	// сколько угодно, per-chat лимита одного недостаточно).
 	lookupLimiter *globalRateLimiter
+	rateLimiter   *RateLimiter
 }
 
 // NewTelegramBot создаёт бота без запуска polling с retry при ошибке.
-func NewTelegramBot(token string, userRefRepo *repository.UserRefRepository, telegramUserRepo *repository.TelegramUserRepository, settingsRepo *repository.SettingsRepository) (*TelegramBot, error) {
+func NewTelegramBot(token string, userRefRepo *repository.UserRefRepository, telegramUserRepo *repository.TelegramUserRepository, settingsRepo *repository.SettingsRepository, sharedLimiters ...*RateLimiter) (*TelegramBot, error) {
 	var bot *tgbotapi.BotAPI
 	var err error
 
@@ -73,6 +75,10 @@ func NewTelegramBot(token string, userRefRepo *repository.UserRefRepository, tel
 		return nil, fmt.Errorf("telegram bot getMe: %w", err)
 	}
 
+	rateLimiter := NewRateLimiter(providerGlobalRate, telegramPerChatRate)
+	if len(sharedLimiters) > 0 && sharedLimiters[0] != nil {
+		rateLimiter = sharedLimiters[0]
+	}
 	log.Printf("telegram: bot initialized successfully as @%s (chat_id=%d)", me.UserName, me.ID)
 	return &TelegramBot{
 		bot:              bot,
@@ -84,6 +90,7 @@ func NewTelegramBot(token string, userRefRepo *repository.UserRefRepository, tel
 		stopCh:           make(chan struct{}),
 		chatLimiter:      newChatRateLimiter(5, 5*time.Minute, 5000),
 		lookupLimiter:    newGlobalRateLimiter(60, time.Minute),
+		rateLimiter:      rateLimiter,
 	}, nil
 }
 
@@ -137,7 +144,7 @@ func (b *TelegramBot) handleUpdate(ctx context.Context, update tgbotapi.Update) 
 	if !b.chatLimiter.Allow(chatID) {
 		msg := tgbotapi.NewMessage(chatID,
 			"⏳ Слишком много сообщений подряд. Пожалуйста, подождите несколько минут и попробуйте снова.")
-		if _, err := b.bot.Send(msg); err != nil {
+		if _, err := b.sendMessage(msg); err != nil {
 			log.Printf("telegram: send rate-limit message failed: %v", err)
 		}
 		return
@@ -160,7 +167,7 @@ func (b *TelegramBot) handleStart(ctx context.Context, chatID int64, username st
 			"Чтобы подключить уведомления, введите email, который вы указали при регистрации в Study Room.\n\n"+
 			"Это нужно для того, чтобы я знал, кому отправлять уведомления об оценках, занятиях и платежах.")
 
-	if _, err := b.bot.Send(msg); err != nil {
+	if _, err := b.sendMessage(msg); err != nil {
 		log.Printf("telegram: send start message failed: %v", err)
 	}
 }
@@ -172,7 +179,7 @@ func (b *TelegramBot) handleText(ctx context.Context, chatID int64, text string,
 	if !strings.Contains(text, "@") {
 		msg := tgbotapi.NewMessage(chatID,
 			"⚠️ Это не похоже на email. Пожалуйста, введите ваш email, указанный при регистрации в Study Room.")
-		if _, err := b.bot.Send(msg); err != nil {
+		if _, err := b.sendMessage(msg); err != nil {
 			log.Printf("telegram: send error message failed: %v", err)
 		}
 		return
@@ -188,7 +195,7 @@ func (b *TelegramBot) handleText(ctx context.Context, chatID int64, text string,
 	if !b.lookupLimiter.Allow() {
 		msg := tgbotapi.NewMessage(chatID,
 			"⏳ Сервис сейчас перегружен запросами. Попробуйте, пожалуйста, чуть позже.")
-		if _, err := b.bot.Send(msg); err != nil {
+		if _, err := b.sendMessage(msg); err != nil {
 			log.Printf("telegram: send lookup rate-limit message failed: %v", err)
 		}
 		return
@@ -208,7 +215,7 @@ func (b *TelegramBot) handleText(ctx context.Context, chatID int64, text string,
 			"🔍 Не получилось найти аккаунт по этому email.\n\n"+
 				"Проверьте, что вы вводите именно тот email, который указали при регистрации в Study Room.\n"+
 				"Если уверены, что всё верно — напишите в поддержку.")
-		if _, err := b.bot.Send(msg); err != nil {
+		if _, err := b.sendMessage(msg); err != nil {
 			log.Printf("telegram: send not found message failed: %v", err)
 		}
 		return
@@ -220,7 +227,7 @@ func (b *TelegramBot) handleText(ctx context.Context, chatID int64, text string,
 		log.Printf("telegram: check existing binding failed: %v", err)
 		msg := tgbotapi.NewMessage(chatID,
 			"❌ Ошибка при проверке привязки. Попробуйте позже.")
-		if _, err := b.bot.Send(msg); err != nil {
+		if _, err := b.sendMessage(msg); err != nil {
 			log.Printf("telegram: send error message failed: %v", err)
 		}
 		return
@@ -246,7 +253,7 @@ func (b *TelegramBot) handleText(ctx context.Context, chatID int64, text string,
 			log.Printf("telegram: create binding failed: %v", err)
 			msg := tgbotapi.NewMessage(chatID,
 				"❌ Ошибка при привязке Telegram к аккаунту. Попробуйте позже.")
-			if _, err := b.bot.Send(msg); err != nil {
+			if _, err := b.sendMessage(msg); err != nil {
 				log.Printf("telegram: send error message failed: %v", err)
 			}
 			return
@@ -294,9 +301,27 @@ func (b *TelegramBot) handleText(ctx context.Context, chatID int64, text string,
 	msg := tgbotapi.NewMessage(chatID,
 		fmt.Sprintf("✅ Отлично! Найдён аккаунт: %s\n\nУведомления через Telegram подключены!", displayName))
 
-	if _, err := b.bot.Send(msg); err != nil {
+	if _, err := b.sendMessage(msg); err != nil {
 		log.Printf("telegram: send success message failed: %v", err)
 	}
+}
+
+func (b *TelegramBot) sendMessage(msg tgbotapi.Chattable) (tgbotapi.Message, error) {
+	if msg == nil {
+		return tgbotapi.Message{}, fmt.Errorf("telegram: nil message")
+	}
+	// Для входящих команд используем тот же общий лимитер, что и массовая
+	// рассылка через Factory, чтобы ответы бота тоже не выбили общий лимит.
+	var key string
+	if m, ok := msg.(tgbotapi.MessageConfig); ok {
+		key = strconv.FormatInt(m.ChatID, 10)
+	}
+	if b.rateLimiter != nil {
+		if err := b.rateLimiter.Wait(context.Background(), key); err != nil {
+			return tgbotapi.Message{}, err
+		}
+	}
+	return b.bot.Send(msg)
 }
 
 // Stop останавливает polling.
