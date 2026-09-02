@@ -147,12 +147,13 @@ func (r *ContractRepository) ListByStudentIDs(ctx context.Context, studentIDs []
 }
 
 // UpdateFields — PATCH /contracts/{id} (api-contracts.md 3.4): end_date и/или amount.
-func (r *ContractRepository) UpdateFields(ctx context.Context, id int64, endDate *time.Time, amount *float64) (*models.Contract, error) {
+func (r *ContractRepository) UpdateFields(ctx context.Context, id int64, startDate, endDate *time.Time, amount *float64) (*models.Contract, error) {
 	query := `UPDATE contracts SET
-		end_date = COALESCE($1, end_date),
-		amount = COALESCE($2, amount)
-		WHERE id = $3 RETURNING ` + contractColumns
-	return scanContract(r.pool.QueryRow(ctx, query, endDate, amount, id))
+		start_date = COALESCE($1, start_date),
+		end_date = COALESCE($2, end_date),
+		amount = COALESCE($3, amount)
+		WHERE id = $4 RETURNING ` + contractColumns
+	return scanContract(r.pool.QueryRow(ctx, query, startDate, endDate, amount, id))
 }
 
 // UpdateStatus — PATCH /contracts/{id}/status (api-contracts.md 3.5).

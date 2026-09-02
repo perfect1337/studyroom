@@ -247,8 +247,9 @@ func (h *ContractHandler) Expiry(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateContractRequest struct {
-	EndDate *string  `json:"end_date"`
-	Amount  *float64 `json:"amount"`
+	StartDate *string  `json:"start_date"`
+	EndDate   *string  `json:"end_date"`
+	Amount    *float64 `json:"amount"`
 }
 
 // UpdateFields — PATCH /contracts/{id} (api-contracts.md 3.4), roles: owner
@@ -271,6 +272,15 @@ func (h *ContractHandler) UpdateFields(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var startDate *time.Time
+	if req.StartDate != nil {
+		d, err := time.Parse(dateLayout, *req.StartDate)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "start_date must be YYYY-MM-DD")
+			return
+		}
+		startDate = &d
+	}
 	var endDate *time.Time
 	if req.EndDate != nil {
 		d, err := time.Parse(dateLayout, *req.EndDate)
@@ -281,7 +291,42 @@ func (h *ContractHandler) UpdateFields(w http.ResponseWriter, r *http.Request) {
 		endDate = &d
 	}
 
-	contract, err := h.repo.UpdateFields(r.Context(), id, endDate, req.Amount)
+	// Раньше здесь можно было прислать только end_date/amount — start_date
+	// тихо игнорировался (не было даже поля в структуре запроса), из-за
+	// чего попытка передвинуть дату начала договора в модалке "Договор" на
+	// фронте (см. FinanceDirectory.jsx, handleEditContract) ни к чему не
+	// приводила: PATCH уходил, 200 OK возвращался, но start_date в БД не
+	// менялся, потому что репозиторий его и не трогал.
+	//
+	// Если меняется только одна из дат, вторую для валидации "конец после
+	// начала" берём из уже сохранённого договора — иначе, например, сдвиг
+	// одного только start_date вперёд мог бы молча пропустить случай, когда
+	// он в итоге оказался бы позже уже сохранённого end_date.
+	if startDate != nil || endDate != nil {
+		current, err := h.repo.GetByID(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "NOT_FOUND", "contract not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load contract")
+			return
+		}
+		effectiveStart := current.StartDate
+		if startDate != nil {
+			effectiveStart = *startDate
+		}
+		effectiveEnd := current.EndDate
+		if endDate != nil {
+			effectiveEnd = *endDate
+		}
+		if !effectiveEnd.After(effectiveStart) {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "end_date must be after start_date")
+			return
+		}
+	}
+
+	contract, err := h.repo.UpdateFields(r.Context(), id, startDate, endDate, req.Amount)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "contract not found")
