@@ -5,6 +5,7 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchLessons, fetchEnrollments, fetchCourses, fetchAttendance, assignHomework } from "../../api/academic.js";
 import { fetchMyPeople } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+import Pagination from "../../components/ui/Pagination.jsx";
 import TelegramConnectBanner from "../../components/notifications/TelegramConnectBanner.jsx";
 import { useTelegramConnectPrompt } from "../../hooks/useTelegramConnectPrompt.js";
 
@@ -40,6 +41,7 @@ export default function TutorOverview() {
   const [hwStudentId, setHwStudentId] = useState("");
   const [hwLink, setHwLink] = useState("");
   const [hwStatus, setHwStatus] = useState("");
+  const [studentsPage, setStudentsPage] = useState(1);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -60,8 +62,9 @@ export default function TutorOverview() {
 
         const lessonItems = (lessonsRes?.items ?? []).slice().sort((a, b) => a.start_time.localeCompare(b.start_time));
         setTodayLessons(lessonItems);
-        setEnrollments(enrollRes?.items ?? []);
+        setEnrollments((enrollRes?.items ?? []).filter((e) => e.status === "active"));
         setCourses(coursesRes?.items ?? []);
+        setStudentsPage(1);
 
         const byId = {};
         (peopleRes?.students ?? []).forEach((s) => (byId[s.id] = s));
@@ -98,6 +101,20 @@ export default function TutorOverview() {
     courses.forEach((c) => (map[c.id] = c));
     return map;
   }, [courses]);
+
+  const uniqueActiveStudents = useMemo(() => {
+    const seen = new Map();
+    enrollments.forEach((e) => {
+      if (!seen.has(e.student_id)) seen.set(e.student_id, e);
+    });
+    return Array.from(seen.values());
+  }, [enrollments]);
+
+  const STUDENTS_PAGE_SIZE = 6;
+  const pagedEnrollments = useMemo(
+    () => uniqueActiveStudents.slice((studentsPage - 1) * STUDENTS_PAGE_SIZE, studentsPage * STUDENTS_PAGE_SIZE),
+    [uniqueActiveStudents, studentsPage]
+  );
 
   const now = nowHHMM();
 
@@ -219,7 +236,7 @@ export default function TutorOverview() {
               {!loading && enrollments.length === 0 && (
                 <p className="text-on-surface-variant font-body-md text-sm">Пока нет закреплённых учеников.</p>
               )}
-              {enrollments.slice(0, 6).map((e) => {
+              {pagedEnrollments.map((e) => {
                 const student = studentsById[e.student_id];
                 const course = coursesById[e.course_id];
                 return (
@@ -247,6 +264,13 @@ export default function TutorOverview() {
                 );
               })}
             </div>
+            <Pagination
+              page={studentsPage}
+              pageSize={STUDENTS_PAGE_SIZE}
+              total={uniqueActiveStudents.length}
+              onPageChange={setStudentsPage}
+              itemLabel="учеников"
+            />
             <Link to="/tutor/students" className="mt-4 w-full block text-center text-primary font-label-md text-label-md hover:underline">
               Смотреть весь список
             </Link>

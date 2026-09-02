@@ -314,6 +314,16 @@ export default function TeacherDetail({ role = "owner" }) {
     .sort((a, b) => (a.lesson_date + a.start_time).localeCompare(b.lesson_date + b.start_time));
   const selectedDayLessons = selectedDay ? (lessonsByDay[selectedDay] ?? []) : [];
 
+  const LESSONS_PAGE_SIZE = 10;
+  const [lessonsPage, setLessonsPage] = useState(1);
+  useEffect(() => {
+    setLessonsPage(1);
+  }, [viewYear, viewMonth, upcomingLessons.length]);
+  const pagedLessons = useMemo(
+    () => upcomingLessons.slice((lessonsPage - 1) * LESSONS_PAGE_SIZE, lessonsPage * LESSONS_PAGE_SIZE),
+    [upcomingLessons, lessonsPage]
+  );
+
   const statusOptions = STATUS_OPTIONS_BY_ROLE[role] ?? STATUS_OPTIONS_BY_ROLE.branch_owner;
   const tutorStatus = teacher?.tutor_status ?? "active";
   const isFired = teacher && teacher.is_active === false;
@@ -661,7 +671,7 @@ export default function TeacherDetail({ role = "owner" }) {
                             <td colSpan={3} className="px-6 py-8 text-center text-on-surface-variant">Занятий в этом месяце не запланировано</td>
                           </tr>
                         )}
-                        {upcomingLessons.map((l) => {
+                        {pagedLessons.map((l) => {
                           const course = coursesById[l.course_id];
                           return (
                             <tr key={l.id} className="hover:bg-surface-container-low transition-colors">
@@ -685,7 +695,7 @@ export default function TeacherDetail({ role = "owner" }) {
                       {upcomingLessons.length === 0 && (
                         <div className="px-4 py-8 text-center text-on-surface-variant">Занятий в этом месяце не запланировано</div>
                       )}
-                      {upcomingLessons.map((l) => {
+                      {pagedLessons.map((l) => {
                         const course = coursesById[l.course_id];
                         return (
                           <div key={l.id} className="p-4 flex flex-col gap-1">
@@ -702,6 +712,13 @@ export default function TeacherDetail({ role = "owner" }) {
                         );
                       })}
                     </div>
+                    <Pagination
+                      page={lessonsPage}
+                      pageSize={LESSONS_PAGE_SIZE}
+                      total={upcomingLessons.length}
+                      onPageChange={setLessonsPage}
+                      itemLabel="занятий"
+                    />
                   </div>
                 </div>
               </section>
