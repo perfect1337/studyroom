@@ -70,6 +70,7 @@ export default function EditLessonModal({
   const [courseRoster, setCourseRoster] = useState([]); // [{id, student}] — активные записи на курс этого занятия
   const [participantsMode, setParticipantsMode] = useState("custom"); // "custom" | id подгруппы (строка)
   const [manualParticipantIds, setManualParticipantIds] = useState([]);
+  const [manualStudentQuery, setManualStudentQuery] = useState("");
 
   useEffect(() => {
     if (open && lesson) {
@@ -90,6 +91,7 @@ export default function EditLessonModal({
       setRosterError("");
       setParticipantsMode("custom");
       setManualParticipantIds(sortedIds(lesson.participant_ids));
+      setManualStudentQuery("");
     }
   }, [open, lesson]);
 
@@ -117,7 +119,13 @@ export default function EditLessonModal({
         const activeStudentIds = (enrollRes?.items ?? [])
           .filter((e) => e.status === "active")
           .map((e) => e.student_id);
-        const roster = sortedIds(activeStudentIds).map((id) => ({ id, student: studentsById[id] ?? null }));
+        const roster = sortedIds(activeStudentIds)
+          .map((id) => ({ id, student: studentsById[id] ?? null }))
+          .sort((a, b) => {
+            const nameA = a.student ? fullName(a.student) : `Ученик #${a.id}`;
+            const nameB = b.student ? fullName(b.student) : `Ученик #${b.id}`;
+            return nameA.localeCompare(nameB, "ru");
+          });
         setCourseRoster(roster);
 
         const subgroups = subgroupsRes?.items ?? [];
@@ -158,6 +166,17 @@ export default function EditLessonModal({
     const activeIds = new Set(courseRoster.map((r) => r.id));
     return sortedIds((selectedSubgroup.student_ids ?? []).filter((id) => activeIds.has(id)));
   }, [selectedSubgroup, courseRoster]);
+
+  // Отфильтрованный по поиску ФИО состав курса для ручного набора учеников.
+  // courseRoster уже отсортирован по алфавиту, filter сохраняет порядок.
+  const filteredCourseRoster = useMemo(() => {
+    const q = manualStudentQuery.trim().toLowerCase();
+    if (!q) return courseRoster;
+    return courseRoster.filter(({ id, student }) => {
+      const name = student ? fullName(student) : `Ученик #${id}`;
+      return name.toLowerCase().includes(q);
+    });
+  }, [courseRoster, manualStudentQuery]);
 
   function toggleManualStudent(studentId) {
     setManualParticipantIds((prev) =>
@@ -438,22 +457,45 @@ export default function EditLessonModal({
                         )}
                       </div>
                     ) : (
-                      <div className="flex flex-col gap-1 max-h-40 overflow-y-auto pr-1">
-                        {courseRoster.length === 0 && (
+                      <div className="flex flex-col gap-1">
+                        {courseRoster.length === 0 ? (
                           <p className="font-body-md text-[13px] text-on-surface-variant italic">
                             На этом курсе нет активных учеников.
                           </p>
+                        ) : (
+                          <>
+                            <div className="relative">
+                              <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant pointer-events-none">
+                                search
+                              </span>
+                              <input
+                                type="text"
+                                value={manualStudentQuery}
+                                onChange={(e) => setManualStudentQuery(e.target.value)}
+                                placeholder="Поиск ученика по ФИО…"
+                                className="w-full pl-8 pr-3 py-1.5 bg-surface border border-outline-variant rounded-lg font-body-md text-[13px] focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1 max-h-40 overflow-y-auto pr-1 mt-1">
+                              {filteredCourseRoster.length === 0 ? (
+                                <p className="font-body-md text-[13px] text-on-surface-variant italic">
+                                  Никто не найден по запросу «{manualStudentQuery}»
+                                </p>
+                              ) : (
+                                filteredCourseRoster.map(({ id, student }) => (
+                                  <label key={id} className="flex items-center gap-2 text-[13px] text-on-surface">
+                                    <input
+                                      type="checkbox"
+                                      checked={manualParticipantIds.includes(id)}
+                                      onChange={() => toggleManualStudent(id)}
+                                    />
+                                    {student ? fullName(student) : `Ученик #${id}`}
+                                  </label>
+                                ))
+                              )}
+                            </div>
+                          </>
                         )}
-                        {courseRoster.map(({ id, student }) => (
-                          <label key={id} className="flex items-center gap-2 text-[13px] text-on-surface">
-                            <input
-                              type="checkbox"
-                              checked={manualParticipantIds.includes(id)}
-                              onChange={() => toggleManualStudent(id)}
-                            />
-                            {student ? fullName(student) : `Ученик #${id}`}
-                          </label>
-                        ))}
                       </div>
                     )}
                   </>

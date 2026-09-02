@@ -65,11 +65,13 @@ export default function TutorNewLesson() {
   const [creatingSubgroup, setCreatingSubgroup] = useState(false);
   const [newSubgroupName, setNewSubgroupName] = useState("");
   const [newSubgroupStudentIds, setNewSubgroupStudentIds] = useState([]);
+  const [newSubgroupStudentQuery, setNewSubgroupStudentQuery] = useState("");
   const [subgroupError, setSubgroupError] = useState("");
   const [subgroupSubmitting, setSubgroupSubmitting] = useState(false);
   const [editingSubgroup, setEditingSubgroup] = useState(null);
   const [editSubgroupName, setEditSubgroupName] = useState("");
   const [editSubgroupStudentIds, setEditSubgroupStudentIds] = useState([]);
+  const [editSubgroupStudentQuery, setEditSubgroupStudentQuery] = useState("");
   const [editSubgroupError, setEditSubgroupError] = useState("");
   const [editSubgroupSubmitting, setEditSubgroupSubmitting] = useState(false);
 
@@ -200,6 +202,21 @@ export default function TutorNewLesson() {
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
   }, [enrollments, studentsById, selectedCourseId]);
 
+  // Список учеников курса, отфильтрованный по поиску ФИО, для формы создания подгруппы.
+  // courseStudents уже отсортирован по алфавиту, filter сохраняет порядок.
+  const newSubgroupFilteredStudents = useMemo(() => {
+    const q = newSubgroupStudentQuery.trim().toLowerCase();
+    if (!q) return courseStudents;
+    return courseStudents.filter((s) => s.name.toLowerCase().includes(q));
+  }, [courseStudents, newSubgroupStudentQuery]);
+
+  // То же самое, но для формы редактирования подгруппы.
+  const editSubgroupFilteredStudents = useMemo(() => {
+    const q = editSubgroupStudentQuery.trim().toLowerCase();
+    if (!q) return courseStudents;
+    return courseStudents.filter((s) => s.name.toLowerCase().includes(q));
+  }, [courseStudents, editSubgroupStudentQuery]);
+
   // Подгрупп конкретного курса загружаем лениво, только когда реально выбран
   // курс в режиме "группа" — не тянуть все подгруппы тьютора сразу.
   useEffect(() => {
@@ -240,6 +257,7 @@ export default function TutorNewLesson() {
     setCreatingSubgroup(false);
     setNewSubgroupName("");
     setNewSubgroupStudentIds([]);
+    setNewSubgroupStudentQuery("");
     setSubgroupError("");
   }
 
@@ -272,6 +290,7 @@ export default function TutorNewLesson() {
       setCreatingSubgroup(false);
       setNewSubgroupName("");
       setNewSubgroupStudentIds([]);
+      setNewSubgroupStudentQuery("");
     } catch (e) {
       setSubgroupError(e.message || "Не удалось создать группу");
     } finally {
@@ -284,6 +303,7 @@ export default function TutorNewLesson() {
     setEditingSubgroup(selectedSubgroup);
     setEditSubgroupName(selectedSubgroup.name ?? "");
     setEditSubgroupStudentIds((selectedSubgroup.student_ids ?? []).map(Number));
+    setEditSubgroupStudentQuery("");
     setEditSubgroupError("");
   }
 
@@ -317,6 +337,7 @@ export default function TutorNewLesson() {
       );
       setSelectedSubgroupId(updated?.id ?? editingSubgroup.id);
       setEditingSubgroup(null);
+      setEditSubgroupStudentQuery("");
     } catch (e) {
       setEditSubgroupError(e.message || "Не удалось обновить подгруппу");
     } finally {
@@ -667,7 +688,14 @@ export default function TutorNewLesson() {
                       <div className="mt-2 p-stack-md bg-surface-container-low rounded-lg flex flex-col gap-stack-sm border border-primary/30">
                         <div className="flex items-center justify-between">
                           <p className="font-label-md font-bold text-on-surface">Редактирование подгруппы</p>
-                          <button type="button" onClick={() => setEditingSubgroup(null)} className="p-1 hover:bg-surface-container rounded">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingSubgroup(null);
+                              setEditSubgroupStudentQuery("");
+                            }}
+                            className="p-1 hover:bg-surface-container rounded"
+                          >
                             <span className="material-symbols-outlined text-[18px]">close</span>
                           </button>
                         </div>
@@ -678,18 +706,50 @@ export default function TutorNewLesson() {
                           placeholder="Название подгруппы"
                           className="w-full px-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                         />
+                        <div className="relative">
+                          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant pointer-events-none">
+                            search
+                          </span>
+                          <input
+                            type="text"
+                            value={editSubgroupStudentQuery}
+                            onChange={(e) => setEditSubgroupStudentQuery(e.target.value)}
+                            placeholder="Поиск ученика по ФИО…"
+                            className="w-full pl-9 pr-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
+                          />
+                        </div>
+                        <div className="flex items-center justify-between px-1">
+                          <span className="font-body-md text-[12px] text-on-surface-variant">
+                            Выбрано: {editSubgroupStudentIds.length}
+                          </span>
+                          {editSubgroupStudentIds.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setEditSubgroupStudentIds([])}
+                              className="font-body-md text-[12px] text-primary hover:underline"
+                            >
+                              Снять выбор
+                            </button>
+                          )}
+                        </div>
                         <div className="flex flex-col gap-1 max-h-48 overflow-y-auto border border-outline-variant rounded-lg p-2">
-                          {courseStudents.map((student) => (
-                            <label key={student.id} className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-surface-container cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={editSubgroupStudentIds.includes(student.id)}
-                                onChange={() => toggleEditSubgroupStudent(student.id)}
-                                className="accent-primary"
-                              />
-                              <span className="font-body-md text-body-md text-on-surface">{student.name}</span>
-                            </label>
-                          ))}
+                          {editSubgroupFilteredStudents.length === 0 ? (
+                            <p className="font-body-md text-body-md text-on-surface-variant italic px-2 py-1">
+                              Никто не найден по запросу «{editSubgroupStudentQuery}»
+                            </p>
+                          ) : (
+                            editSubgroupFilteredStudents.map((student) => (
+                              <label key={student.id} className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-surface-container cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={editSubgroupStudentIds.includes(student.id)}
+                                  onChange={() => toggleEditSubgroupStudent(student.id)}
+                                  className="accent-primary"
+                                />
+                                <span className="font-body-md text-body-md text-on-surface">{student.name}</span>
+                              </label>
+                            ))
+                          )}
                         </div>
                         {editSubgroupError && <p className="font-body-md text-[12px] text-error">{editSubgroupError}</p>}
                         <div className="flex justify-end gap-2">
@@ -717,13 +777,47 @@ export default function TutorNewLesson() {
                           onChange={(e) => setNewSubgroupName(e.target.value)}
                           className="w-full px-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                         />
+                        {courseStudents.length > 0 && (
+                          <>
+                            <div className="relative">
+                              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant pointer-events-none">
+                                search
+                              </span>
+                              <input
+                                type="text"
+                                value={newSubgroupStudentQuery}
+                                onChange={(e) => setNewSubgroupStudentQuery(e.target.value)}
+                                placeholder="Поиск ученика по ФИО…"
+                                className="w-full pl-9 pr-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
+                              />
+                            </div>
+                            <div className="flex items-center justify-between px-1">
+                              <span className="font-body-md text-[12px] text-on-surface-variant">
+                                Выбрано: {newSubgroupStudentIds.length}
+                              </span>
+                              {newSubgroupStudentIds.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setNewSubgroupStudentIds([])}
+                                  className="font-body-md text-[12px] text-primary hover:underline"
+                                >
+                                  Снять выбор
+                                </button>
+                              )}
+                            </div>
+                          </>
+                        )}
                         <div className="flex flex-col gap-1 max-h-48 overflow-y-auto border border-outline-variant rounded-lg p-2">
                           {courseStudents.length === 0 ? (
                             <p className="font-body-md text-body-md text-on-surface-variant italic px-2 py-1">
                               На этом курсе нет учеников с активной записью
                             </p>
+                          ) : newSubgroupFilteredStudents.length === 0 ? (
+                            <p className="font-body-md text-body-md text-on-surface-variant italic px-2 py-1">
+                              Никто не найден по запросу «{newSubgroupStudentQuery}»
+                            </p>
                           ) : (
-                            courseStudents.map((s) => (
+                            newSubgroupFilteredStudents.map((s) => (
                               <label
                                 key={s.id}
                                 className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-surface-container cursor-pointer"
@@ -745,7 +839,10 @@ export default function TutorNewLesson() {
                         <div className="flex justify-end gap-2">
                           <button
                             type="button"
-                            onClick={() => setCreatingSubgroup(false)}
+                            onClick={() => {
+                              setCreatingSubgroup(false);
+                              setNewSubgroupStudentQuery("");
+                            }}
                             className="px-4 py-2 rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors"
                           >
                             Отмена

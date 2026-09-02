@@ -203,7 +203,7 @@ export default function RegisterPage() {
                     и{" "}
                     <a
                       className="text-primary hover:underline font-label-md"
-                      href="https://mestudyroom64.ru/privacy"
+                      href="https://studyroom64.ru/privacy"
                       target="_blank"
                       rel="noopener noreferrer"
                     >
