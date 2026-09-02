@@ -282,27 +282,40 @@ export default function PeopleDirectory({ role }) {
         });
 
         const contract = pickPriorityContract(matchingContracts);
+        // Плашка "Курсы" должна показывать ВСЕ активные курсы ученика
+        // (а не только курс выбранного выше приоритетного договора) —
+        // считаем по полному списку его enrollments, не по contractEnrollments.
+        const activeEnrollments = pEnrollments.filter((e) => e.status === "active");
 
         if (contract) {
           const contractEnrollments = pEnrollments.filter((e) => e.course_id === contract.course_id);
-          rows.push({ p, contract, pEnrollments: contractEnrollments });
+          rows.push({ p, contract, pEnrollments: contractEnrollments, activeEnrollments });
         } else if (pContracts.length === 0 && !subjectFilter) {
-          rows.push({ p, contract: null, pEnrollments });
+          rows.push({ p, contract: null, pEnrollments, activeEnrollments });
         }
         return;
       }
 
+      // Преподаватель должен видеть у "своего" ученика только его активные
+      // курсы — завершённые/приостановленные записи не должны попадать ни
+      // в плашку "Курсы", ни влиять на прогресс/статус в этом разделе.
+      // Для остальных ролей (parent) поведение не меняем.
+      const scopedEnrollments = isTutor
+        ? pEnrollments.filter((e) => e.status === "active")
+        : pEnrollments;
+
       if (subjectFilter) {
-        const hasSubject = pEnrollments.some((e) => coursesById[e.course_id]?.subject === subjectFilter);
+        const hasSubject = scopedEnrollments.some((e) => coursesById[e.course_id]?.subject === subjectFilter);
         if (!hasSubject) return;
       }
-      rows.push({ p, contract: null, pEnrollments });
+      rows.push({ p, contract: null, pEnrollments: scopedEnrollments });
     });
 
     return rows;
   }, [
     people,
     isOwner,
+    isTutor,
     branchFilter,
     subjectFilter,
     search,
@@ -319,11 +332,11 @@ export default function PeopleDirectory({ role }) {
   // договора, чтобы соседние договоры одного ученика не смешивались.
   const pagedRows = useMemo(
     () =>
-      pagedPeople.map(({ p, contract, pEnrollments }) => {
+      pagedPeople.map(({ p, contract, pEnrollments, activeEnrollments }) => {
         const avg = pEnrollments.length
           ? Math.round(pEnrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / pEnrollments.length)
           : 0;
-        return { p, pEnrollments, avg, contract };
+        return { p, pEnrollments, avg, contract, activeEnrollments: activeEnrollments ?? pEnrollments };
       }),
     [pagedPeople]
   );
@@ -508,7 +521,7 @@ export default function PeopleDirectory({ role }) {
                     </td>
                   </tr>
                 )}
-                {pagedRows.map(({ p, pEnrollments, avg, contract }) => {
+                {pagedRows.map(({ p, pEnrollments, avg, contract, activeEnrollments }) => {
                   return (
                     <tr
                       key={contract ? `contract-${contract.id}` : `student-${p.id}`}
@@ -531,7 +544,17 @@ export default function PeopleDirectory({ role }) {
                       <td className="px-6 py-4">
                         <div className="flex flex-wrap gap-1">
                           {showContracts ? (
-                            contract ? (
+                            // Плашка показывает ВСЕ активные курсы ученика (может быть
+                            // несколько параллельных), а не только курс приоритетного
+                            // договора из колонки статуса/срока. Если активных курсов
+                            // нет — откатываемся к курсу договора, чтобы ячейка не была пустой.
+                            activeEnrollments.length > 0 ? (
+                              activeEnrollments.map((e) => (
+                                <span key={e.id} className="px-2 py-1 bg-surface-variant rounded text-[11px] font-bold text-primary">
+                                  {coursesById[e.course_id]?.title ?? coursesById[e.course_id]?.subject ?? `#${e.course_id}`}
+                                </span>
+                              ))
+                            ) : contract ? (
                               <span className="px-2 py-1 bg-surface-variant rounded text-[11px] font-bold text-primary">
                                 {coursesById[contract.course_id]?.title ?? coursesById[contract.course_id]?.subject ?? `#${contract.course_id}`}
                               </span>
@@ -588,7 +611,7 @@ export default function PeopleDirectory({ role }) {
                   {isParent ? "У вас пока нет добавленных детей." : "Учеников не найдено"}
                 </div>
               )}
-              {pagedRows.map(({ p, pEnrollments, avg, contract }) => (
+              {pagedRows.map(({ p, pEnrollments, avg, contract, activeEnrollments }) => (
                 <div
                   key={contract ? `contract-${contract.id}` : `student-${p.id}`}
                   onClick={() => navigate(detailPath(p.id))}
@@ -609,7 +632,15 @@ export default function PeopleDirectory({ role }) {
 
                   <div className="flex flex-wrap gap-1">
                     {showContracts ? (
-                      contract ? (
+                      // Как и в десктопной таблице — все активные курсы ученика,
+                      // с откатом на курс договора, если активных нет.
+                      activeEnrollments.length > 0 ? (
+                        activeEnrollments.map((e) => (
+                          <span key={e.id} className="px-2 py-1 bg-surface-variant rounded text-[11px] font-bold text-primary">
+                            {coursesById[e.course_id]?.title ?? coursesById[e.course_id]?.subject ?? `#${e.course_id}`}
+                          </span>
+                        ))
+                      ) : contract ? (
                         <span className="px-2 py-1 bg-surface-variant rounded text-[11px] font-bold text-primary">
                           {coursesById[contract.course_id]?.title ?? coursesById[contract.course_id]?.subject ?? `#${contract.course_id}`}
                         </span>
