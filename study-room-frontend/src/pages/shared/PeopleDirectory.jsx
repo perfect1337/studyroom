@@ -18,6 +18,28 @@ const CONTRACT_STATUS_LABEL = {
   completed: "Завершён",
 };
 
+// Приоритет статуса договора для дедупликации ученика в списке: если у
+// ученика несколько договоров (например, один завершён, другой активен),
+// в разделе "Ученики" показываем только САМЫЙ приоритетный — актуальный —
+// договор, а не строку на каждый договор. Активный важнее расторгнутого,
+// расторгнутый важнее завершённого. Чем меньше число — тем выше приоритет.
+const CONTRACT_STATUS_PRIORITY = {
+  active: 0,
+  terminated: 1,
+  completed: 2,
+};
+
+function pickPriorityContract(contractsList) {
+  if (!contractsList.length) return null;
+  return [...contractsList].sort((a, b) => {
+    const pa = CONTRACT_STATUS_PRIORITY[a.status] ?? 99;
+    const pb = CONTRACT_STATUS_PRIORITY[b.status] ?? 99;
+    if (pa !== pb) return pa - pb;
+    // При равном приоритете статуса — более свежий договор (по дате начала) выше.
+    return new Date(b.start_date ?? 0) - new Date(a.start_date ?? 0);
+  })[0];
+}
+
 // Статус записи на курс (enrollment.status) — раньше бейдж всегда был
 // зелёным ("Активен") независимо от реального значения, из-за чего
 // приостановленные/завершённые записи выглядели визуально "поплывшими"
@@ -233,9 +255,10 @@ export default function PeopleDirectory({ role }) {
     return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
   }, [courses]);
 
-  // Для owner/branch_owner каждая строка — отдельный договор. Один ученик
-  // может поэтому отображаться несколько раз: курс, срок и статус относятся
-  // именно к конкретной записи договора, а не к "последнему" договору ученика.
+  // Для owner/branch_owner одна строка = один ученик. Если у ученика
+  // несколько договоров, берём один самый приоритетный/актуальный
+  // (см. pickPriorityContract) — курс, срок и статус в строке относятся
+  // именно к этому договору.
   const filteredPeople = useMemo(() => {
     const query = search.trim().toLowerCase();
     const rows = [];
@@ -248,18 +271,21 @@ export default function PeopleDirectory({ role }) {
       const pContracts = contractsByStudent[p.id] ?? [];
 
       if (showContracts) {
-        // В таблице договора должны быть отдельными строками. Фильтр предмета
-        // применяется к конкретному договору, а не ко всему ученику.
+        // Один ученик — одна строка. Если у ученика несколько договоров
+        // (например, курс уже завершён и параллельно есть новый активный),
+        // показываем только самый приоритетный/актуальный — активный важнее
+        // расторгнутого, расторгнутый важнее завершённого (см.
+        // CONTRACT_STATUS_PRIORITY) — а не плодим дубли ученика в списке.
         const matchingContracts = pContracts.filter((c) => {
           if (!subjectFilter) return true;
           return coursesById[c.course_id]?.subject === subjectFilter;
         });
 
-        if (matchingContracts.length > 0) {
-          matchingContracts.forEach((contract) => {
-            const contractEnrollments = pEnrollments.filter((e) => e.course_id === contract.course_id);
-            rows.push({ p, contract, pEnrollments: contractEnrollments });
-          });
+        const contract = pickPriorityContract(matchingContracts);
+
+        if (contract) {
+          const contractEnrollments = pEnrollments.filter((e) => e.course_id === contract.course_id);
+          rows.push({ p, contract, pEnrollments: contractEnrollments });
         } else if (pContracts.length === 0 && !subjectFilter) {
           rows.push({ p, contract: null, pEnrollments });
         }
