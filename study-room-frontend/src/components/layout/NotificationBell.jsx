@@ -23,6 +23,9 @@ export default function NotificationBell() {
   const [error, setError] = useState("");
   const [copiedId, setCopiedId] = useState(null);
   const containerRef = useRef(null);
+  const listRef = useRef(null);
+  const itemRefs = useRef(new Map());
+  const markingRef = useRef(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -49,6 +52,29 @@ export default function NotificationBell() {
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
+
+  // При открытии колокольчика автоматически отмечаем прочитанными только те
+  // уведомления, которые реально видны в области прокрутки. Остальные будут
+  // отмечены, когда пользователь доскроллит до них.
+  useEffect(() => {
+    if (!open || !listRef.current || items.length === 0) return;
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting || entry.intersectionRatio < 0.75) return;
+        const id = Number(entry.target.dataset.notificationId);
+        const item = items.find((notification) => notification.id === id);
+        if (!item || item.is_read || markingRef.current.has(id)) return;
+        markingRef.current.add(id);
+        setItems((prev) => prev.map((it) => (it.id === id ? { ...it, is_read: true } : it)));
+        markNotificationRead(id)
+          .catch(() => setItems((prev) => prev.map((it) => (it.id === id ? { ...it, is_read: false } : it))))
+          .finally(() => markingRef.current.delete(id));
+      });
+    }, { root: listRef.current, threshold: [0.75, 1] });
+
+    itemRefs.current.forEach((node) => node && observer.observe(node));
+    return () => observer.disconnect();
+  }, [open, items]);
 
   const unreadCount = items.filter((n) => !n.is_read).length;
 
@@ -95,7 +121,7 @@ export default function NotificationBell() {
             <span className="font-label-md text-on-surface font-bold">Уведомления</span>
             {unreadCount > 0 && <span className="text-[12px] text-on-surface-variant">{unreadCount} новых</span>}
           </div>
-          <div className="max-h-96 overflow-y-auto">
+          <div ref={listRef} className="max-h-96 overflow-y-auto">
             {loading && <div className="p-4 text-sm text-on-surface-variant">Загрузка…</div>}
             {!loading && error && <div className="p-4 text-sm text-error">{error}</div>}
             {!loading && !error && items.length === 0 && (
@@ -106,6 +132,11 @@ export default function NotificationBell() {
               items.map((n) => (
                 <div
                   key={n.id}
+                  ref={(node) => {
+                    if (node) itemRefs.current.set(n.id, node);
+                    else itemRefs.current.delete(n.id);
+                  }}
+                  data-notification-id={n.id}
                   className={`w-full border-b border-outline-variant last:border-0 hover:bg-surface-container transition-colors ${
                     n.is_read ? "" : "bg-primary-fixed/10"
                   }`}

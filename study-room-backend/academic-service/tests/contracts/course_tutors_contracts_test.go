@@ -68,9 +68,9 @@ func TestEnrollments_TutorStudents_BySameCourse(t *testing.T) {
 	e := getEnv(t)
 	owner := e.accessToken(1, models.RoleOwner, nil)
 
-	courseA := e.seedCourse("Алгебра", 1)  // курс филиала 1, ведёт tutor 15
-	courseB := e.seedCourse("Физика", 1)   // курс филиала 1, ведёт другой tutor
-	courseC := e.seedCourse("Химия", 2)    // курс филиала 2
+	courseA := e.seedCourse("Алгебра", 1) // курс филиала 1, ведёт tutor 15
+	courseB := e.seedCourse("Физика", 1)  // курс филиала 1, ведёт другой tutor
+	courseC := e.seedCourse("Химия", 2)   // курс филиала 2
 
 	mustCreate := func(studentID, courseID int64) {
 		res := e.do("POST", "/api/v1/academic/enrollments", map[string]any{"student_id": studentID, "course_id": courseID}, owner)

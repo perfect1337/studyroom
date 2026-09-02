@@ -59,14 +59,14 @@ type DeletedUserInfo struct {
 }
 
 type UserEvent struct {
-	ID           int64   `json:"id"`
-	Email        string  `json:"email"`
-	FirstName    string  `json:"first_name"`
-	LastName     string  `json:"last_name"`
-	Role         string  `json:"role"`
-	BranchID     *int64  `json:"branch_id,omitempty"`
-	TempPassword string  `json:"temp_password,omitempty"`
-	NotifyEmail  string  `json:"notify_email,omitempty"` // куда слать credentials (родитель ученика)
+	ID           int64  `json:"id"`
+	Email        string `json:"email"`
+	FirstName    string `json:"first_name"`
+	LastName     string `json:"last_name"`
+	Role         string `json:"role"`
+	BranchID     *int64 `json:"branch_id,omitempty"`
+	TempPassword string `json:"temp_password,omitempty"`
+	NotifyEmail  string `json:"notify_email,omitempty"` // куда слать credentials (родитель ученика)
 	// ParentID — только для role=student, id родителя (parent_student.parent_id).
 	// Добавлено, чтобы Notification Service мог резолвить
 	// student_id → parent_id локально при attendance.marked_absent,

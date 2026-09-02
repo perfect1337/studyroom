@@ -22,10 +22,10 @@ const (
 // проверять роль/филиал репетитора или ученика локально, без синхронного
 // похода в User Service на каждый запрос (см. microservices-plan.md, 2.4).
 type UserRef struct {
-	UserID   int64   `json:"user_id"`
-	FullName string  `json:"full_name"`
-	Role     Role    `json:"role"`
-	BranchID *int64  `json:"branch_id"`
+	UserID   int64  `json:"user_id"`
+	FullName string `json:"full_name"`
+	Role     Role   `json:"role"`
+	BranchID *int64 `json:"branch_id"`
 }
 
 type CourseFormat string
@@ -166,11 +166,11 @@ const (
 
 // Attendance — соответствует таблице attendance.
 type Attendance struct {
-	ID             int64            `json:"id"`
-	LessonID       int64            `json:"lesson_id"`
-	StudentID      int64            `json:"student_id"`
-	Status         AttendanceStatus `json:"status"`
-	AbsenceReason  *string          `json:"absence_reason,omitempty"`
+	ID            int64            `json:"id"`
+	LessonID      int64            `json:"lesson_id"`
+	StudentID     int64            `json:"student_id"`
+	Status        AttendanceStatus `json:"status"`
+	AbsenceReason *string          `json:"absence_reason,omitempty"`
 }
 
 type HomeworkStatus string

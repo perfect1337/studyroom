@@ -22,7 +22,7 @@ import (
 )
 
 type cachedChildren struct {
-	ids      []int64
+	ids       []int64
 	expiresAt time.Time
 }
 

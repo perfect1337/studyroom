@@ -18,11 +18,11 @@ type WhatsAppProvider struct {
 }
 
 type whatsappMessageRequest struct {
-	MessagingProduct string           `json:"messaging_product"`
-	RecipientType    string           `json:"recipient_type"`
-	To               string           `json:"to"`
-	Type             string           `json:"type"`
-	Text             whatsappText     `json:"text"`
+	MessagingProduct string       `json:"messaging_product"`
+	RecipientType    string       `json:"recipient_type"`
+	To               string       `json:"to"`
+	Type             string       `json:"type"`
+	Text             whatsappText `json:"text"`
 }
 
 type whatsappText struct {
@@ -41,14 +41,14 @@ type whatsappContact struct {
 }
 
 type whatsappMsg struct {
-	ID  string `json:"id"`
+	ID string `json:"id"`
 }
 
 type whatsappError struct {
-	Code          int    `json:"code"`
-	Message       string `json:"message"`
-	ErrorData     whatsappErrorData `json:"error_data,omitempty"`
-	StatusCode    int    `json:"error_details,omitempty"`
+	Code       int               `json:"code"`
+	Message    string            `json:"message"`
+	ErrorData  whatsappErrorData `json:"error_data,omitempty"`
+	StatusCode int               `json:"error_details,omitempty"`
 }
 
 type whatsappErrorData struct {

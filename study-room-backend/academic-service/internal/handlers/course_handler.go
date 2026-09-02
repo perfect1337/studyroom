@@ -12,13 +12,13 @@ import (
 )
 
 type CourseHandler struct {
-	repo     *repository.CourseRepository
-	userRefs *repository.UserRefRepository
+	repo       *repository.CourseRepository
+	userRefs   *repository.UserRefRepository
 	enrollRepo *repository.EnrollmentRepository
 	userClient ChildrenResolver
 }
 
-func NewCourseHandler(repo *repository.CourseRepository, userRefs *repository.UserRefRepository, enrollRepo *repository.EnrollmentRepository, userClient ChildrenResolver ) *CourseHandler {
+func NewCourseHandler(repo *repository.CourseRepository, userRefs *repository.UserRefRepository, enrollRepo *repository.EnrollmentRepository, userClient ChildrenResolver) *CourseHandler {
 	return &CourseHandler{repo: repo, userRefs: userRefs, enrollRepo: enrollRepo, userClient: userClient}
 }
 
@@ -42,23 +42,23 @@ func NewCourseHandler(repo *repository.CourseRepository, userRefs *repository.Us
 // tutor_id ему запрещён, чтобы не подглядывать нагрузку других
 // преподавателей.
 func (h *CourseHandler) List(w http.ResponseWriter, r *http.Request) {
-    claims, _ := middleware.FromContext(r.Context())
-    filter := repository.CourseFilter{Subject: r.URL.Query().Get("subject")}
+	claims, _ := middleware.FromContext(r.Context())
+	filter := repository.CourseFilter{Subject: r.URL.Query().Get("subject")}
 
-    if v, ok := parseIntQuery(r, "tutor_id"); ok && v != nil {
-        if claims.Role == models.RoleTutor && *v != claims.UserID {
-            writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor can only filter by their own tutor_id")
-            return
-        }
-        filter.TutorID = v
-    }
+	if v, ok := parseIntQuery(r, "tutor_id"); ok && v != nil {
+		if claims.Role == models.RoleTutor && *v != claims.UserID {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor can only filter by their own tutor_id")
+			return
+		}
+		filter.TutorID = v
+	}
 
-    courses, err := h.repo.List(r.Context(), filter)
-    if err != nil {
-        writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list courses")
-        return
-    }
-    writeJSON(w, http.StatusOK, map[string]any{"items": nonNilCourses(courses)})
+	courses, err := h.repo.List(r.Context(), filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list courses")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": nonNilCourses(courses)})
 }
 
 func nonNilCourses(c []*models.Course) []*models.Course {
@@ -69,10 +69,10 @@ func nonNilCourses(c []*models.Course) []*models.Course {
 }
 
 type createCourseRequest struct {
-	Title       string             `json:"title"`
-	Subject     string             `json:"subject"`
+	Title       string              `json:"title"`
+	Subject     string              `json:"subject"`
 	Format      models.CourseFormat `json:"format"`
-	Description *string            `json:"description"`
+	Description *string             `json:"description"`
 }
 
 // Create — POST /courses, roles: owner, branch_owner. Курс общий для всей
@@ -104,10 +104,10 @@ func (h *CourseHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateCourseRequest struct {
-	Title       *string             `json:"title"`
-	Subject     *string             `json:"subject"`
+	Title       *string              `json:"title"`
+	Subject     *string              `json:"subject"`
 	Format      *models.CourseFormat `json:"format"`
-	Description *string             `json:"description"`
+	Description *string              `json:"description"`
 }
 
 // Update — PATCH /courses/{id}, roles: owner, branch_owner. Курс общий для

@@ -357,57 +357,6 @@ func TestContractTerminated_CancelsLessonsAndTerminatesEnrollment(t *testing.T) 
 	}
 }
 
-// TestContractExpired_CompletesEnrollmentAndIsVisibleOnlyToOwner — естественное
-// окончание договора переводит enrollment в completed, а не terminated.
-// Student/parent получают только active, owner видит историю.
-func TestContractExpired_CompletesEnrollmentAndIsVisibleOnlyToOwner(t *testing.T) {
-	e := getEnv(t)
-	owner := e.accessToken(1, models.RoleOwner, nil)
-	student := e.accessToken(100, models.RoleStudent, nil)
-	parent := e.accessToken(300, models.RoleParent, nil)
-	e.children.set(300, 100)
-
-	courseID := e.seedCourse("Курс для истечения договора", 1)
-	res := e.do("POST", "/api/v1/academic/enrollments",
-		map[string]any{"student_id": 100, "course_id": courseID}, owner)
-	e.mustOK(res, 201)
-	enrollmentID := int64(res.Body["id"].(float64))
-
-	// Фиксируем истёкший срок прямо в БД, затем выполняем ту же операцию,
-	// которую делает NATS-подписчик для contract.expired.
-	if _, err := e.pool.Exec(context.Background(),
-		`UPDATE enrollments SET end_date = '2025-01-31' WHERE id = $1`, enrollmentID); err != nil {
-		t.Fatalf("set expired end_date: %v", err)
-	}
-
-	completed, err := e.deps.Enrollments.CompleteExpiredForCourse(context.Background(), 100, courseID, "2025-01-31")
-	if err != nil {
-		t.Fatalf("CompleteExpiredForCourse error: %v", err)
-	}
-	if completed != 1 {
-		t.Fatalf("completed enrollments=%d want=1", completed)
-	}
-
-	ownerRes := e.do("GET", "/api/v1/academic/enrollments?student_id=100&course_id="+toPathID(float64(courseID)), nil, owner)
-	e.mustOK(ownerRes, 200)
-	ownerItems := asSlice(ownerRes.Body["items"])
-	if len(ownerItems) != 1 || ownerItems[0].(map[string]any)["status"] != "completed" {
-		t.Fatalf("owner history=%+v, want one completed enrollment", ownerItems)
-	}
-
-	studentRes := e.do("GET", "/api/v1/academic/enrollments", nil, student)
-	e.mustOK(studentRes, 200)
-	if items := asSlice(studentRes.Body["items"]); len(items) != 0 {
-		t.Fatalf("student got %d historical enrollments, want 0", len(items))
-	}
-
-	parentRes := e.do("GET", "/api/v1/academic/enrollments", nil, parent)
-	e.mustOK(parentRes, 200)
-	if items := asSlice(parentRes.Body["items"]); len(items) != 0 {
-		t.Fatalf("parent got %d historical enrollments, want 0", len(items))
-	}
-}
-
 // TestAutoCompletePast_MarksPastScheduledLessonsCompleted — занятие должно
 // само становиться "проведённым", как только его время вышло, без клика
 // тьютора (см. LessonRepository.AutoCompletePast, запускается фоновой

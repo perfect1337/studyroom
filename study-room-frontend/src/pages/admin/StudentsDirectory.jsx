@@ -115,19 +115,28 @@ export default function StudentsDirectory({ role }) {
     return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
   }, [courses]);
 
-  const filteredStudents = useMemo(() => {
-    return students.filter((st) => {
-      if (isOwner && branchFilter && String(st.branch_id) !== String(branchFilter)) return false;
-      if (subjectFilter) {
-        const studentEnrollments = enrollmentsByStudent[st.id] ?? [];
-        const hasSubject = studentEnrollments.some((e) => coursesById[e.course_id]?.subject === subjectFilter);
-        if (!hasSubject) return false;
+  const filteredRows = useMemo(() => {
+    const rows = [];
+    students.forEach((st) => {
+      if (isOwner && branchFilter && String(st.branch_id) !== String(branchFilter)) return;
+      const studentEnrollments = enrollmentsByStudent[st.id] ?? [];
+      const studentContracts = contractsByStudent[st.id] ?? [];
+      const matchingContracts = studentContracts.filter((c) => {
+        if (!subjectFilter) return true;
+        return coursesById[c.course_id]?.subject === subjectFilter;
+      });
+      if (matchingContracts.length > 0) {
+        matchingContracts.forEach((contract) => {
+          rows.push({ st, contract, enrollments: studentEnrollments.filter((e) => e.course_id === contract.course_id) });
+        });
+      } else if (studentContracts.length === 0 && !subjectFilter) {
+        rows.push({ st, contract: null, enrollments: studentEnrollments });
       }
-      return true;
     });
-  }, [students, isOwner, branchFilter, subjectFilter, enrollmentsByStudent, coursesById]);
+    return rows;
+  }, [students, isOwner, branchFilter, subjectFilter, enrollmentsByStudent, contractsByStudent, coursesById]);
 
-  const { page, setPage, pageItems: pagedStudents } = usePagination(filteredStudents, PAGE_SIZE);
+  const { page, setPage, pageItems: pagedStudents } = usePagination(filteredRows, PAGE_SIZE);
 
   return (
     <DashboardShell
@@ -211,21 +220,18 @@ export default function StudentsDirectory({ role }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/20">
-                {!loading && filteredStudents.length === 0 && (
+                {!loading && filteredRows.length === 0 && (
                   <tr>
                     <td colSpan={5} className="px-6 py-8 text-center text-on-surface-variant">Учеников не найдено</td>
                   </tr>
                 )}
-                {pagedStudents.map((st) => {
-                  const studentEnrollments = enrollmentsByStudent[st.id] ?? [];
+                {pagedStudents.map(({ st, contract, enrollments: studentEnrollments }) => {
                   const avg = studentEnrollments.length
                     ? Math.round(studentEnrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / studentEnrollments.length)
                     : 0;
-                  const studentContracts = contractsByStudent[st.id] ?? [];
-                  const latestContract = studentContracts[0];
                   return (
                     <tr
-                      key={st.id}
+                      key={contract ? `contract-${contract.id}` : `student-${st.id}`}
                       onClick={() => navigate(studentDetailPath(st.id))}
                       className="hover:bg-surface-container-low transition-colors group cursor-pointer"
                     >
@@ -252,7 +258,7 @@ export default function StudentsDirectory({ role }) {
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-[13px] text-on-surface">
-                          {latestContract ? `${latestContract.start_date} — ${latestContract.end_date}` : "—"}
+                          {contract ? `${new Date(contract.start_date).toLocaleDateString("ru-RU")} — ${new Date(contract.end_date).toLocaleDateString("ru-RU")}` : "—"}
                         </div>
                       </td>
                       <td className="px-6 py-4">
@@ -263,10 +269,10 @@ export default function StudentsDirectory({ role }) {
                       <td className="px-6 py-4">
                         <span
                           className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase ${
-                            !latestContract || latestContract.status === "active" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
+                            contract?.status === "active" ? "bg-green-100 text-green-700" : contract?.status === "completed" ? "bg-blue-100 text-blue-700" : contract?.status === "terminated" ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-700"
                           }`}
                         >
-                          {latestContract ? CONTRACT_STATUS_LABEL[latestContract.status] ?? latestContract.status : "Без договора"}
+                          {contract ? CONTRACT_STATUS_LABEL[contract.status] ?? contract.status : "Без договора"}
                         </span>
                       </td>
                     </tr>
@@ -274,7 +280,7 @@ export default function StudentsDirectory({ role }) {
                 })}
               </tbody>
             </table>
-            <Pagination page={page} pageSize={PAGE_SIZE} total={filteredStudents.length} onPageChange={setPage} itemLabel="учеников" />
+            <Pagination page={page} pageSize={PAGE_SIZE} total={filteredRows.length} onPageChange={setPage} itemLabel="записей" />
           </div>
         </section>
       </div>

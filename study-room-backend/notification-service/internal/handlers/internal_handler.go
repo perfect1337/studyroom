@@ -51,13 +51,13 @@ func (h *InternalHandler) Send(w http.ResponseWriter, r *http.Request) {
 }
 
 type syncUserRequest struct {
-	ID           int64  `json:"id"`
-	Email        string `json:"email"`
-	FirstName    string `json:"first_name"`
-	LastName     string `json:"last_name"`
-	Phone        string `json:"phone,omitempty"`
-	TelegramID   string `json:"telegram_id,omitempty"`
-	WhatsAppID   string `json:"whatsapp_id,omitempty"`
+	ID         int64  `json:"id"`
+	Email      string `json:"email"`
+	FirstName  string `json:"first_name"`
+	LastName   string `json:"last_name"`
+	Phone      string `json:"phone,omitempty"`
+	TelegramID string `json:"telegram_id,omitempty"`
+	WhatsAppID string `json:"whatsapp_id,omitempty"`
 }
 
 // POST /internal/users/sync — наполняет users_ref данными пользователя,

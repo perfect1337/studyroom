@@ -185,6 +185,21 @@ export default function TeachersDirectory({ role }) {
     return tutors.filter((t) => (t.tutor_status ?? "active") === statusFilter);
   }, [tutors, statusFilter]);
 
+  const specializationsByTutor = useMemo(() => {
+    const map = {};
+    tutors.forEach((t) => {
+      const fromCourses = courses
+        .filter((c) => (c.tutor_ids ?? []).includes(Number(t.id)))
+        .map((c) => c.subject || c.title)
+        .filter(Boolean);
+      const fallback = t.specialization
+        ? String(t.specialization).split(/[,;]\s*/).map((v) => v.trim()).filter(Boolean)
+        : [];
+      map[t.id] = Array.from(new Set(fromCourses.length ? fromCourses : fallback));
+    });
+    return map;
+  }, [tutors, courses]);
+
   const statusOptions = STATUS_OPTIONS_BY_ROLE[role] ?? STATUS_OPTIONS_BY_ROLE.branch_owner;
 
   const { page, setPage, pageItems: pagedTutors } = usePagination(visibleTutors, PAGE_SIZE);
@@ -417,7 +432,7 @@ export default function TeachersDirectory({ role }) {
                     </td>
                     <td className="px-6 py-4">
                       <span className="inline-block whitespace-nowrap bg-primary-fixed text-on-primary-fixed px-3 py-1 rounded-full text-label-md font-medium">
-                        {t.specialization || "—"}
+                        {(specializationsByTutor[t.id] ?? []).join(", ") || "—"}
                       </span>
                     </td>
                     {isOwner && (
@@ -479,7 +494,7 @@ export default function TeachersDirectory({ role }) {
                       <div className="text-[12px] text-on-surface-variant">ID: {t.id}</div>
                     </div>
                     <span className="inline-block whitespace-nowrap bg-primary-fixed text-on-primary-fixed px-2.5 py-1 rounded-full text-[11px] font-medium">
-                      {t.specialization || "—"}
+                      {(specializationsByTutor[t.id] ?? []).join(", ") || "—"}
                     </span>
                   </div>
 

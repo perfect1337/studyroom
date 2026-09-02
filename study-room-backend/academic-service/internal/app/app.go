@@ -73,7 +73,7 @@ func NewRouter(d *Deps) http.Handler {
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	r.Get("/openapi.yaml", openapi.SpecHandler)
 	r.Get("/docs", openapi.DocsHandler)
- 
+
 	r.Route("/api/v1/academic", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth(d.TM))
