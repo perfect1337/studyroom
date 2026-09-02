@@ -83,6 +83,7 @@ export default function StudentDetail({ role = "parent" }) {
 
   const [child, setChild] = useState(null);
   const [enrollments, setEnrollments] = useState([]);
+  const [showCourseHistory, setShowCourseHistory] = useState(false);
   const [courses, setCourses] = useState([]);
   const [homework, setHomework] = useState([]);
   const [tests, setTests] = useState([]);
@@ -249,6 +250,16 @@ export default function StudentDetail({ role = "parent" }) {
     return map;
   }, [courses]);
 
+  const currentEnrollments = useMemo(
+    () => enrollments.filter((e) => e.status === "active" || e.status === "paused"),
+    [enrollments]
+  );
+
+  const archivedEnrollments = useMemo(
+    () => enrollments.filter((e) => e.status === "completed" || e.status === "terminated"),
+    [enrollments]
+  );
+
   const tutorsById = useMemo(() => {
     const map = {};
     tutors.forEach((t) => (map[t.id] = t));
@@ -391,14 +402,26 @@ export default function StudentDetail({ role = "parent" }) {
 
         <div className="grid grid-cols-12 gap-gutter">
           <section className="col-span-12 lg:col-span-8 space-y-stack-md">
-            <div className="flex justify-between items-center">
-              <h3 className="font-headline-sm text-headline-sm text-on-surface">Курсы ученика</h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="font-headline-sm text-headline-sm text-on-surface">Курсы ученика</h3>
+                <p className="text-[13px] text-on-surface-variant mt-1">
+                  {currentEnrollments.length > 0
+                    ? `${currentEnrollments.length} ${currentEnrollments.length === 1 ? "текущий курс" : "текущих курса"}`
+                    : "Сейчас нет активных курсов"}
+                </p>
+              </div>
             </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-stack-md">
-              {enrollments.length === 0 && (
-                <p className="text-on-surface-variant font-body-md">Ученик пока не записан ни на один курс.</p>
+              {currentEnrollments.length === 0 && (
+                <div className="md:col-span-2 rounded-xl border border-dashed border-outline-variant bg-surface-container-low p-6 text-center">
+                  <span className="material-symbols-outlined text-[28px] text-on-surface-variant mb-2">school</span>
+                  <p className="text-on-surface font-label-md">Нет текущих курсов</p>
+                  <p className="text-[13px] text-on-surface-variant mt-1">Завершённые и расторгнутые договоры находятся в истории ниже.</p>
+                </div>
               )}
-              {enrollments.map((e) => {
+              {currentEnrollments.map((e) => {
                 const course = coursesById[e.course_id];
                 return (
                   <div
@@ -428,6 +451,55 @@ export default function StudentDetail({ role = "parent" }) {
                 );
               })}
             </div>
+
+            {archivedEnrollments.length > 0 && (
+              <div className="mt-2 rounded-xl border border-outline-variant/50 bg-surface-container-low overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowCourseHistory((value) => !value)}
+                  className="w-full flex items-center justify-between gap-4 px-4 py-3.5 text-left hover:bg-surface-container transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0">
+                      <span className="material-symbols-outlined text-[19px] text-on-surface-variant">history</span>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-label-md text-on-surface">История курсов</p>
+                      <p className="text-[12px] text-on-surface-variant mt-0.5">
+                        {archivedEnrollments.length} {archivedEnrollments.length === 1 ? "завершённый или расторгнутый курс" : "завершённых и расторгнутых курса"}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="material-symbols-outlined text-on-surface-variant">
+                    {showCourseHistory ? "expand_less" : "expand_more"}
+                  </span>
+                </button>
+
+                {showCourseHistory && (
+                  <div className="border-t border-outline-variant/50 divide-y divide-outline-variant/40">
+                    {archivedEnrollments.map((e) => {
+                      const course = coursesById[e.course_id];
+                      return (
+                        <div key={e.id} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+                          <div className="min-w-0">
+                            <p className="font-label-md text-on-surface truncate">
+                              {course?.title ?? course?.subject ?? `Курс #${e.course_id}`}
+                            </p>
+                            <p className="text-[12px] text-on-surface-variant mt-0.5">
+                              Прогресс: {e.progress_pct ?? 0}%
+                            </p>
+                          </div>
+                          <StatusBadge
+                            status={ENROLLMENT_STATUS_LABEL[e.status] ?? e.status}
+                            color={ENROLLMENT_STATUS_COLOR[e.status] ?? "secondary"}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="pt-stack-lg">
               <h3 className="font-headline-sm text-headline-sm text-on-surface mb-stack-md">Домашние задания</h3>
