@@ -2,6 +2,14 @@ import { useEffect, useState } from "react";
 import { updateLesson, cancelLesson } from "../../api/academic.js";
 import { fullName } from "../../utils/userDisplay.js";
 
+function normalizeDateForInput(value) {
+  if (!value) return "";
+  // API can return either YYYY-MM-DD or an ISO timestamp.
+  // <input type="date"> accepts only the former.
+  const match = String(value).match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : "";
+}
+
 /**
  * Модалка редактирования занятия — используется в трёх местах:
  *  - ScheduleDirectory (owner + branch_owner, /admin/schedule и /branch/schedule)
@@ -45,7 +53,7 @@ export default function EditLessonModal({
     if (open && lesson) {
       setForm({
         topic: lesson.topic ?? "",
-        lesson_date: lesson.lesson_date ?? "",
+        lesson_date: normalizeDateForInput(lesson.lesson_date),
         start_time: lesson.start_time ?? "",
         end_time: lesson.end_time ?? "",
         location_type: lesson.location_type ?? "remote",
