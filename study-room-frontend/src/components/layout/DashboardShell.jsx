@@ -26,6 +26,7 @@ export default function DashboardShell({ role, user, userLabel, avatarUrl, child
 
       <div className="md:ml-64 min-h-screen flex flex-col">
         <TopBar
+          role={role}
           userLabel={userLabel}
           avatarUrl={avatarUrl}
           onMenuClick={() => setMobileMenuOpen(true)}

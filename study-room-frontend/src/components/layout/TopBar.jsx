@@ -1,18 +1,26 @@
 import { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import NotificationBell from "./NotificationBell.jsx";
 import Avatar from "../ui/Avatar.jsx";
+import { ROLE_SECTION_PREFIX } from "../../routes/routeComponents.js";
 
 /**
  * Верхняя панель. На мобильных слева появляется гамбургер (открывает Sidebar-drawer).
  */
 export default function TopBar({
+  role,
   userLabel,
   avatarUrl,
   onMenuClick = () => {},
 }) {
+  const navigate = useNavigate();
   const [showHelp, setShowHelp] = useState(false);
   const helpButtonRef = useRef(null);
   const helpMenuRef = useRef(null);
+
+  // Путь до настроек текущего раздела (одинаковая логика для всех ролей,
+  // см. ROLE_SECTION_PREFIX). Если роль не распознана — фолбэк на общий /settings.
+  const settingsPath = `${ROLE_SECTION_PREFIX[role] ?? ""}/settings`;
 
   // Закрытие при клике вне меню
   useEffect(() => {
@@ -122,7 +130,13 @@ export default function TopBar({
           {(userLabel || avatarUrl) && (
             <>
               <div className="hidden sm:block h-8 w-px bg-outline-variant" />
-              <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => navigate(settingsPath)}
+                className="flex items-center gap-3 rounded-full hover:bg-surface-container transition-colors p-1 -m-1"
+                aria-label="Настройки профиля"
+                title="Настройки профиля"
+              >
                 {userLabel && (
                   <span className="font-label-md text-label-md hidden lg:block truncate max-w-[180px]">{userLabel}</span>
                 )}
@@ -131,7 +145,7 @@ export default function TopBar({
                     у большинства тестовых аккаунтов (без avatar_url) в шапке
                     справа не было вообще никакого визуального "я" пользователя. */}
                 <Avatar src={avatarUrl} name={userLabel} size="xs" />
-              </div>
+              </button>
             </>
           )}
         </div>
