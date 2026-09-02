@@ -529,6 +529,31 @@ func (r *LessonRepository) Participants(ctx context.Context, lessonID int64) ([]
 	return out, rows.Err()
 }
 
+// ReplaceParticipants полностью заменяет состав участников занятия
+// (lesson_participants) на переданный список — используется при
+// редактировании группового занятия тьютором (смена подгруппы/состава
+// учеников), см. LessonHandler.Update. Дублирующиеся id в studentIDs
+// безопасны за счёт ON CONFLICT DO NOTHING, как и в Create.
+func (r *LessonRepository) ReplaceParticipants(ctx context.Context, lessonID int64, studentIDs []int64) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `DELETE FROM lesson_participants WHERE lesson_id = $1`, lessonID); err != nil {
+		return err
+	}
+	for _, sid := range studentIDs {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO lesson_participants (lesson_id, student_id) VALUES ($1,$2)
+			 ON CONFLICT DO NOTHING`, lessonID, sid); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
 // DigestLessonItem — одно занятие ученика на конкретный день, для
 // ежедневного дайджеста (см. cmd/api/main.go, startDailyDigestJob).
 type DigestLessonItem struct {

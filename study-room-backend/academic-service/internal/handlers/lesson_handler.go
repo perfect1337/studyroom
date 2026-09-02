@@ -444,6 +444,18 @@ type updateLessonRequest struct {
 	Status       *models.LessonStatus `json:"status"`
 	Comment      *string              `json:"comment"`
 	TutorID      *int64               `json:"tutor_id"`
+	// SubgroupID — сменить состав участников группового занятия на состав
+	// сохранённой подгруппы (см. models.Subgroup), взаимоисключимо с
+	// ParticipantIDs (приоритет у SubgroupID, как и в Create). Позволяет
+	// тьютору прямо из расписания отредактировать, для какой подгруппы
+	// проводится уже созданное групповое занятие.
+	SubgroupID *int64 `json:"subgroup_id"`
+	// ParticipantIDs — явный список участников занятия, альтернатива
+	// SubgroupID для ручной правки состава без привязки к сохранённой
+	// подгруппе. Указатель на слайс (а не просто слайс), чтобы отличать
+	// "поле не передано" от "передан пустой список" — последнее отклоняется
+	// как невалидное (занятие не может остаться без участников).
+	ParticipantIDs *[]int64 `json:"participant_ids"`
 }
 
 // Update — PATCH /lessons/{id} (api-contracts.md 2.9).
@@ -505,6 +517,122 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Смена состава участников группового занятия (subgroup_id и/или
+	// participant_ids) — тьютор редактирует, для какой подгруппы/каких
+	// учеников проводится уже созданное занятие, прямо из карточки в
+	// расписании, не пересоздавая занятие заново. Разрешено только для
+	// занятий, у которых group_type (с учётом возможной смены в этом же
+	// запросе) остаётся "group" — для individual состав жёстко привязан к
+	// одному ученику и меняется только пересозданием занятия.
+	var oldParticipantIDs []int64
+	var newParticipantIDs []int64
+	wantsParticipantChange := req.SubgroupID != nil || req.ParticipantIDs != nil
+	if wantsParticipantChange {
+		effectiveGroupType := lesson.GroupType
+		if req.GroupType != nil {
+			effectiveGroupType = *req.GroupType
+		}
+		if effectiveGroupType != models.GroupGroup {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "changing participants is only allowed for group lessons")
+			return
+		}
+
+		effectiveDateStr := lesson.LessonDate.Format("2006-01-02")
+		if req.LessonDate != nil {
+			effectiveDateStr = *req.LessonDate
+		}
+		effectiveDate, err := time.Parse("2006-01-02", effectiveDateStr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "lesson_date must be YYYY-MM-DD")
+			return
+		}
+
+		courseEnrollments, err := h.enrollments.List(r.Context(), repository.EnrollmentFilter{CourseID: &lesson.CourseID})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course enrollments")
+			return
+		}
+		activeOnCourse := make(map[int64]bool, len(courseEnrollments))
+		for _, e := range courseEnrollments {
+			if e.Status == models.EnrollmentActive {
+				activeOnCourse[e.StudentID] = true
+			}
+		}
+
+		switch {
+		case req.SubgroupID != nil:
+			sg, err := h.subgroups.GetByID(r.Context(), *req.SubgroupID)
+			if err != nil {
+				if errors.Is(err, repository.ErrNotFound) {
+					writeError(w, http.StatusBadRequest, "BAD_REQUEST", "subgroup not found")
+					return
+				}
+				writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load subgroup")
+				return
+			}
+			if sg.CourseID != lesson.CourseID {
+				writeError(w, http.StatusBadRequest, "BAD_REQUEST", "subgroup does not belong to this lesson's course")
+				return
+			}
+			if sg.TutorID != lesson.TutorID {
+				writeError(w, http.StatusForbidden, "FORBIDDEN", "subgroup belongs to another tutor")
+				return
+			}
+			for _, studentID := range sg.StudentIDs {
+				if activeOnCourse[studentID] {
+					newParticipantIDs = append(newParticipantIDs, studentID)
+				}
+			}
+			if len(newParticipantIDs) == 0 {
+				writeError(w, http.StatusBadRequest, "BAD_REQUEST", "no active students left in this subgroup")
+				return
+			}
+		case req.ParticipantIDs != nil:
+			seen := make(map[int64]bool, len(*req.ParticipantIDs))
+			for _, studentID := range *req.ParticipantIDs {
+				if seen[studentID] {
+					continue
+				}
+				seen[studentID] = true
+				if !activeOnCourse[studentID] {
+					writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student has no active enrollment on this course")
+					return
+				}
+				newParticipantIDs = append(newParticipantIDs, studentID)
+			}
+			if len(newParticipantIDs) == 0 {
+				writeError(w, http.StatusBadRequest, "BAD_REQUEST", "participant_ids must not be empty")
+				return
+			}
+		}
+
+		// Как и при создании занятия/переносе даты — дата занятия должна
+		// попадать в период действия договора у каждого нового участника.
+		for _, studentID := range newParticipantIDs {
+			valid := false
+			for _, e := range courseEnrollments {
+				if e.StudentID != studentID || e.Status != models.EnrollmentActive || e.StartDate == nil || e.EndDate == nil {
+					continue
+				}
+				if effectiveDate.Before(*e.StartDate) || effectiveDate.After(*e.EndDate) {
+					continue
+				}
+				valid = true
+				break
+			}
+			if !valid {
+				writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "На дату занятия у одного из учеников нет действующего договора по этому курсу.")
+				return
+			}
+		}
+
+		oldParticipantIDs, err = h.lessons.Participants(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load lesson participants")
+			return
+		}
+	}
+
 	fields := map[string]any{}
 	if req.Topic != nil {
 		fields["topic"] = *req.Topic
@@ -540,6 +668,31 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if wantsParticipantChange {
+		if err := h.lessons.ReplaceParticipants(r.Context(), id, newParticipantIDs); err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to update lesson participants")
+			return
+		}
+		// Прогресс могли иметь как удалённые из состава ученики (у них
+		// занятие больше не должно учитываться), так и добавленные — считаем
+		// по объединению старого и нового состава, а не только по новому.
+		union := make(map[int64]bool, len(oldParticipantIDs)+len(newParticipantIDs))
+		affected := make([]int64, 0, len(oldParticipantIDs)+len(newParticipantIDs))
+		for _, sid := range oldParticipantIDs {
+			if !union[sid] {
+				union[sid] = true
+				affected = append(affected, sid)
+			}
+		}
+		for _, sid := range newParticipantIDs {
+			if !union[sid] {
+				union[sid] = true
+				affected = append(affected, sid)
+			}
+		}
+		h.recalculateProgress(r.Context(), lesson.CourseID, affected)
+	}
+
 	// Смена статуса занятия (в первую очередь — отметка "проведено",
 	// status='completed') меняет числитель/знаменатель прогресса ученика по
 	// этому курсу, поэтому пересчитываем progress_pct всех участников
@@ -566,6 +719,14 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+	}
+
+	// Отдаём актуальный состав участников вместе с занятием: фронт мержит
+	// ответ PATCH поверх локального lesson-объекта (см. handleLessonSaved в
+	// TutorSchedule.jsx/ScheduleDirectory.jsx) и без этого поля продолжил бы
+	// показывать старый состав до следующей фоновой перезагрузки расписания.
+	if participants, pErr := h.lessons.Participants(r.Context(), id); pErr == nil {
+		lesson.ParticipantIDs = participants
 	}
 
 	writeJSON(w, http.StatusOK, lesson)

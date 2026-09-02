@@ -1,13 +1,23 @@
-import { useEffect, useState } from "react";
-import { updateLesson, cancelLesson } from "../../api/academic.js";
+import { useEffect, useMemo, useState } from "react";
+import { updateLesson, cancelLesson, fetchSubgroups, fetchEnrollments } from "../../api/academic.js";
+import { fetchMyPeople } from "../../api/users.js";
 import { fullName } from "../../utils/userDisplay.js";
 
 function normalizeDateForInput(value) {
   if (!value) return "";
   // API can return either YYYY-MM-DD or an ISO timestamp.
-  // <input type="date"> accepts only the former.
+  // <input type="date"> accepts только последний.
   const match = String(value).match(/^(\d{4}-\d{2}-\d{2})/);
   return match ? match[1] : "";
+}
+
+function sortedIds(ids) {
+  return [...new Set((ids ?? []).map(Number).filter(Number.isFinite))].sort((a, b) => a - b);
+}
+function sameIds(a, b) {
+  const x = sortedIds(a);
+  const y = sortedIds(b);
+  return x.length === y.length && x.every((id, i) => id === y[i]);
 }
 
 /**
@@ -49,6 +59,18 @@ export default function EditLessonModal({
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [error, setError] = useState("");
 
+  // Состав группового занятия — подгружается отдельно от остальной формы,
+  // только когда занятие (или форма после переключения "Тип занятия") имеет
+  // group_type === "group". Позволяет тьютору сменить подгруппу/набор
+  // учеников прямо в этой модалке, не пересоздавая занятие (см. PATCH
+  // /lessons/{id} с subgroup_id/participant_ids, LessonHandler.Update).
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [rosterError, setRosterError] = useState("");
+  const [courseSubgroups, setCourseSubgroups] = useState([]);
+  const [courseRoster, setCourseRoster] = useState([]); // [{id, student}] — активные записи на курс этого занятия
+  const [participantsMode, setParticipantsMode] = useState("custom"); // "custom" | id подгруппы (строка)
+  const [manualParticipantIds, setManualParticipantIds] = useState([]);
+
   useEffect(() => {
     if (open && lesson) {
       setForm({
@@ -63,8 +85,85 @@ export default function EditLessonModal({
       });
       setError("");
       setConfirmingCancel(false);
+      setCourseSubgroups([]);
+      setCourseRoster([]);
+      setRosterError("");
+      setParticipantsMode("custom");
+      setManualParticipantIds(sortedIds(lesson.participant_ids));
     }
   }, [open, lesson]);
+
+  // Подгружаем подгруппы курса и активный состав курса (для ручного выбора
+  // учеников), только когда занятие реально групповое — не тратим лишний
+  // запрос на индивидуальные занятия.
+  useEffect(() => {
+    if (!open || !lesson || form?.group_type !== "group") return;
+    let cancelled = false;
+    setRosterLoading(true);
+    setRosterError("");
+    Promise.all([
+      fetchSubgroups({ course_id: lesson.course_id, tutor_id: lesson.tutor_id }),
+      fetchEnrollments({ course_id: lesson.course_id }),
+      fetchMyPeople().catch(() => null),
+    ])
+      .then(([subgroupsRes, enrollRes, peopleRes]) => {
+        if (cancelled) return;
+        const studentsById = {};
+        (peopleRes?.students ?? []).forEach((s) => (studentsById[s.id] = s));
+        (lesson.participant_names ? Object.entries(lesson.participant_names) : []).forEach(([id, name]) => {
+          if (!studentsById[id]) studentsById[id] = { id: Number(id), first_name: name, last_name: "" };
+        });
+
+        const activeStudentIds = (enrollRes?.items ?? [])
+          .filter((e) => e.status === "active")
+          .map((e) => e.student_id);
+        const roster = sortedIds(activeStudentIds).map((id) => ({ id, student: studentsById[id] ?? null }));
+        setCourseRoster(roster);
+
+        const subgroups = subgroupsRes?.items ?? [];
+        setCourseSubgroups(subgroups);
+
+        // Пытаемся угадать, с какой подгруппой сейчас связано занятие: по
+        // совпадению набора участников занятия с составом подгруппы (у
+        // занятия нет собственного subgroup_id — см. комментарий в
+        // TutorSubgroupsCard.jsx). Если совпадений нет — считаем, что состав
+        // редактировался вручную, и открываем ручной список учеников.
+        const currentIds = sortedIds(lesson.participant_ids);
+        const matched = subgroups.find((sg) => sameIds(sg.student_ids, currentIds));
+        setParticipantsMode(matched ? String(matched.id) : "custom");
+        setManualParticipantIds(currentIds);
+      })
+      .catch((e) => {
+        if (!cancelled) setRosterError(e.message || "Не удалось загрузить состав курса");
+      })
+      .finally(() => {
+        if (!cancelled) setRosterLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, lesson?.id, form?.group_type]);
+
+  const selectedSubgroup = useMemo(
+    () => courseSubgroups.find((sg) => String(sg.id) === String(participantsMode)) ?? null,
+    [courseSubgroups, participantsMode]
+  );
+  // Эффективный состав участников для выбранной подгруппы — пересечение с
+  // активным составом курса (courseRoster), как и на бэкенде (см.
+  // LessonHandler.Update): если кто-то из подгруппы уже не активен на курсе,
+  // он всё равно не попадёт в занятие.
+  const subgroupEffectiveIds = useMemo(() => {
+    if (!selectedSubgroup) return [];
+    const activeIds = new Set(courseRoster.map((r) => r.id));
+    return sortedIds((selectedSubgroup.student_ids ?? []).filter((id) => activeIds.has(id)));
+  }, [selectedSubgroup, courseRoster]);
+
+  function toggleManualStudent(studentId) {
+    setManualParticipantIds((prev) =>
+      prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId].sort((a, b) => a - b)
+    );
+  }
 
   if (!open || !lesson || !form) return null;
 
@@ -88,6 +187,20 @@ export default function EditLessonModal({
       setError("Время окончания должно быть позже времени начала");
       return;
     }
+    // Для группового занятия состав должен быть непустым — иначе PATCH
+    // отклонит запрос на бэкенде (см. LessonHandler.Update), но лучше
+    // сообщить об этом сразу в форме, не дожидаясь ответа сервера.
+    if (form.group_type === "group" && !rosterLoading && !rosterError) {
+      const effectiveIds = selectedSubgroup ? subgroupEffectiveIds : manualParticipantIds;
+      if (effectiveIds.length === 0) {
+        setError(
+          selectedSubgroup
+            ? "В выбранной подгруппе не осталось активных учеников — выберите другую подгруппу или свой набор."
+            : "Выберите хотя бы одного ученика для группового занятия."
+        );
+        return;
+      }
+    }
     setSaving(true);
     setError("");
     try {
@@ -102,6 +215,20 @@ export default function EditLessonModal({
       };
       if (canReassignTutor && form.tutor_id) {
         patch.tutor_id = Number(form.tutor_id);
+      }
+      // Меняем состав участников только если занятие групповое и состав
+      // реально отличается от текущего — не отправляем subgroup_id/
+      // participant_ids на индивидуальных занятиях и не дёргаем лишний раз
+      // пересчёт прогресса, если тьютор просто открыл и закрыл выбор состава,
+      // ничего не поменяв.
+      if (form.group_type === "group" && !rosterLoading && !rosterError) {
+        if (selectedSubgroup) {
+          if (!sameIds(subgroupEffectiveIds, lesson.participant_ids)) {
+            patch.subgroup_id = Number(selectedSubgroup.id);
+          }
+        } else if (!sameIds(manualParticipantIds, lesson.participant_ids)) {
+          patch.participant_ids = manualParticipantIds;
+        }
       }
       const updated = await updateLesson(lesson.id, patch);
       onSaved?.(updated ?? { ...lesson, ...patch });
@@ -267,6 +394,72 @@ export default function EditLessonModal({
                 </select>
               </div>
             </div>
+
+            {form.group_type === "group" && (
+              <div className="flex flex-col gap-stack-sm p-3 rounded-lg border border-outline-variant bg-surface-container-low">
+                <span className="font-label-md text-label-md text-on-surface">Состав группы</span>
+
+                {rosterLoading && (
+                  <p className="font-body-md text-[13px] text-on-surface-variant">Загрузка состава курса…</p>
+                )}
+                {rosterError && (
+                  <p className="font-body-md text-[13px] text-error">{rosterError}</p>
+                )}
+
+                {!rosterLoading && !rosterError && (
+                  <>
+                    <select
+                      value={participantsMode}
+                      onChange={(e) => setParticipantsMode(e.target.value)}
+                      className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
+                    >
+                      <option value="custom">Свой набор учеников (выбрать вручную)</option>
+                      {courseSubgroups.map((sg) => (
+                        <option key={sg.id} value={sg.id}>
+                          Подгруппа «{sg.name}»
+                        </option>
+                      ))}
+                    </select>
+
+                    {selectedSubgroup ? (
+                      <div className="text-[13px] text-on-surface-variant">
+                        {subgroupEffectiveIds.length === 0 ? (
+                          <span className="text-error">В этой подгруппе не осталось активных на курсе учеников.</span>
+                        ) : (
+                          <>
+                            {subgroupEffectiveIds.length} {subgroupEffectiveIds.length === 1 ? "ученик" : subgroupEffectiveIds.length < 5 ? "ученика" : "учеников"}:{" "}
+                            {subgroupEffectiveIds
+                              .map((id) => {
+                                const known = courseRoster.find((r) => r.id === id)?.student;
+                                return known ? fullName(known) : `Ученик #${id}`;
+                              })
+                              .join(", ")}
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-1 max-h-40 overflow-y-auto pr-1">
+                        {courseRoster.length === 0 && (
+                          <p className="font-body-md text-[13px] text-on-surface-variant italic">
+                            На этом курсе нет активных учеников.
+                          </p>
+                        )}
+                        {courseRoster.map(({ id, student }) => (
+                          <label key={id} className="flex items-center gap-2 text-[13px] text-on-surface">
+                            <input
+                              type="checkbox"
+                              checked={manualParticipantIds.includes(id)}
+                              onChange={() => toggleManualStudent(id)}
+                            />
+                            {student ? fullName(student) : `Ученик #${id}`}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
 
             <div className="flex flex-col gap-stack-sm">
               <label className="font-label-md text-label-md text-on-surface" htmlFor="edit-comment">
