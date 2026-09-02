@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchEnrollments, fetchCourses, createLesson, fetchSubgroups, createSubgroup } from "../../api/academic.js";
-import { fetchMyPeople, fetchUserById } from "../../api/users.js";
+import { fetchMyPeople } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
@@ -194,19 +194,10 @@ export default function TutorNewLesson() {
         const items = res?.items ?? [];
         setSubgroups(items);
 
-        const missingIds = [...new Set(items.flatMap((sg) => sg.student_ids ?? []))]
-          .filter((id) => !studentsById[id]);
-        if (missingIds.length) {
-          const fetched = await Promise.all(missingIds.map((id) => fetchUserById(id).catch(() => null)));
-          if (cancelled) return;
-          setStudentsById((prev) => {
-            const next = { ...prev };
-            fetched.forEach((student, index) => {
-              if (student) next[missingIds[index]] = student;
-            });
-            return next;
-          });
-        }
+        // Не запрашиваем /api/v1/users/{id}: у tutor этот endpoint недоступен (404),
+        // а зависимость эффекта от studentsById приводила к повторным запросам и
+        // вечной загрузке подгрупп. Имена уже приходят из fetchMyPeople; если
+        // конкретного ученика там нет, безопасно оставляем fallback "Ученик #id".
       })
       .catch(() => {
         if (!cancelled) setSubgroups([]);
@@ -217,7 +208,7 @@ export default function TutorNewLesson() {
     return () => {
       cancelled = true;
     };
-  }, [participantMode, selectedCourseId, user?.id, studentsById]);
+  }, [participantMode, selectedCourseId, user?.id]);
 
   function switchParticipantMode(mode) {
     setParticipantMode(mode);
