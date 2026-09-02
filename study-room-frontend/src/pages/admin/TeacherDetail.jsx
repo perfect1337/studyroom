@@ -295,17 +295,40 @@ export default function TeacherDetail({ role = "owner" }) {
     return new Set(courses.filter((c) => (c.tutor_ids ?? []).includes(teacherIdNum)).map((c) => c.id));
   }, [courses, teacherId]);
 
+  // Реальные ученики этого преподавателя (для счётчика "Учеников: N" и
+  // списка ниже) — те же, кого показывает сам преподаватель себе на
+  // /tutor/students (см. PeopleDirectory.jsx, role=tutor): участник хотя бы
+  // одного ЕГО занятия (lesson.participant_ids), у которого есть активная
+  // запись на курс. Раньше здесь считали ВСЕХ, кто записан на курсы,
+  // которые он ведёт (`enrollments` из course_tutors/course_id) — если курс
+  // разбит на подгруппы (см. Subgroup.TutorID/StudentIDs) и препод реально
+  // ведёт только свою подгруппу из 1 ученика, курс при этом мог быть
+  // рассчитан на 8, и все 8 ошибочно попадали в счётчик. Источник
+  // participant_ids — allTeacherLessons (все занятия препода, без ограничения
+  // по месяцу, см. load()).
+  const myStudentIds = useMemo(() => {
+    const activeIds = new Set(enrollments.filter((e) => e.status === "active").map((e) => e.student_id));
+    const ids = new Set();
+    allTeacherLessons.forEach((l) => {
+      (l.participant_ids ?? []).forEach((studentId) => {
+        if (activeIds.has(studentId)) ids.add(studentId);
+      });
+    });
+    return ids;
+  }, [enrollments, allTeacherLessons]);
+
   // Уникальные ученики, реально записанные к этому преподавателю (по enrollments).
   const myStudents = useMemo(() => {
     const seen = new Map();
     enrollments.forEach((e) => {
+      if (!myStudentIds.has(e.student_id)) return;
       if (!seen.has(e.student_id)) {
         seen.set(e.student_id, { student: studentsById[e.student_id] ?? { id: e.student_id }, enrollments: [] });
       }
       seen.get(e.student_id).enrollments.push(e);
     });
     return Array.from(seen.values());
-  }, [enrollments, studentsById]);
+  }, [enrollments, studentsById, myStudentIds]);
 
   // Пагинация списка учеников этого преподавателя — на клиенте, поверх уже
   // загруженного массива (тот же паттерн, что и Pagination в других списках,
@@ -322,8 +345,15 @@ export default function TeacherDetail({ role = "owner" }) {
     [myStudents, studentsPage]
   );
 
-  const avgProgress = enrollments.length
-    ? Math.round(enrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / enrollments.length)
+  // Средний прогресс считаем только по реальным ученикам (myStudents), тем
+  // же, что и в счётчике "Учеников: N" выше — иначе тут снова подмешивались
+  // бы чужие ученики курса, до которых у препода в его подгруппе дела нет.
+  const myEnrollments = useMemo(
+    () => enrollments.filter((e) => myStudentIds.has(e.student_id)),
+    [enrollments, myStudentIds]
+  );
+  const avgProgress = myEnrollments.length
+    ? Math.round(myEnrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / myEnrollments.length)
     : 0;
 
   const activeCoursesCount = useMemo(() => {
