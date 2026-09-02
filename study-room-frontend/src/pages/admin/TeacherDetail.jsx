@@ -281,6 +281,8 @@ export default function TeacherDetail({ role = "owner" }) {
   // см. components/ui/Pagination.jsx).
   const STUDENTS_PAGE_SIZE = 10;
   const [studentsPage, setStudentsPage] = useState(1);
+  const LESSONS_PAGE_SIZE = 10;
+  const [lessonsPage, setLessonsPage] = useState(1);
   useEffect(() => {
     setStudentsPage(1);
   }, [myStudents.length]);
@@ -309,20 +311,21 @@ export default function TeacherDetail({ role = "owner" }) {
   }, [lessons]);
 
   const todayDay = today.getDate();
+  const monthStart = toISODate(viewYear, viewMonth, 1);
+  const monthEnd = toISODate(viewYear, viewMonth, new Date(viewYear, viewMonth + 1, 0).getDate());
   const upcomingLessons = lessons
-    .filter((l) => l.lesson_date >= toISODate(viewYear, viewMonth, 1))
+    .filter((l) => l.lesson_date >= monthStart && l.lesson_date <= monthEnd)
     .sort((a, b) => (a.lesson_date + a.start_time).localeCompare(b.lesson_date + b.start_time));
-  const selectedDayLessons = selectedDay ? (lessonsByDay[selectedDay] ?? []) : [];
 
-  const LESSONS_PAGE_SIZE = 10;
-  const [lessonsPage, setLessonsPage] = useState(1);
   useEffect(() => {
     setLessonsPage(1);
   }, [viewYear, viewMonth, upcomingLessons.length]);
+
   const pagedLessons = useMemo(
     () => upcomingLessons.slice((lessonsPage - 1) * LESSONS_PAGE_SIZE, lessonsPage * LESSONS_PAGE_SIZE),
     [upcomingLessons, lessonsPage]
   );
+  const selectedDayLessons = selectedDay ? (lessonsByDay[selectedDay] ?? []) : [];
 
   const statusOptions = STATUS_OPTIONS_BY_ROLE[role] ?? STATUS_OPTIONS_BY_ROLE.branch_owner;
   const tutorStatus = teacher?.tutor_status ?? "active";
@@ -712,6 +715,7 @@ export default function TeacherDetail({ role = "owner" }) {
                         );
                       })}
                     </div>
+
                     <Pagination
                       page={lessonsPage}
                       pageSize={LESSONS_PAGE_SIZE}
