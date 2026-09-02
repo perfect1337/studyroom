@@ -2,9 +2,6 @@ import { useState, useEffect } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { updateMe, changePassword } from "../../api/auth.js";
-import { fetchCourses, fetchLessons, fetchSubgroups } from "../../api/academic.js";
-import { fetchMyPeople } from "../../api/users.js";
-import TutorSubgroupsCard from "../../components/tutor/TutorSubgroupsCard.jsx";
 import { fetchNotificationSettings, updateNotificationSettings, unlinkTelegram, unlinkMax } from "../../api/notifications.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import { useTelegramStatus } from "../../hooks/useTelegramStatus.js";
@@ -95,35 +92,7 @@ export default function SettingsPage({ role }) {
   const { status: maxStatus, loading: maxLoading, refresh: refreshMax } = useMaxStatus();
 
   const [notifSettings, setNotifSettings] = useState(null);
-  const [tutorSubgroups, setTutorSubgroups] = useState([]);
-  const [tutorLessons, setTutorLessons] = useState([]);
-  const [tutorCourses, setTutorCourses] = useState([]);
-  const [tutorStudents, setTutorStudents] = useState([]);
   const [notifLoading, setNotifLoading] = useState(true);
-
-  useEffect(() => {
-    if (role !== "tutor" || !user?.id) return;
-    let cancelled = false;
-    async function loadTutorSubgroups() {
-      try {
-        const [subgroupsRes, lessonsRes, coursesRes, peopleRes] = await Promise.all([
-          fetchSubgroups({ tutor_id: user.id }),
-          fetchLessons({ tutor_id: user.id }),
-          fetchCourses({ tutor_id: user.id }),
-          fetchMyPeople(),
-        ]);
-        if (cancelled) return;
-        setTutorSubgroups(subgroupsRes?.items ?? []);
-        setTutorLessons(lessonsRes?.items ?? []);
-        setTutorCourses(coursesRes?.items ?? []);
-        setTutorStudents(peopleRes?.students ?? []);
-      } catch (e) {
-        if (!cancelled) console.error("Failed to load tutor subgroups:", e);
-      }
-    }
-    loadTutorSubgroups();
-    return () => { cancelled = true; };
-  }, [role, user?.id]);
 
   useEffect(() => {
     // Ученику подключение уведомлений недоступно (см. блок "Уведомления"
@@ -492,16 +461,6 @@ export default function SettingsPage({ role }) {
             </div>
           </form>
         </section>
-
-        {role === "tutor" && (
-          <TutorSubgroupsCard
-            subgroups={tutorSubgroups}
-            lessons={tutorLessons}
-            courses={tutorCourses}
-            students={tutorStudents}
-            title="Мои подгруппы"
-          />
-        )}
 
         {/* Security */}
         <section className="bg-surface-container-lowest rounded-xl p-stack-md shadow-[0_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant">

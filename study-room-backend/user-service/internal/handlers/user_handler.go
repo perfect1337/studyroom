@@ -736,6 +736,33 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Смена филиала преподавателя — доступна ТОЛЬКО owner сети (не
+	// branch_owner, даже если target и так в его собственном филиале:
+	// смена филиала — операция уровня сети, а не филиала). Поддерживается
+	// только для role=tutor: у остальных ролей (student/parent/branch_owner)
+	// перенос между филиалами этим общим эндпоинтом не предусмотрен.
+	if rawBranchID, ok := body["branch_id"]; ok {
+		if claims.Role != models.RoleOwner {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "only owner can change tutor's branch")
+			return
+		}
+		if target.Role != models.RoleTutor {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "branch can only be changed for a tutor")
+			return
+		}
+		branchIDFloat, ok := rawBranchID.(float64)
+		if !ok || branchIDFloat <= 0 {
+			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid branch_id")
+			return
+		}
+		newBranchID := int64(branchIDFloat)
+		if existing, err := h.branches.List(r.Context(), &newBranchID); err != nil || len(existing) == 0 {
+			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "branch_id must be an existing branch")
+			return
+		}
+		fields["branch_id"] = newBranchID
+	}
+
 	// У ученика email — это сгенерированный логин, а не настоящая почта (см.
 	// комментарий в CreateStudent) — его правит только сброс учётных данных,
 	// а не этот общий эндпоинт, иначе можно случайно увести ученика в дубликат.

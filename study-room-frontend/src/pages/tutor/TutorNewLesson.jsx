@@ -976,7 +976,7 @@ export default function TutorNewLesson() {
               </div>
             </div>
 
-            <div className={`grid grid-cols-1 gap-stack-md ${participantMode === "group" ? "" : "md:grid-cols-2"}`}>
+            <div className="grid grid-cols-1 gap-stack-md">
               <SegmentedControl
                 label="Тип занятия"
                 name="lesson_type"
@@ -987,18 +987,6 @@ export default function TutorNewLesson() {
                   { value: "online", label: "Дистанционное" },
                 ]}
               />
-              {participantMode !== "group" && (
-                <SegmentedControl
-                  label="Формат занятия"
-                  name="lesson_format"
-                  value={form.lessonFormat}
-                  onChange={(v) => update("lessonFormat", v)}
-                  options={[
-                    { value: "individual", label: "Индивидуальное" },
-                    { value: "group", label: "Групповое" },
-                  ]}
-                />
-              )}
             </div>
 
             <div className="flex flex-col gap-stack-sm">

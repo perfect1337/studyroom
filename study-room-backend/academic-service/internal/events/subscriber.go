@@ -318,13 +318,23 @@ func (s *Subscriber) handleUserCreated(ctx context.Context) nats.MsgHandler {
 }
 
 // handleUserUpdated — обновляет user_ref и, если User Service прислал
-// увольнение репетитора (is_active=false), каскадно зачищает его из
-// Academic Service: отвязывает от всех курсов/учеников (course_tutors,
-// enrollments.tutor_id) и физически удаляет все его lessons — см.
-// detachTutor. enrollments как записи о зачислении студентов при этом не
-// удаляются (это данные студента, а не репетитора), только теряют
+// увольнение репетитора (is_active=false) ИЛИ смену его филиала, каскадно
+// зачищает его из Academic Service: отвязывает от всех курсов/учеников
+// (course_tutors, enrollments.tutor_id) и физически удаляет все его lessons
+// — см. detachTutor. enrollments как записи о зачислении студентов при этом
+// не удаляются (это данные студента, а не репетитора), только теряют
 // закреплённого репетитора. Best-effort: ошибка логируется, подписчика не
 // валит.
+//
+// Смена филиала (владелец сети переносит преподавателя из одного филиала в
+// другой, см. UserHandler.Update в User Service) обрабатывается ТЕМ ЖЕ
+// путём, что и увольнение: старый филиал не должен продолжать видеть у
+// себя чужого теперь преподавателя — ни в его учениках/курсах, ни в
+// расписании. Старый branch_id читаем из локального user_refs ДО
+// upsertUserRef (иначе после апдейта кэша сравнивать уже не с чем), поэтому
+// смену филиала можно поймать только сравнением "было/стало" здесь, в
+// Academic Service — сам User Service в user.updated шлёт лишь итоговое
+// состояние пользователя, без диффа.
 func (s *Subscriber) handleUserUpdated(ctx context.Context) nats.MsgHandler {
 	return func(msg *nats.Msg) {
 		var ev UserEvent
@@ -332,12 +342,44 @@ func (s *Subscriber) handleUserUpdated(ctx context.Context) nats.MsgHandler {
 			log.Printf("[events] user.updated unmarshal error: %v", err)
 			return
 		}
+
+		var prevBranchID *int64
+		if ev.Role == models.RoleTutor {
+			if b, err := s.userRefRepo.BranchOf(ctx, ev.ID); err != nil {
+				log.Printf("[events] user.updated: read previous branch for tutor %d error: %v", ev.ID, err)
+			} else {
+				prevBranchID = b
+			}
+		}
+
 		s.upsertUserRef(ctx, ev)
 
-		if ev.Role == models.RoleTutor && !ev.IsActive {
+		if ev.Role != models.RoleTutor {
+			return
+		}
+		if !ev.IsActive {
 			s.detachTutor(ctx, ev.ID, "tutor fired")
+			return
+		}
+		if branchChanged(prevBranchID, ev.BranchID) {
+			s.detachTutor(ctx, ev.ID, "tutor moved to another branch")
 		}
 	}
+}
+
+// branchChanged — true, если старый и новый branch_id различаются.
+// prevBranchID == nil (репетитор ещё не встречался в этой БД, например
+// подписчик поднялся позже user.created) намеренно НЕ считается сменой
+// филиала — иначе самый первый user.updated по только что созданному
+// репетитору без причины сносил бы его же только что назначенные курсы.
+func branchChanged(prev, next *int64) bool {
+	if prev == nil {
+		return false
+	}
+	if next == nil {
+		return true
+	}
+	return *prev != *next
 }
 
 // handleContractCreated — основной путь наполнения ENROLLMENTS (см.
