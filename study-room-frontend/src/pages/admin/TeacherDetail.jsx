@@ -43,6 +43,22 @@ function initials(person) {
   return `${person.last_name?.[0] ?? ""}${person.first_name?.[0] ?? ""}`.toUpperCase() || "?";
 }
 
+// Сопоставляет занятие с подгруппой, из которой оно было создано (см. такую
+// же логику в TutorSubgroupsCard.jsx). У занятия нет собственного
+// subgroup_id (бэкенд лишь разворачивает подгруппу в lesson_participants в
+// момент создания, см. LessonHandler.Create), поэтому единственный способ
+// узнать подгруппу занятия постфактум — сравнить набор его участников
+// (participant_ids) с составом подгруппы (student_ids) того же курса/тьютора.
+function lessonMatchesSubgroup(lesson, subgroup) {
+  if (!lesson || !subgroup) return false;
+  if (Number(lesson.course_id) !== Number(subgroup.course_id)) return false;
+  if (Number(lesson.tutor_id) !== Number(subgroup.tutor_id)) return false;
+  const subgroupIds = [...new Set((subgroup.student_ids ?? []).map(Number).filter(Number.isFinite))].sort((a, b) => a - b);
+  const lessonIds = [...new Set((lesson.participant_ids ?? []).map(Number).filter(Number.isFinite))].sort((a, b) => a - b);
+  if (!subgroupIds.length || subgroupIds.length !== lessonIds.length) return false;
+  return subgroupIds.every((id, index) => id === lessonIds[index]);
+}
+
 // Единая карточка "профиль преподавателя" для owner и branch_owner:
 // - owner: /admin/teachers/:teacherId — виден любой преподаватель сети,
 //   доступны все статусы и увольнение (is_active=false).
@@ -244,6 +260,20 @@ export default function TeacherDetail({ role = "owner" }) {
     courses.forEach((c) => (map[c.id] = c));
     return map;
   }, [courses]);
+
+  // Занятие -> подгруппа, к которой оно относится (только для групповых
+  // занятий, у которых состав участников совпадает с составом подгруппы).
+  // Нужно, чтобы в мини-календаре показывать название подгруппы вместо
+  // полного списка ФИО всех её учеников.
+  const subgroupByLessonId = useMemo(() => {
+    const map = {};
+    lessons.forEach((l) => {
+      if (l.group_type !== "group") return;
+      const match = subgroups.find((sg) => lessonMatchesSubgroup(l, sg));
+      if (match) map[l.id] = match;
+    });
+    return map;
+  }, [lessons, subgroups]);
 
   const branchNameById = useMemo(() => {
     const map = {};
@@ -674,7 +704,7 @@ export default function TeacherDetail({ role = "owner" }) {
                             <td colSpan={3} className="px-6 py-8 text-center text-on-surface-variant">Занятий в этом месяце не запланировано</td>
                           </tr>
                         )}
-                        {pagedLessons.map((l) => {
+                        {upcomingLessons.map((l) => {
                           const course = coursesById[l.course_id];
                           return (
                             <tr key={l.id} className="hover:bg-surface-container-low transition-colors">
@@ -698,7 +728,7 @@ export default function TeacherDetail({ role = "owner" }) {
                       {upcomingLessons.length === 0 && (
                         <div className="px-4 py-8 text-center text-on-surface-variant">Занятий в этом месяце не запланировано</div>
                       )}
-                      {pagedLessons.map((l) => {
+                      {upcomingLessons.map((l) => {
                         const course = coursesById[l.course_id];
                         return (
                           <div key={l.id} className="p-4 flex flex-col gap-1">
@@ -817,7 +847,9 @@ export default function TeacherDetail({ role = "owner" }) {
                               {l.location_type === "remote" ? "Дистанционно" : "Очно"}
                             </p>
                             <p className="text-[12px] text-primary font-bold truncate">
-                              {(l.participant_ids ?? []).length > 0
+                              {l.group_type === "group" && subgroupByLessonId[l.id]
+                                ? `Подгруппа: ${subgroupByLessonId[l.id].name}`
+                                : (l.participant_ids ?? []).length > 0
                                 ? l.participant_ids
                                     .map((sid) => studentsById[sid] ? fullName(studentsById[sid]) : (l.participant_names?.[sid] ?? `Ученик #${sid}`))
                                     .join(", ")
