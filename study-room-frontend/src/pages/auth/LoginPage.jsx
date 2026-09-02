@@ -65,7 +65,7 @@ export default function LoginPage() {
       <header className="w-full h-16 flex items-center px-margin-mobile md:px-gutter max-w-container-max mx-auto absolute top-0 left-0 right-0 z-10">
         <div className="font-headline-md text-headline-md font-bold text-primary">Study Room</div>
         <Link
-          to="/"
+          to="https://studyroom64.ru/"
           className="ml-auto flex items-center gap-2 text-label-md font-label-md text-on-surface-variant hover:text-primary transition-colors"
         >
           <span className="material-symbols-outlined">arrow_back</span>
