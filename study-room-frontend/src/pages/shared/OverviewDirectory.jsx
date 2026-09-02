@@ -240,7 +240,13 @@ export default function OverviewDirectory({ role }) {
   }, [students, tutors, peopleSearch]);
 
   return (
-    <DashboardShell role={isOwner ? "admin" : role} user={toSidebarUser(user)} searchPlaceholder="Поиск учеников или учителей...">
+    <DashboardShell
+      role={isOwner ? "admin" : role}
+      user={toSidebarUser(user)}
+      searchPlaceholder="Поиск учеников или учителей..."
+      userLabel={fullName(user)}
+      avatarUrl={user?.avatar_url}
+    >
       {error && (
         <div className="mt-4 p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">{error}</div>
       )}
