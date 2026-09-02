@@ -7,11 +7,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"studyroom/academic-service/internal/events"
 	"studyroom/academic-service/internal/middleware"
 	"studyroom/academic-service/internal/models"
 	"studyroom/academic-service/internal/repository"
+
+	"github.com/go-chi/chi/v5"
 )
 
 type LessonHandler struct {
@@ -533,7 +534,7 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 		fields["tutor_id"] = *req.TutorID
 	}
 
-	lesson, err := h.lessons.Update(r.Context(), id, fields)
+	lesson, err = h.lessons.Update(r.Context(), id, fields)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to update lesson")
 		return
