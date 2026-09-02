@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
+import { useSearchParams } from "react-router-dom";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import EditLessonModal from "../../components/lessons/EditLessonModal.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
@@ -54,6 +55,9 @@ function isLessonPast(lesson, today) {
 
 export default function TutorSchedule() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const deepLinkLessonId = searchParams.get("lesson_id");
+  const deepLinkDate = searchParams.get("date");
 
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
@@ -218,6 +222,30 @@ export default function TutorSchedule() {
   useEffect(() => {
     load();
   }, [load]);
+  useEffect(() => {
+    if (!deepLinkDate) return;
+    const [year, month, day] = deepLinkDate.split("-").map(Number);
+    if (!year || !month || !day) return;
+    if (year !== viewYear || month - 1 !== viewMonth) {
+      setViewYear(year);
+      setViewMonth(month - 1);
+      return;
+    }
+    setSelectedDay(day);
+  }, [deepLinkDate, viewYear, viewMonth]);
+
+  useEffect(() => {
+    if (!deepLinkLessonId || !lessons.length || !deepLinkDate) return;
+    const lesson = lessons.find((item) => String(item.id) === String(deepLinkLessonId));
+    if (!lesson) return;
+    const day = Number(String(lesson.lesson_date ?? deepLinkDate).slice(8, 10));
+    if (day) setSelectedDay(day);
+    const timer = window.setTimeout(() => {
+      document.querySelector(`[data-lesson-id="${lesson.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [deepLinkLessonId, deepLinkDate, lessons]);
+
 
   // Раньше единственным способом узнать, что занятие изменилось (отменено
   // тьютором на другой вкладке, изменено администратором и т.п.) была
@@ -500,6 +528,7 @@ export default function TutorSchedule() {
                 return (
                   <div
                     key={lesson.id}
+                    data-lesson-id={lesson.id}
                     className="bg-surface-container-lowest rounded-xl shadow-xl overflow-hidden border border-outline-variant border-t-8"
                     style={{ borderTopColor: color }}
                   >

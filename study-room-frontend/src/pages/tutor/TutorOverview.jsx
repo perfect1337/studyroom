@@ -99,11 +99,6 @@ export default function TutorOverview() {
     return map;
   }, [courses]);
 
-  const activeEnrollments = useMemo(
-    () => enrollments.filter((e) => e.status === "active"),
-    [enrollments]
-  );
-
   const now = nowHHMM();
 
   async function handleAssignHomework(e) {
@@ -201,9 +196,9 @@ export default function TutorOverview() {
                   </div>
                   <div>
                     {isPast ? (
-                      <Link to="/tutor/schedule" className="text-primary font-label-md text-label-md hover:underline">Отчёт</Link>
+                      <Link to={`/tutor/schedule?lesson_id=${lesson.id}&date=${String(lesson.lesson_date ?? "").slice(0, 10)}`} className="text-primary font-label-md text-label-md hover:underline">Отчёт</Link>
                     ) : (
-                      <Link to="/tutor/schedule" className="border border-primary text-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container transition-colors">
+                      <Link to={`/tutor/schedule?lesson_id=${lesson.id}&date=${String(lesson.lesson_date ?? "").slice(0, 10)}`} className="border border-primary text-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container transition-colors">
                         Детали
                       </Link>
                     )}
@@ -221,10 +216,10 @@ export default function TutorOverview() {
               Все ученики
             </h2>
             <div className="flex flex-col gap-3">
-              {!loading && activeEnrollments.length === 0 && (
-                <p className="text-on-surface-variant font-body-md text-sm">Пока нет активных учеников.</p>
+              {!loading && enrollments.length === 0 && (
+                <p className="text-on-surface-variant font-body-md text-sm">Пока нет закреплённых учеников.</p>
               )}
-              {activeEnrollments.slice(0, 6).map((e) => {
+              {enrollments.slice(0, 6).map((e) => {
                 const student = studentsById[e.student_id];
                 const course = coursesById[e.course_id];
                 return (

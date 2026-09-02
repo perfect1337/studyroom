@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchEnrollments, fetchCourses, createLesson, fetchSubgroups, createSubgroup, updateSubgroup } from "../../api/academic.js";
-import { fetchMyPeople } from "../../api/users.js";
+import { fetchEnrollments, fetchCourses, createLesson, fetchSubgroups, createSubgroup } from "../../api/academic.js";
+import { fetchMyPeople, fetchUserById } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
@@ -67,11 +67,6 @@ export default function TutorNewLesson() {
   const [newSubgroupStudentIds, setNewSubgroupStudentIds] = useState([]);
   const [subgroupError, setSubgroupError] = useState("");
   const [subgroupSubmitting, setSubgroupSubmitting] = useState(false);
-  const [editingSubgroup, setEditingSubgroup] = useState(null);
-  const [editSubgroupName, setEditSubgroupName] = useState("");
-  const [editSubgroupStudentIds, setEditSubgroupStudentIds] = useState([]);
-  const [editSubgroupError, setEditSubgroupError] = useState("");
-  const [editSubgroupSubmitting, setEditSubgroupSubmitting] = useState(false);
 
   // --- даты занятия: мини-календарь с множественным выбором ---
   const today = new Date();
@@ -162,70 +157,11 @@ export default function TutorNewLesson() {
     return courses.filter((c) => courseIds.has(c.id));
   }, [enrollments, courses, selectedStudentId]);
 
-  // Для выбранного ученика/курса разрешены только даты, попадающие хотя бы в
-  // одну активную запись enrollment этого ученика. Даты вне договора не просто
-  // отклоняются backend'ом при submit — они сразу недоступны в календаре.
-  const selectedCourseEnrollments = useMemo(() => {
-    if (!selectedStudentId || !selectedCourseId) return [];
-    return enrollments.filter(
-      (e) =>
-        e.status === "active" &&
-        String(e.student_id) === String(selectedStudentId) &&
-        String(e.course_id) === String(selectedCourseId)
-    );
-  }, [enrollments, selectedStudentId, selectedCourseId]);
-
-  function isDateAllowedForEnrollments(iso, items) {
-    return items.some((e) => {
-      const start = e.start_date ? String(e.start_date).slice(0, 10) : null;
-      const end = e.end_date ? String(e.end_date).slice(0, 10) : null;
-      if (start && iso < start) return false;
-      if (end && iso > end) return false;
-      return true;
-    });
-  }
-
-  const allowedSelectedDates = useMemo(() => {
-    if (participantMode === "student") {
-      return selectedDates.filter((iso) => isDateAllowedForEnrollments(iso, selectedCourseEnrollments));
-    }
-    if (!selectedSubgroupId || !selectedCourseId) return [];
-    const subgroup = subgroups.find((sg) => String(sg.id) === String(selectedSubgroupId));
-    const ids = subgroup?.student_ids ?? [];
-    return selectedDates.filter((iso) =>
-      ids.length > 0 &&
-      ids.every((studentId) =>
-        isDateAllowedForEnrollments(
-          iso,
-          enrollments.filter(
-            (e) => e.status === "active" && String(e.student_id) === String(studentId) && String(e.course_id) === String(selectedCourseId)
-          )
-        )
-      )
-    );
-  }, [selectedDates, selectedCourseEnrollments, participantMode, selectedSubgroupId, selectedCourseId, subgroups, enrollments]);
-
   // Курсы с групповым форматом — только на них имеет смысл подгруппа.
   const groupCourses = useMemo(() => courses.filter((c) => c.format === "group"), [courses]);
 
   // Ученики с активной записью именно на выбранный (в режиме "группа") курс —
   // пул, из которого можно набирать новую подгруппу.
-  const selectedSubgroup = useMemo(
-    () => subgroups.find((sg) => String(sg.id) === String(selectedSubgroupId)) ?? null,
-    [subgroups, selectedSubgroupId]
-  );
-
-  const selectedSubgroupStudents = useMemo(() => {
-    if (!selectedSubgroup) return [];
-    return (selectedSubgroup.student_ids ?? []).map((studentId) => {
-      const person = studentsById[studentId];
-      return {
-        id: studentId,
-        name: person ? fullName(person) : `Ученик #${studentId}`,
-      };
-    });
-  }, [selectedSubgroup, studentsById]);
-
   const courseStudents = useMemo(() => {
     if (!selectedCourseId) return [];
     const map = new Map();
@@ -253,8 +189,24 @@ export default function TutorNewLesson() {
     let cancelled = false;
     setLoadingSubgroups(true);
     fetchSubgroups({ course_id: selectedCourseId, tutor_id: user.id })
-      .then((res) => {
-        if (!cancelled) setSubgroups(res?.items ?? []);
+      .then(async (res) => {
+        if (cancelled) return;
+        const items = res?.items ?? [];
+        setSubgroups(items);
+
+        const missingIds = [...new Set(items.flatMap((sg) => sg.student_ids ?? []))]
+          .filter((id) => !studentsById[id]);
+        if (missingIds.length) {
+          const fetched = await Promise.all(missingIds.map((id) => fetchUserById(id).catch(() => null)));
+          if (cancelled) return;
+          setStudentsById((prev) => {
+            const next = { ...prev };
+            fetched.forEach((student, index) => {
+              if (student) next[missingIds[index]] = student;
+            });
+            return next;
+          });
+        }
       })
       .catch(() => {
         if (!cancelled) setSubgroups([]);
@@ -265,7 +217,7 @@ export default function TutorNewLesson() {
     return () => {
       cancelled = true;
     };
-  }, [participantMode, selectedCourseId, user?.id]);
+  }, [participantMode, selectedCourseId, user?.id, studentsById]);
 
   function switchParticipantMode(mode) {
     setParticipantMode(mode);
@@ -277,8 +229,6 @@ export default function TutorNewLesson() {
     setNewSubgroupName("");
     setNewSubgroupStudentIds([]);
     setSubgroupError("");
-    setEditingSubgroup(null);
-    setEditSubgroupError("");
   }
 
   function toggleNewSubgroupStudent(studentId) {
@@ -314,51 +264,6 @@ export default function TutorNewLesson() {
       setSubgroupError(e.message || "Не удалось создать группу");
     } finally {
       setSubgroupSubmitting(false);
-    }
-  }
-
-  function openEditSubgroup() {
-    if (!selectedSubgroup) return;
-    setEditingSubgroup(selectedSubgroup);
-    setEditSubgroupName(selectedSubgroup.name ?? "");
-    setEditSubgroupStudentIds((selectedSubgroup.student_ids ?? []).map(Number));
-    setEditSubgroupError("");
-  }
-
-  function toggleEditSubgroupStudent(studentId) {
-    setEditSubgroupStudentIds((prev) =>
-      prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId]
-    );
-  }
-
-  async function handleUpdateSubgroup() {
-    setEditSubgroupError("");
-    if (!editingSubgroup) return;
-    if (!editSubgroupName.trim()) {
-      setEditSubgroupError("Введите название подгруппы");
-      return;
-    }
-    if (editSubgroupStudentIds.length === 0) {
-      setEditSubgroupError("Выберите хотя бы одного ученика");
-      return;
-    }
-    setEditSubgroupSubmitting(true);
-    try {
-      const updated = await updateSubgroup(editingSubgroup.id, {
-        name: editSubgroupName.trim(),
-        student_ids: editSubgroupStudentIds.map(Number),
-      });
-      setSubgroups((prev) =>
-        prev
-          .map((sg) => (String(sg.id) === String(updated?.id ?? editingSubgroup.id) ? { ...sg, ...(updated ?? {}) } : sg))
-          .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "ru"))
-      );
-      setSelectedSubgroupId(updated?.id ?? editingSubgroup.id);
-      setEditingSubgroup(null);
-    } catch (e) {
-      setEditSubgroupError(e.message || "Не удалось обновить подгруппу");
-    } finally {
-      setEditSubgroupSubmitting(false);
     }
   }
 
@@ -413,32 +318,6 @@ export default function TutorNewLesson() {
 
   function toggleDate(iso) {
     if (iso < todayISO) return; // прошедшие дни выбрать нельзя
-
-    if (participantMode === "student" && selectedStudentId && selectedCourseId) {
-      if (!isDateAllowedForEnrollments(iso, selectedCourseEnrollments)) {
-        setSubmitError("На выбранную дату у ученика нет действующего договора по этому курсу.");
-        return;
-      }
-    }
-
-    if (participantMode === "group" && selectedSubgroupId && selectedCourseId) {
-      const subgroup = subgroups.find((sg) => String(sg.id) === String(selectedSubgroupId));
-      const ids = subgroup?.student_ids ?? [];
-      const allAllowed = ids.length > 0 && ids.every((studentId) =>
-        isDateAllowedForEnrollments(
-          iso,
-          enrollments.filter(
-            (e) => e.status === "active" && String(e.student_id) === String(studentId) && String(e.course_id) === String(selectedCourseId)
-          )
-        )
-      );
-      if (!allAllowed) {
-        setSubmitError("На выбранную дату у одного или нескольких учеников группы нет действующего договора.");
-        return;
-      }
-    }
-
-    setSubmitError("");
     setSelectedDates((prev) =>
       prev.includes(iso) ? prev.filter((d) => d !== iso) : [...prev, iso].sort()
     );
@@ -470,13 +349,6 @@ export default function TutorNewLesson() {
     }
     if (!form.startTime) {
       setSubmitError("Укажите время начала занятия");
-      return;
-    }
-
-    const invalidSelectedDates = selectedDates.filter((iso) => !allowedSelectedDates.includes(iso));
-    if (invalidSelectedDates.length > 0) {
-      setSubmitError("Среди выбранных дат есть даты вне периода действия договора. Уберите их и выберите допустимые даты.");
-      setSelectedDates((prev) => prev.filter((iso) => allowedSelectedDates.includes(iso)));
       return;
     }
 
@@ -650,7 +522,6 @@ export default function TutorNewLesson() {
                       setSelectedCourseId(e.target.value);
                       setSelectedSubgroupId("");
                       setCreatingSubgroup(false);
-                      setEditingSubgroup(null);
                     }}
                     className="w-full px-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                   >
@@ -703,79 +574,6 @@ export default function TutorNewLesson() {
                           <span className="material-symbols-outlined text-[18px]">add</span>
                           Новая подгруппа
                         </button>
-                      </div>
-                    )}
-
-                    {selectedSubgroup && !creatingSubgroup && (
-                      <div className="mt-2 p-stack-md bg-surface-container-low rounded-lg border border-outline-variant flex flex-col gap-stack-sm">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="font-label-md font-bold text-on-surface">Информация о подгруппе</p>
-                            <p className="font-body-md text-on-surface-variant mt-1">
-                              {selectedSubgroup.name} · {selectedSubgroupStudents.length} {selectedSubgroupStudents.length === 1 ? "ученик" : selectedSubgroupStudents.length < 5 ? "ученика" : "учеников"}
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={openEditSubgroup}
-                            className="shrink-0 px-3 py-2 rounded-lg border border-primary text-primary font-label-md text-[12px] hover:bg-primary-container/20 transition-colors flex items-center gap-1"
-                          >
-                            <span className="material-symbols-outlined text-[16px]">edit</span>
-                            Редактировать
-                          </button>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {selectedSubgroupStudents.map((student) => (
-                            <span key={student.id} className="px-2.5 py-1 rounded-full bg-surface text-on-surface font-body-md text-[12px] border border-outline-variant">
-                              {student.name}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {editingSubgroup && (
-                      <div className="mt-2 p-stack-md bg-surface-container-low rounded-lg flex flex-col gap-stack-sm border border-primary/30">
-                        <div className="flex items-center justify-between">
-                          <p className="font-label-md font-bold text-on-surface">Редактирование подгруппы</p>
-                          <button type="button" onClick={() => setEditingSubgroup(null)} className="p-1 hover:bg-surface-container rounded">
-                            <span className="material-symbols-outlined text-[18px]">close</span>
-                          </button>
-                        </div>
-                        <input
-                          type="text"
-                          value={editSubgroupName}
-                          onChange={(e) => setEditSubgroupName(e.target.value)}
-                          placeholder="Название подгруппы"
-                          className="w-full px-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
-                        />
-                        <div className="flex flex-col gap-1 max-h-48 overflow-y-auto border border-outline-variant rounded-lg p-2">
-                          {courseStudents.map((student) => (
-                            <label key={student.id} className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-surface-container cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={editSubgroupStudentIds.includes(student.id)}
-                                onChange={() => toggleEditSubgroupStudent(student.id)}
-                                className="accent-primary"
-                              />
-                              <span className="font-body-md text-body-md text-on-surface">{student.name}</span>
-                            </label>
-                          ))}
-                        </div>
-                        {editSubgroupError && <p className="font-body-md text-[12px] text-error">{editSubgroupError}</p>}
-                        <div className="flex justify-end gap-2">
-                          <button type="button" onClick={() => setEditingSubgroup(null)} className="px-4 py-2 rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors">
-                            Отмена
-                          </button>
-                          <button
-                            type="button"
-                            disabled={editSubgroupSubmitting}
-                            onClick={handleUpdateSubgroup}
-                            className="px-4 py-2 rounded-lg font-label-md text-label-md bg-primary text-on-primary hover:bg-on-primary-fixed-variant transition-colors disabled:opacity-60"
-                          >
-                            {editSubgroupSubmitting ? "Сохраняем…" : "Сохранить"}
-                          </button>
-                        </div>
                       </div>
                     )}
 
@@ -891,25 +689,14 @@ export default function TutorNewLesson() {
                       const isSelected = selectedDates.includes(iso);
                       const isToday = day === todayDay;
                       const isPast = iso < todayISO;
-                      const isContractDateAllowed =
-                        participantMode === "student"
-                          ? !selectedStudentId || !selectedCourseId || isDateAllowedForEnrollments(iso, selectedCourseEnrollments)
-                          : !selectedSubgroupId || !selectedCourseId || (subgroups.find((sg) => String(sg.id) === String(selectedSubgroupId))?.student_ids ?? []).every((studentId) =>
-                              isDateAllowedForEnrollments(
-                                iso,
-                                enrollments.filter((e) => e.status === "active" && String(e.student_id) === String(studentId) && String(e.course_id) === String(selectedCourseId))
-                              )
-                            );
-                      const isDisabled = isPast || !isContractDateAllowed;
                       return (
                         <button
                           type="button"
                           key={day}
-                          disabled={isDisabled}
+                          disabled={isPast}
                           onClick={() => toggleDate(iso)}
-                          title={!isPast && !isContractDateAllowed ? "На эту дату нет действующего договора" : undefined}
                           className={`h-8 rounded-md font-label-md text-[12px] transition-all border
-                            ${isDisabled ? "text-outline-variant cursor-not-allowed" : "text-on-surface hover:bg-primary-container/30"}
+                            ${isPast ? "text-outline-variant cursor-not-allowed" : "text-on-surface hover:bg-primary-container/30"}
                             ${isSelected ? "bg-primary text-on-primary border-primary" : "border-transparent"}
                             ${isToday && !isSelected ? "border-primary" : ""}
                           `}
