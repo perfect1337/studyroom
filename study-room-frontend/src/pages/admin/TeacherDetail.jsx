@@ -4,11 +4,11 @@ import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import TutorStatusSelect from "../../components/ui/TutorStatusSelect.jsx";
 import Pagination from "../../components/ui/Pagination.jsx";
-import { usePagination } from "../../utils/usePagination.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople, fetchBranches, setTutorStatus, setUserActive } from "../../api/users.js";
-import { fetchEnrollments, fetchCourses, fetchLessons, fetchTests, assignCourseTutor, removeCourseTutor } from "../../api/academic.js";
+import { fetchEnrollments, fetchCourses, fetchLessons, fetchTests, fetchSubgroups, assignCourseTutor, removeCourseTutor } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
+import TutorSubgroupsCard from "../../components/tutor/TutorSubgroupsCard.jsx";
 
 const WEEKDAYS = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"];
 const MONTH_NAMES = [
@@ -83,6 +83,8 @@ export default function TeacherDetail({ role = "owner" }) {
   const [enrollments, setEnrollments] = useState([]); // только его записи (tutor_id=teacherId)
   const [courses, setCourses] = useState([]);
   const [lessons, setLessons] = useState([]);
+  const [allTeacherLessons, setAllTeacherLessons] = useState([]);
+  const [subgroups, setSubgroups] = useState([]);
   const [tests, setTests] = useState([]);
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -93,7 +95,6 @@ export default function TeacherDetail({ role = "owner" }) {
   const [fireStatus, setFireStatus] = useState("");
   const [courseTutorBusyId, setCourseTutorBusyId] = useState(null);
   const [courseTutorError, setCourseTutorError] = useState("");
-  const LESSONS_PAGE_SIZE = 10;
 
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
@@ -111,7 +112,6 @@ export default function TeacherDetail({ role = "owner" }) {
       setViewMonth(viewMonth - 1);
     }
     setSelectedDay(null);
-    setLessonsPage(1);
   }
 
   function nextMonth() {
@@ -122,7 +122,6 @@ export default function TeacherDetail({ role = "owner" }) {
       setViewMonth(viewMonth + 1);
     }
     setSelectedDay(null);
-    setLessonsPage(1);
   }
 
   async function load() {
@@ -131,10 +130,12 @@ export default function TeacherDetail({ role = "owner" }) {
     try {
       const date_from = toISODate(viewYear, viewMonth, 1);
       const date_to = toISODate(viewYear, viewMonth, daysInMonth);
-      const [peopleRes, coursesRes, lessonsRes, branchesRes, testsRes] = await Promise.all([
+      const [peopleRes, coursesRes, lessonsRes, allLessonsRes, subgroupsRes, branchesRes, testsRes] = await Promise.all([
         fetchMyPeople(),
         fetchCourses(),
         fetchLessons({ tutor_id: teacherId, date_from, date_to }),
+        fetchLessons({ tutor_id: teacherId }),
+        fetchSubgroups({ tutor_id: Number(teacherId) }),
         isOwner ? fetchBranches().catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
         // Область видимости сужается на бэкенде по роли (owner — всё, branch_owner — свой филиал).
         fetchTests().catch(() => ({ items: [] })),
@@ -146,6 +147,8 @@ export default function TeacherDetail({ role = "owner" }) {
       setStudents(peopleRes?.students ?? []);
       setCourses(allCourses);
       setLessons(lessonsRes?.items ?? []);
+      setAllTeacherLessons(allLessonsRes?.items ?? []);
+      setSubgroups(subgroupsRes?.items ?? []);
       setBranches(branchesRes?.items ?? []);
       setTests(testsRes?.items ?? []);
 
@@ -311,24 +314,6 @@ export default function TeacherDetail({ role = "owner" }) {
     .sort((a, b) => (a.lesson_date + a.start_time).localeCompare(b.lesson_date + b.start_time));
   const selectedDayLessons = selectedDay ? (lessonsByDay[selectedDay] ?? []) : [];
 
-  // Owner/branch_owner должны видеть все специализации преподавателя, а не
-  // только устаревшее одиночное поле tutor_profiles.specialization.
-  // Актуальный список строится из всех назначенных преподавателю курсов.
-  const teacherSpecializations = useMemo(() => {
-    if (!teacher) return [];
-    const fromCourses = courses
-      .filter((c) => (c.tutor_ids ?? []).includes(Number(teacherId)))
-      .map((c) => c.subject || c.title)
-      .filter(Boolean);
-    if (fromCourses.length > 0) return Array.from(new Set(fromCourses));
-    return teacher.specialization
-      ? String(teacher.specialization).split(/[,;]\s*/).map((s) => s.trim()).filter(Boolean)
-      : [];
-  }, [courses, teacher, teacherId]);
-
-  const { page: lessonsPage, setPage: setLessonsPage, pageItems: pagedLessons } =
-    usePagination(upcomingLessons, LESSONS_PAGE_SIZE);
-
   const statusOptions = STATUS_OPTIONS_BY_ROLE[role] ?? STATUS_OPTIONS_BY_ROLE.branch_owner;
   const tutorStatus = teacher?.tutor_status ?? "active";
   const isFired = teacher && teacher.is_active === false;
@@ -446,20 +431,10 @@ export default function TeacherDetail({ role = "owner" }) {
                     <span className="text-on-surface-variant font-label-md mb-1.5 opacity-60">ID: {teacher.id}</span>
                     {isFired && <StatusBadge status="Уволен" color="red" />}
                   </div>
-                  <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-2">
-                    {teacherSpecializations.length > 0 ? (
-                      teacherSpecializations.map((specialization) => (
-                        <span key={specialization} className="px-2.5 py-1 rounded-full bg-primary-fixed text-on-primary-fixed text-[12px] font-semibold">
-                          {specialization}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-on-surface-variant font-body-md">Специализации не указаны</span>
-                    )}
-                    {teacher.branch_id && (
-                      <span className="text-on-surface-variant font-body-md">· {branchNameById[teacher.branch_id] || `Филиал #${teacher.branch_id}`}</span>
-                    )}
-                  </div>
+                  <p className="text-on-surface-variant font-body-md mb-1">
+                    {teacher.specialization || "Специализация не указана"}
+                    {teacher.branch_id ? ` · ${branchNameById[teacher.branch_id] || `Филиал #${teacher.branch_id}`}` : ""}
+                  </p>
                   <p className="text-on-surface-variant font-body-md mb-4 text-[13px]">
                     {teacher.email && <span className="mr-4">{teacher.email}</span>}
                     {teacher.phone && <span>{teacher.phone}</span>}
@@ -514,6 +489,14 @@ export default function TeacherDetail({ role = "owner" }) {
                 </div>
               </div>
             </div>
+
+            <TutorSubgroupsCard
+              subgroups={subgroups}
+              lessons={allTeacherLessons}
+              courses={courses}
+              students={students}
+              title="Подгруппы преподавателя"
+            />
 
             <div className="grid grid-cols-12 gap-gutter">
               <section className="col-span-12 lg:col-span-8 space-y-stack-md">
@@ -678,7 +661,7 @@ export default function TeacherDetail({ role = "owner" }) {
                             <td colSpan={3} className="px-6 py-8 text-center text-on-surface-variant">Занятий в этом месяце не запланировано</td>
                           </tr>
                         )}
-                        {pagedLessons.map((l) => {
+                        {upcomingLessons.map((l) => {
                           const course = coursesById[l.course_id];
                           return (
                             <tr key={l.id} className="hover:bg-surface-container-low transition-colors">
@@ -702,7 +685,7 @@ export default function TeacherDetail({ role = "owner" }) {
                       {upcomingLessons.length === 0 && (
                         <div className="px-4 py-8 text-center text-on-surface-variant">Занятий в этом месяце не запланировано</div>
                       )}
-                      {pagedLessons.map((l) => {
+                      {upcomingLessons.map((l) => {
                         const course = coursesById[l.course_id];
                         return (
                           <div key={l.id} className="p-4 flex flex-col gap-1">
@@ -719,13 +702,6 @@ export default function TeacherDetail({ role = "owner" }) {
                         );
                       })}
                     </div>
-                    <Pagination
-                      page={lessonsPage}
-                      pageSize={LESSONS_PAGE_SIZE}
-                      total={upcomingLessons.length}
-                      onPageChange={setLessonsPage}
-                      itemLabel="занятий"
-                    />
                   </div>
                 </div>
               </section>
