@@ -144,7 +144,8 @@ export default function StudentCourses() {
             Вы пока не записаны ни на один активный курс
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-stack-md">
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-stack-md">
             {pagedCourses.map((e) => {
               const course = coursesById[e.course_id];
               const tutor = tutorsById[e.tutor_id || courseTutorId[e.course_id]];
@@ -192,8 +193,9 @@ export default function StudentCourses() {
                 </div>
               );
             })}
-          </div>
-        <Pagination page={page} pageSize={9} total={filtered.length} onPageChange={setPage} itemLabel="курсов" />
+            </div>
+            <Pagination page={page} pageSize={9} total={filtered.length} onPageChange={setPage} itemLabel="курсов" />
+          </>
         )}
       </div>
     </DashboardShell>
