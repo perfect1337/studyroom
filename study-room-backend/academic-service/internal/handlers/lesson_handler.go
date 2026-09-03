@@ -20,6 +20,7 @@ type LessonHandler struct {
 	enrollments *repository.EnrollmentRepository
 	attendance  *repository.AttendanceRepository
 	subgroups   *repository.SubgroupRepository
+	courses     *repository.CourseRepository
 	userRefs    *repository.UserRefRepository
 	userClient  ChildrenResolver
 	publisher   events.Publisher
@@ -30,13 +31,14 @@ func NewLessonHandler(
 	enrollments *repository.EnrollmentRepository,
 	attendance *repository.AttendanceRepository,
 	subgroups *repository.SubgroupRepository,
+	courses *repository.CourseRepository,
 	userRefs *repository.UserRefRepository,
 	userClient ChildrenResolver,
 	publisher events.Publisher,
 ) *LessonHandler {
 	return &LessonHandler{
 		lessons: lessons, enrollments: enrollments, attendance: attendance, subgroups: subgroups,
-		userRefs: userRefs, userClient: userClient, publisher: publisher,
+		courses: courses, userRefs: userRefs, userClient: userClient, publisher: publisher,
 	}
 }
 
@@ -250,6 +252,31 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course enrollments")
 		return
+	}
+
+	// Занятие "для одного ученика" (StudentID задан, SubgroupID — нет)
+	// имеет смысл только на индивидуальном курсе. На групповом курсе у
+	// каждого участника и так есть общий enrollment на весь курс — если
+	// разрешить создавать под него отдельное "индивидуальное" занятие
+	// конкретному ученику в обход подгрупп (см. TutorNewLesson.jsx,
+	// availableCourses), это ломает модель "у группового курса есть один
+	// групповой поток с подгруппами" и путает отчётность/посещаемость.
+	// Фронт уже не даёт выбрать такой курс в форме "Ученик" — эта проверка
+	// здесь на случай прямого вызова API в обход интерфейса.
+	if req.StudentID != nil && req.SubgroupID == nil {
+		course, err := h.courses.GetByID(r.Context(), req.CourseID)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				writeError(w, http.StatusBadRequest, "BAD_REQUEST", "course not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course")
+			return
+		}
+		if course.Format == models.FormatGroup {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "individual lesson cannot be created for a group course; use subgroup_id instead")
+			return
+		}
 	}
 
 	lessonDate, err := time.Parse("2006-01-02", req.LessonDate)

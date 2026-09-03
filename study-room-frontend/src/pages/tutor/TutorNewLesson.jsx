@@ -153,7 +153,16 @@ export default function TutorNewLesson() {
     return students.filter((s) => s.name.toLowerCase().includes(q));
   }, [students, studentQuery]);
 
-  // Курсы, доступные выбранному ученику (активная запись у этого репетитора).
+  // Курсы, доступные выбранному ученику для ИНДИВИДУАЛЬНОГО занятия:
+  // активная запись у этого репетитора И курс сам по себе индивидуальный
+  // (format === "individual"). Раньше сюда попадали и групповые курсы, на
+  // которые ученик просто записан (enrollment есть у любого участника
+  // группы) — из-за этого можно было создать "индивидуальное" занятие по
+  // групповому курсу конкретному ученику в обход подгрупп, хотя учитывать
+  // такое занятие как индивидуальное для группового курса не имеет смысла:
+  // у курса уже есть отдельный групповой поток со своими подгруппами (см.
+  // participantMode === "group" ниже) — именно туда и нужно записывать
+  // занятия по такому курсу.
   const availableCourses = useMemo(() => {
     if (!selectedStudentId) return [];
     const courseIds = new Set(
@@ -161,7 +170,7 @@ export default function TutorNewLesson() {
         .filter((e) => e.status === "active" && String(e.student_id) === String(selectedStudentId))
         .map((e) => e.course_id)
     );
-    return courses.filter((c) => courseIds.has(c.id));
+    return courses.filter((c) => courseIds.has(c.id) && c.format !== "group");
   }, [enrollments, courses, selectedStudentId]);
 
   // Курсы с групповым форматом — только на них имеет смысл подгруппа.
@@ -349,10 +358,15 @@ export default function TutorNewLesson() {
     setSelectedStudentId(student.id);
     setStudentQuery(student.name);
     setStudentDropdownOpen(false);
-    // Если ранее выбранный курс не относится к новому ученику — сбрасываем.
+    // Если ранее выбранный курс не относится к новому ученику (или это
+    // групповой курс — см. availableCourses выше) — сбрасываем.
     setSelectedCourseId((prev) => {
       const stillValid = enrollments.some(
-        (e) => e.status === "active" && String(e.student_id) === String(student.id) && String(e.course_id) === String(prev)
+        (e) =>
+          e.status === "active" &&
+          String(e.student_id) === String(student.id) &&
+          String(e.course_id) === String(prev) &&
+          coursesById[e.course_id]?.format !== "group"
       );
       return stillValid ? prev : "";
     });
