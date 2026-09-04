@@ -18,7 +18,6 @@ import (
 )
 
 const expiringSoonWithinDays = 1
-const expiringSoonCheckInterval = 24 * time.Hour
 const contractExpiryCheckInterval = time.Minute
 
 func main() {
@@ -93,17 +92,38 @@ func main() {
 	srv.Shutdown(shutdownCtx)
 }
 
-// startExpiringSoonJob — раз в сутки проверяет договоры и отправляет два
-// уведомления: за 1 день до окончания и в день окончания.
+// expiringSoonCheckHour — в котором часу по МСК раз в сутки проверяются
+// истекающие договоры.
+const expiringSoonCheckHour = 8
+
+var mskLocation = time.FixedZone("MSK", 3*60*60)
+
+// startExpiringSoonJob — раз в сутки в expiringSoonCheckHour:00 МСК проверяет
+// договоры и отправляет два уведомления: за 1 день до окончания и в день
+// окончания. Первый запуск НЕ происходит сразу при старте процесса — иначе
+// при каждом перезапуске контейнера (деплой, рестарт, повторный docker
+// compose up) уведомление "договор истекает завтра" уходило бы родителям
+// повторно: у этой ветки в checkExpiringSoon сознательно нет своего флага
+// "уже отправлено" (см. комментарий там же) — только дневная периодичность
+// защищала от дублей. Вместо немедленного run() считаем точное время до
+// ближайших expiringSoonCheckHour:00 МСК и ждём именно его — тот же приём,
+// что уже используется в academic-service/startDailyDigestJob.
 func startExpiringSoonJob(ctx context.Context, deps *app.Deps) func() {
-	ticker := time.NewTicker(expiringSoonCheckInterval)
 	done := make(chan struct{})
 
+	nextRun := func() time.Duration {
+		now := time.Now().In(mskLocation)
+		next := time.Date(now.Year(), now.Month(), now.Day(), expiringSoonCheckHour, 0, 0, 0, mskLocation)
+		if !next.After(now) {
+			next = next.AddDate(0, 0, 1)
+		}
+		return next.Sub(now)
+	}
+
 	go func() {
-		checkExpiringSoon(ctx, deps)
 		for {
 			select {
-			case <-ticker.C:
+			case <-time.After(nextRun()):
 				checkExpiringSoon(ctx, deps)
 			case <-done:
 				return
@@ -112,7 +132,6 @@ func startExpiringSoonJob(ctx context.Context, deps *app.Deps) func() {
 	}()
 
 	return func() {
-		ticker.Stop()
 		close(done)
 	}
 }
