@@ -292,7 +292,7 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, err := time.Parse("2006-01-02", req.LessonDate)
+	_, err = time.Parse("2006-01-02", req.LessonDate)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "lesson_date must be YYYY-MM-DD")
 		return
@@ -522,7 +522,7 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 		if req.LessonDate != nil {
 			effectiveDateStr = *req.LessonDate
 		}
-		_, err := time.Parse("2006-01-02", effectiveDateStr)
+		_, err = time.Parse("2006-01-02", effectiveDateStr)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "lesson_date must be YYYY-MM-DD")
 			return
