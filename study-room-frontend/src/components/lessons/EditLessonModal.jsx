@@ -702,7 +702,7 @@ export default function EditLessonModal({
               <button type="button" onClick={handleDeleteLesson} disabled={cancelling || deleting} className="flex-1 bg-error text-on-error py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60">{deleting ? "Удаление…" : "Да, удалить занятие"}</button>
             </div>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
