@@ -74,6 +74,14 @@ export default function EditLessonModal({
   const [manualStudentQuery, setManualStudentQuery] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState("");
 
+  // В расписании нельзя назначать уволенного преподавателя. Увольнение в
+  // user-service означает is_active=false; отпуск/больничный не считаются
+  // увольнением и поэтому остаются доступными для переназначения.
+  const availableTutors = useMemo(
+    () => tutors.filter((t) => t && t.is_active !== false),
+    [tutors]
+  );
+
   useEffect(() => {
     if (open && lesson) {
       setForm({
@@ -387,7 +395,7 @@ export default function EditLessonModal({
               </div>
             )}
 
-            {canReassignTutor && tutors.length > 0 && (
+            {canReassignTutor && availableTutors.length > 0 && (
               <div className="flex flex-col gap-stack-sm">
                 <label className="font-label-md text-label-md text-on-surface" htmlFor="edit-tutor">
                   Преподаватель
@@ -398,7 +406,7 @@ export default function EditLessonModal({
                   onChange={(e) => update("tutor_id", e.target.value)}
                   className="w-full px-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
                 >
-                  {tutors.map((t) => (
+                  {availableTutors.map((t) => (
                     <option key={t.id} value={t.id}>
                       {fullName(t)}
                     </option>

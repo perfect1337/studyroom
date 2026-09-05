@@ -459,7 +459,7 @@ export default function ScheduleDirectory({ role }) {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-stack-lg">
         {/* Calendar */}
         <div className="lg:col-span-8 space-y-stack-lg">
-          <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant">
+          <div className="bg-surface-container-lowest rounded-xl p-3 sm:p-6 shadow-sm border border-outline-variant">
             <div className="flex items-center justify-between mb-8">
               <div>
                 <h3 className="font-headline-sm text-headline-sm text-on-surface">
@@ -493,8 +493,8 @@ export default function ScheduleDirectory({ role }) {
               </div>
             )}
 
-            <div className="overflow-x-auto -mx-2 px-2 pb-1">
-            <div className="min-w-[680px] grid grid-cols-7 text-center mb-4 border-b border-outline-variant/30 pb-2">
+            <div className="-mx-1 px-1 pb-1">
+            <div className="grid grid-cols-7 text-center mb-3 sm:mb-4 border-b border-outline-variant/30 pb-2">
               {WEEKDAYS.map((d) => (
                 <div key={d} className="font-label-md text-label-md text-outline">
                   {d}
@@ -502,9 +502,9 @@ export default function ScheduleDirectory({ role }) {
               ))}
             </div>
 
-            <div className="min-w-[680px] grid grid-cols-7 gap-1">
+            <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
               {Array.from({ length: firstWeekday }).map((_, i) => (
-                <div key={`pad-${i}`} className="h-20 sm:h-24" />
+                <div key={`pad-${i}`} className="min-h-16 sm:min-h-24" />
               ))}
               {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day = i + 1;
@@ -527,7 +527,7 @@ export default function ScheduleDirectory({ role }) {
                   <button
                     key={day}
                     onClick={() => { setSelectedDay(day); setDetailPage(0); }}
-                    className={`text-left min-h-24 sm:min-h-28 p-2 rounded-xl font-label-md transition-all duration-150 relative border flex flex-col ${dayStateClass} ${isSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-surface-container-lowest scale-[1.03] z-10 shadow-lg" : hasLessons ? "shadow-sm hover:shadow-md hover:brightness-[1.03]" : ""} ${isToday ? "border-2 border-secondary" : ""}`}
+                    className={`text-left min-h-16 sm:min-h-28 p-1 sm:p-2 rounded-lg sm:rounded-xl font-label-md transition-all duration-150 relative border flex flex-col overflow-hidden ${dayStateClass} ${isSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-surface-container-lowest scale-[1.02] z-10 shadow-lg" : hasLessons ? "shadow-sm hover:shadow-md hover:brightness-[1.03]" : ""} ${isToday ? "border-2 border-secondary" : ""}`}
                   >
                     {isToday && (
                       <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-secondary text-on-secondary text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tighter z-20 shadow-sm">
@@ -537,27 +537,27 @@ export default function ScheduleDirectory({ role }) {
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-[13px]">{day}</span>
                       {onsiteCount > 0 && (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-white/70 text-on-surface text-[8px] sm:text-[9px] font-bold leading-none">
-                          <span className="material-symbols-outlined text-[10px] sm:text-[11px]">meeting_room</span>
-                          Занято {onsiteCount}
+                        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 sm:px-1.5 rounded-full bg-white/70 text-on-surface text-[7px] sm:text-[9px] font-bold leading-none">
+                          <span className="material-symbols-outlined text-[9px] sm:text-[11px]">meeting_room</span>
+                          <span className="hidden sm:inline">Занято </span>{onsiteCount}
                         </span>
                       )}
                     </div>
-                    <div className="mt-1 space-y-1 overflow-hidden flex-1">
+                    <div className="mt-1 sm:mt-1.5 space-y-0.5 sm:space-y-1 overflow-hidden flex-1">
                       {dayLessons.slice(0, 3).map((l) => {
                         const info = lessonShortInfo(l);
                         return (
-                          <div key={l.id} className="rounded-md bg-white/80 text-on-surface px-1.5 py-1 text-[9px] sm:text-[10px] leading-tight shadow-[0_1px_1px_rgba(0,0,0,0.04)]">
+                          <div key={l.id} className="rounded-md bg-white/80 text-on-surface px-1 py-0.5 sm:px-1.5 sm:py-1 text-[8px] sm:text-[10px] leading-tight shadow-[0_1px_1px_rgba(0,0,0,0.04)]">
                             <div className="font-bold truncate">{info.subject}</div>
-                            <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 font-semibold opacity-80">
-                              {info.classes.length > 0 && <span>{info.classes.join(", ")}</span>}
+                            <div className="flex flex-wrap gap-x-1 sm:gap-x-1.5 gap-y-0.5 font-semibold opacity-80">
+                              {info.classes.length > 0 && <span className="hidden sm:inline">{info.classes.join(", ")}</span>}
                               <span>{info.format}</span><span>{info.location}</span>
                             </div>
                           </div>
                         );
                       })}
                       {dayLessons.length > 3 && (
-                        <div className="text-[9px] font-bold text-center rounded-md bg-white/50 py-0.5">
+                        <div className="text-[8px] sm:text-[9px] font-bold text-center rounded-md bg-white/50 py-0.5">
                           +{dayLessons.length - 3} ещё
                         </div>
                       )}
@@ -572,7 +572,7 @@ export default function ScheduleDirectory({ role }) {
 
         {/* Detail panel */}
         <div className="lg:col-span-4">
-          <div className="sticky top-24 space-y-stack-lg">
+          <div className="lg:sticky lg:top-24 space-y-stack-lg">
             {!selectedDay || selectedLessons.length === 0 ? (
               <div className="bg-surface-container-lowest rounded-xl shadow-xl overflow-hidden border border-outline-variant border-t-8 border-primary">
                 <div className="p-6 flex flex-col items-center text-center">
