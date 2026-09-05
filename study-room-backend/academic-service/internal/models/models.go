@@ -141,8 +141,6 @@ type Lesson struct {
 	// кэш для отображения, без прав доступа, поэтому подходит как фолбэк.
 	ParticipantNames map[int64]string `json:"participant_names,omitempty"`
 	ContractIssue    bool             `json:"contract_issue"`
-	// ContractIssue is true when at least one participant has no valid contract for the lesson date.
-	ContractIssue bool `json:"contract_issue"`
 }
 
 // Subgroup — соответствует таблице subgroups: именованный набор учеников
