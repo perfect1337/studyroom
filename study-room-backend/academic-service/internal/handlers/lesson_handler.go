@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
+	"time"
 
 	"studyroom/academic-service/internal/events"
 	"studyroom/academic-service/internal/middleware"
@@ -355,7 +357,7 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lesson, err := h.lessons.Create(r.Context(), repository.LessonInput{
-		CourseID: req.CourseID, TutorID: &req.TutorID, CreatedBy: claims.UserID,
+		CourseID: req.CourseID, TutorID: &req.TutorID, BranchID: claims.BranchID, CreatedBy: claims.UserID,
 		Topic: req.Topic, LessonDate: req.LessonDate, StartTime: req.StartTime, EndTime: req.EndTime,
 		LocationType: req.LocationType, GroupType: req.GroupType, Comment: req.Comment,
 		ParticipantIDs: participantIDs,
@@ -633,6 +635,57 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, lesson)
+}
+
+// CopyMonth — POST /lessons/copy-month. Копирует расписание указанного месяца
+// в другой месяц. Доступен только owner/branch_owner (маршрут дополнительно
+// ограничен RequireRoles в app.go). branch_owner принудительно ограничен своим
+// филиалом.
+func (h *LessonHandler) CopyMonth(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+
+	var req struct {
+		SourceYear  int    `json:"source_year"`
+		SourceMonth int    `json:"source_month"`
+		TargetYear  int    `json:"target_year"`
+		TargetMonth int    `json:"target_month"`
+		BranchID    *int64 `json:"branch_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
+		return
+	}
+	if req.SourceYear < 1 || req.SourceMonth < 1 || req.SourceMonth > 12 ||
+		req.TargetYear < 1 || req.TargetMonth < 1 || req.TargetMonth > 12 {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "source_year, source_month, target_year and target_month are required and valid")
+		return
+	}
+
+	branchID := req.BranchID
+	if claims.Role == models.RoleBranchOwner {
+		branchID = claims.BranchID
+		if branchID == nil {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "branch is not assigned")
+			return
+		}
+	} else if claims.Role != models.RoleOwner {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "role not permitted")
+		return
+	}
+
+	loc := time.UTC
+	sourceFrom := time.Date(req.SourceYear, time.Month(req.SourceMonth), 1, 0, 0, 0, 0, loc)
+	sourceTo := sourceFrom.AddDate(0, 1, -1)
+	targetFrom := time.Date(req.TargetYear, time.Month(req.TargetMonth), 1, 0, 0, 0, 0, loc)
+	targetTo := targetFrom.AddDate(0, 1, -1)
+
+	copied, err := h.lessons.CopyMonth(r.Context(), sourceFrom, sourceTo, targetFrom, targetTo, branchID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to copy lessons")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"copied": copied})
 }
 
 // Delete — DELETE /lessons/{id}, фактически отмена занятия: помечает

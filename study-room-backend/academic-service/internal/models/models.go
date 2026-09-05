@@ -115,7 +115,6 @@ type Lesson struct {
 	ID           int64        `json:"id"`
 	CourseID     int64        `json:"course_id"`
 	TutorID      *int64       `json:"tutor_id,omitempty"`
-	BranchID     *int64       `json:"branch_id,omitempty"`
 	CreatedBy    int64        `json:"created_by"`
 	Topic        string       `json:"topic"`
 	LessonDate   time.Time    `json:"lesson_date"`
@@ -126,6 +125,7 @@ type Lesson struct {
 	Status       LessonStatus `json:"status"`
 	Comment      *string      `json:"comment,omitempty"`
 	CreatedAt    time.Time    `json:"created_at"`
+	BranchID     *int64       `json:"branch_id,omitempty"`
 	// ParticipantIDs — id учеников занятия (lesson_participants). Заполняется
 	// в хендлере (см. LessonHandler.List) отдельным батч-запросом, а не в
 	// каждом scanLesson, чтобы не плодить N+1. Нужно фронту, чтобы строить
@@ -141,7 +141,8 @@ type Lesson struct {
 	// "Ученик" без имени (см. PeopleDirectory.jsx). user_refs — это просто
 	// кэш для отображения, без прав доступа, поэтому подходит как фолбэк.
 	ParticipantNames map[int64]string `json:"participant_names,omitempty"`
-	ContractIssue    bool             `json:"contract_issue"`
+	// ContractIssue is true when at least one participant has no valid contract for the lesson date.
+	ContractIssue bool `json:"contract_issue"`
 }
 
 // Subgroup — соответствует таблице subgroups: именованный набор учеников
