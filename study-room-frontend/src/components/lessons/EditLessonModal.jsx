@@ -74,6 +74,12 @@ export default function EditLessonModal({
   const [manualStudentQuery, setManualStudentQuery] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState("");
 
+  // В выборе преподавателя показываем только действующих сотрудников.
+  const availableTutors = useMemo(
+    () => (tutors ?? []).filter((t) => t && t.is_active === true),
+    [tutors]
+  );
+
   useEffect(() => {
     if (open && lesson) {
       setForm({
@@ -101,7 +107,7 @@ export default function EditLessonModal({
       setManualStudentQuery("");
       setSelectedStudentId(String(sortedIds(lesson.participant_ids)[0] ?? ""));
     }
-  }, [open, lesson]);
+  }, [open, lesson, tutors]);
 
   // Подгружаем подгруппы курса и активный состав курса (для ручного выбора
   // учеников), только когда занятие реально групповое — не тратим лишний
