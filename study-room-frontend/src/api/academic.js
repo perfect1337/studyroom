@@ -177,6 +177,17 @@ export function cancelLesson(id) {
   });
 }
 
+// Физическое удаление занятия из БД. В отличие от cancelLesson() не меняет
+// статус на cancelled — строка lesson удаляется вместе с attendance и
+// lesson_participants по ON DELETE CASCADE.
+export function deleteLesson(id) {
+  return academicApi(`/lessons/${id}/hard-delete`, { method: "DELETE" }).then((res) => {
+    invalidateQuery(["lessons"]);
+    invalidateQuery(["enrollments"]);
+    return res;
+  });
+}
+
 // 2.10 / 2.11 Посещаемость
 export function markAttendance(lessonId, records) {
   return academicApi(`/lessons/${lessonId}/attendance`, { method: "POST", body: { records } });

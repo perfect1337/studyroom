@@ -426,10 +426,11 @@
 `roles`: `tutor` (только `tutor_id` = свой), `owner` (любой `tutor_id`), `branch_owner` (`tutor_id` только из своего филиала)
 
 ## 2.9. Обновить / отменить занятие
-`PATCH /lessons/{id}` · `DELETE /lessons/{id}`
+`PATCH /lessons/{id}` · `DELETE /lessons/{id}` · `DELETE /lessons/{id}/hard-delete`
 
 Тело запроса (PATCH): подмножество полей занятия
 Тело ответа: обновлённое занятие / без ответа, код 200
+`DELETE /lessons/{id}/hard-delete` физически удаляет занятие вместе с `lesson_participants` и `attendance`; доступен только `owner` и `branch_owner` в пределах их области доступа.
 `auth`: true
 `roles`: те же, что 2.8, плюс проверка, что занятие принадлежит доступной репетитору/филиалу области
 

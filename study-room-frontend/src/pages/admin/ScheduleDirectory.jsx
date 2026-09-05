@@ -108,6 +108,10 @@ export default function ScheduleDirectory({ role }) {
   function handleLessonCancelled(lessonId) {
     setLessons((prev) => prev.map((l) => (l.id === lessonId ? { ...l, status: "cancelled" } : l)));
   }
+  function handleLessonDeleted(lessonId) {
+    setLessons((prev) => prev.filter((l) => l.id !== lessonId));
+    setEditingLesson(null);
+  }
 
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstWeekday = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7; // 0 = Monday
@@ -803,6 +807,7 @@ export default function ScheduleDirectory({ role }) {
         onClose={() => setEditingLesson(null)}
         onSaved={handleLessonSaved}
         onCancelled={handleLessonCancelled}
+        onDeleted={handleLessonDeleted}
       />
     </DashboardShell>
   );

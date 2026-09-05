@@ -159,6 +159,31 @@ func TestLessons_UpdateDelete_AccessControl(t *testing.T) {
 	e.mustOK(res, 200)
 }
 
+// TestLessons_HardDelete — DELETE /lessons/{id}/hard-delete физически удаляет
+// занятие. Обычный DELETE выше по-прежнему только отменяет его.
+func TestLessons_HardDelete(t *testing.T) {
+	e := getEnv(t)
+	owner := e.accessToken(1, models.RoleOwner, nil)
+	courseID := e.seedCourse("Химия", 1)
+	e.seedActiveEnrollment(100, courseID)
+
+	body := map[string]any{
+		"course_id": courseID, "tutor_id": 15, "topic": "Атомы",
+		"lesson_date": "2026-09-01", "start_time": "12:00", "end_time": "13:00",
+	}
+	res := e.do("POST", "/api/v1/academic/lessons", body, owner)
+	e.mustOK(res, 201)
+	lessonID := toPathID(res.Body["id"])
+
+	res = e.do("DELETE", "/api/v1/academic/lessons/"+lessonID+"/hard-delete", nil, owner)
+	e.mustOK(res, 200)
+
+	res = e.do("DELETE", "/api/v1/academic/lessons/"+lessonID+"/hard-delete", nil, owner)
+	if res.Status != 404 {
+		t.Fatalf("hard-delete of missing lesson: status=%d want=404", res.Status)
+	}
+}
+
 // TestAttendance_MarkAndGet — POST/GET /lessons/{id}/attendance
 // (api-contracts.md 2.10-2.11): тьютор отмечает, участник (student/parent
 // ребёнка) может прочитать, посторонний студент — нет.

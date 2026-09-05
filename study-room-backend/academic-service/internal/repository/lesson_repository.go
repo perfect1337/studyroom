@@ -222,6 +222,19 @@ func (r *LessonRepository) Cancel(ctx context.Context, id int64) error {
 	return nil
 }
 
+// Delete physically removes the lesson. lesson_participants and attendance
+// reference lessons with ON DELETE CASCADE, so their rows are removed atomically.
+func (r *LessonRepository) Delete(ctx context.Context, id int64) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM lessons WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // DetachTutorFromLessons keeps the lesson history and only clears its tutor.
 func (r *LessonRepository) DetachTutorFromLessons(ctx context.Context, tutorID int64) (int64, error) {
 	tag, err := r.pool.Exec(ctx, `UPDATE lessons SET tutor_id = NULL WHERE tutor_id = $1`, tutorID)

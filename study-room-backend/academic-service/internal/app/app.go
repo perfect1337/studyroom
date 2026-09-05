@@ -139,6 +139,7 @@ func NewRouter(d *Deps) http.Handler {
 				r.Post("/lessons", lessonHandler.Create)
 				r.Patch("/lessons/{id}", lessonHandler.Update)
 				r.Delete("/lessons/{id}", lessonHandler.Delete)
+				r.Delete("/lessons/{id}/hard-delete", lessonHandler.HardDelete)
 				r.Post("/lessons/copy-month", lessonHandler.CopyMonth)
 				// Подгруппы: создание/изменение/удаление доступны тем же ролям,
 				// что и управление занятиями — доступ дальше сужается внутри

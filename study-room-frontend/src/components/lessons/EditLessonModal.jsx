@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { updateLesson, cancelLesson, fetchSubgroups, fetchEnrollments } from "../../api/academic.js";
+import { updateLesson, cancelLesson, deleteLesson, fetchSubgroups, fetchEnrollments } from "../../api/academic.js";
 import { fetchMyPeople } from "../../api/users.js";
 import { fullName } from "../../utils/userDisplay.js";
 
@@ -42,7 +42,8 @@ function sameIds(a, b) {
  * - canReassignTutor: bool
  * - onClose: () => void
  * - onSaved: (updatedLesson) => void — вызывается после успешного PATCH
- * - onCancelled: (lessonId) => void — вызывается после успешного DELETE (отмены)
+ * - onCancelled: (lessonId) => void — вызывается после успешной отмены
+ * - onDeleted: (lessonId) => void — вызывается после физического удаления
  */
 export default function EditLessonModal({
   open,
@@ -53,11 +54,14 @@ export default function EditLessonModal({
   onClose,
   onSaved,
   onCancelled,
+  onDeleted,
 }) {
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [error, setError] = useState("");
 
   // Состав группового занятия — подгружается отдельно от остальной формы,
@@ -99,6 +103,7 @@ export default function EditLessonModal({
       });
       setError("");
       setConfirmingCancel(false);
+      setConfirmingDelete(false);
       setCourseSubgroups([]);
       setCourseRoster([]);
       setRosterError("");
@@ -324,6 +329,19 @@ export default function EditLessonModal({
     }
   }
 
+  async function handleDeleteLesson() {
+    setDeleting(true);
+    setError("");
+    try {
+      await deleteLesson(lesson.id);
+      onDeleted?.(lesson.id);
+      onClose?.();
+    } catch (err) {
+      setError(err.message || "Не удалось удалить занятие");
+      setDeleting(false);
+    }
+  }
+
   async function handleCancelLesson() {
     setCancelling(true);
     setError("");
@@ -340,7 +358,7 @@ export default function EditLessonModal({
   return (
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4"
-      onClick={saving || cancelling ? undefined : onClose}
+      onClick={saving || cancelling || deleting ? undefined : onClose}
     >
       <div
         className="bg-surface-container-lowest rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-5 max-h-[90vh] overflow-y-auto"
@@ -348,7 +366,7 @@ export default function EditLessonModal({
       >
         <div className="flex justify-between items-start gap-3">
           <h3 className="font-headline-sm text-headline-sm text-on-surface">Редактировать занятие</h3>
-          {!saving && !cancelling && (
+          {!saving && !cancelling && !deleting && (
             <button onClick={onClose} className="p-1 hover:bg-surface-container-high rounded-full shrink-0" aria-label="Закрыть">
               <span className="material-symbols-outlined">close</span>
             </button>
@@ -371,7 +389,7 @@ export default function EditLessonModal({
           </div>
         )}
 
-        {!confirmingCancel ? (
+        {!(confirmingCancel || confirmingDelete) ? (
           <form onSubmit={handleSave} className="space-y-4">
             {courses.length > 0 && (
               <div className="flex flex-col gap-stack-sm">
@@ -617,22 +635,39 @@ export default function EditLessonModal({
 
             <div className="flex flex-wrap justify-between items-center gap-3 pt-2 border-t border-outline-variant/50">
               {!isCancelled ? (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setConfirmingCancel(true); setConfirmingDelete(false); }}
+                    disabled={saving || deleting}
+                    className="px-4 py-2 rounded-lg font-label-md text-label-md text-error border border-error hover:bg-error-container/30 transition-colors disabled:opacity-60"
+                  >
+                    Отменить занятие
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setConfirmingDelete(true); setConfirmingCancel(false); }}
+                    disabled={saving || cancelling}
+                    className="px-4 py-2 rounded-lg font-label-md text-label-md text-on-error bg-error hover:brightness-110 transition-colors disabled:opacity-60"
+                  >
+                    Удалить занятие
+                  </button>
+                </div>
+              ) : (
                 <button
                   type="button"
-                  onClick={() => setConfirmingCancel(true)}
-                  disabled={saving}
-                  className="px-4 py-2 rounded-lg font-label-md text-label-md text-error border border-error hover:bg-error-container/30 transition-colors disabled:opacity-60"
+                  onClick={() => setConfirmingDelete(true)}
+                  disabled={saving || deleting}
+                  className="px-4 py-2 rounded-lg font-label-md text-label-md text-on-error bg-error hover:brightness-110 transition-colors disabled:opacity-60"
                 >
                   Удалить занятие
                 </button>
-              ) : (
-                <span />
               )}
               <div className="flex gap-3 ml-auto">
                 <button
                   type="button"
                   onClick={onClose}
-                  disabled={saving}
+                  disabled={saving || cancelling || deleting}
                   className="px-6 py-2 rounded-lg font-label-md text-label-md text-primary border border-primary hover:bg-primary-container/20 transition-colors disabled:opacity-60"
                 >
                   Закрыть
@@ -647,28 +682,24 @@ export default function EditLessonModal({
               </div>
             </div>
           </form>
-        ) : (
+        ) : confirmingCancel ? (
           <div className="space-y-4">
             <div className="p-4 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">
-              Точно удалить занятие {normalizeDateForInput(lesson.lesson_date)} в {lesson.start_time}? Занятие будет удалено из расписания.
+              Точно отменить занятие {normalizeDateForInput(lesson.lesson_date)} в {lesson.start_time}? Ученики и родители увидят его как отменённое, но запись останется в истории.
             </div>
             <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setConfirmingCancel(false)}
-                disabled={cancelling}
-                className="flex-1 border border-outline-variant text-on-surface py-3 rounded-lg font-bold hover:bg-surface-container-high transition-all disabled:opacity-60"
-              >
-                Назад
-              </button>
-              <button
-                type="button"
-                onClick={handleCancelLesson}
-                disabled={cancelling}
-                className="flex-1 bg-error text-on-error py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60"
-              >
-                {cancelling ? "Удаление…" : "Да, удалить занятие"}
-              </button>
+              <button type="button" onClick={() => setConfirmingCancel(false)} disabled={cancelling || deleting} className="flex-1 border border-outline-variant text-on-surface py-3 rounded-lg font-bold hover:bg-surface-container-high transition-all disabled:opacity-60">Назад</button>
+              <button type="button" onClick={handleCancelLesson} disabled={cancelling || deleting} className="flex-1 bg-error text-on-error py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60">{cancelling ? "Отмена…" : "Да, отменить занятие"}</button>
+            </div>
+          </div>
+        ) : confirmingDelete ? (
+          <div className="space-y-4">
+            <div className="p-4 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">
+              Точно удалить занятие {normalizeDateForInput(lesson.lesson_date)} в {lesson.start_time}? Оно будет физически удалено из расписания и истории. Это действие нельзя отменить.
+            </div>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setConfirmingDelete(false)} disabled={cancelling || deleting} className="flex-1 border border-outline-variant text-on-surface py-3 rounded-lg font-bold hover:bg-surface-container-high transition-all disabled:opacity-60">Назад</button>
+              <button type="button" onClick={handleDeleteLesson} disabled={cancelling || deleting} className="flex-1 bg-error text-on-error py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60">{deleting ? "Удаление…" : "Да, удалить занятие"}</button>
             </div>
           </div>
         )}

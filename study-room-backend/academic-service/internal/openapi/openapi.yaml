@@ -209,6 +209,18 @@ paths:
       responses:
         '200':
           description: Lesson deleted
+  /lessons/{id}/hard-delete:
+    delete:
+      summary: Physically delete lesson
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lesson physically deleted
   /lessons/{id}/attendance:
     get:
       summary: Get lesson attendance

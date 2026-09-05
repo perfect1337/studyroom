@@ -775,6 +775,43 @@ type markAttendanceRequest struct {
 	Records []attendanceRecord `json:"records"`
 }
 
+// HardDelete — DELETE /lessons/{id}/hard-delete. В отличие от DELETE /lessons/{id}
+// это физическое удаление строки занятия из БД. Удаление доступно только owner/branch_owner
+// (маршрут уже ограничен RequireRoles), а проверка доступа выполняется тем же checkLessonAccess.
+func (h *LessonHandler) HardDelete(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+	if claims.Role != models.RoleOwner && claims.Role != models.RoleBranchOwner {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "role not permitted")
+		return
+	}
+	id, err := parseIntPath(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid lesson id")
+		return
+	}
+	lesson, ok := h.checkLessonAccess(w, r, id)
+	if !ok {
+		return
+	}
+	participants, err := h.lessons.Participants(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load lesson participants")
+		return
+	}
+	if err := h.lessons.Delete(r.Context(), id); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "lesson not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to delete lesson")
+		return
+	}
+	// Удаление убирает занятие из знаменателя/числителя прогресса, поэтому пересчитываем
+	// прогресс всех участников после успешного удаления.
+	h.recalculateProgress(r.Context(), lesson.CourseID, participants)
+	w.WriteHeader(http.StatusOK)
+}
+
 // MarkAttendance — POST /lessons/{id}/attendance (api-contracts.md 2.10).
 // Для каждой записи со статусом "absent" публикуется attendance.marked_absent
 // (слушает Notification Service — уведомление родителю).
