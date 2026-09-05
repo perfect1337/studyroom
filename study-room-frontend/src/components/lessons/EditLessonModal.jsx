@@ -71,6 +71,7 @@ export default function EditLessonModal({
   const [participantsMode, setParticipantsMode] = useState("custom"); // "custom" | id подгруппы (строка)
   const [manualParticipantIds, setManualParticipantIds] = useState([]);
   const [manualStudentQuery, setManualStudentQuery] = useState("");
+  const [selectedStudentId, setSelectedStudentId] = useState("");
 
   useEffect(() => {
     if (open && lesson) {
@@ -92,6 +93,7 @@ export default function EditLessonModal({
       setParticipantsMode("custom");
       setManualParticipantIds(sortedIds(lesson.participant_ids));
       setManualStudentQuery("");
+      setSelectedStudentId(String(sortedIds(lesson.participant_ids)[0] ?? ""));
     }
   }, [open, lesson]);
 
@@ -99,12 +101,14 @@ export default function EditLessonModal({
   // учеников), только когда занятие реально групповое — не тратим лишний
   // запрос на индивидуальные занятия.
   useEffect(() => {
-    if (!open || !lesson || form?.group_type !== "group") return;
+    if (!open || !lesson) return;
     let cancelled = false;
     setRosterLoading(true);
     setRosterError("");
     Promise.all([
-      fetchSubgroups({ course_id: lesson.course_id, tutor_id: lesson.tutor_id || undefined }),
+      form?.group_type === "group"
+        ? fetchSubgroups({ course_id: lesson.course_id, tutor_id: lesson.tutor_id })
+        : Promise.resolve({ items: [] }),
       fetchEnrollments({ course_id: lesson.course_id }),
       fetchMyPeople().catch(() => null),
     ])
@@ -116,9 +120,7 @@ export default function EditLessonModal({
           if (!studentsById[id]) studentsById[id] = { id: Number(id), first_name: name, last_name: "" };
         });
 
-        const activeStudentIds = (enrollRes?.items ?? [])
-          .filter((e) => e.status === "active")
-          .map((e) => e.student_id);
+        const activeStudentIds = (enrollRes?.items ?? []).map((e) => e.student_id);
         const roster = sortedIds(activeStudentIds)
           .map((id) => ({ id, student: studentsById[id] ?? null }))
           .sort((a, b) => {
@@ -151,7 +153,7 @@ export default function EditLessonModal({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, lesson?.id, form?.group_type]);
+  }, [open, lesson?.id, lesson?.tutor_id, form?.group_type]);
 
   const selectedSubgroup = useMemo(
     () => courseSubgroups.find((sg) => String(sg.id) === String(participantsMode)) ?? null,
@@ -209,6 +211,10 @@ export default function EditLessonModal({
     // Для группового занятия состав должен быть непустым — иначе PATCH
     // отклонит запрос на бэкенде (см. LessonHandler.Update), но лучше
     // сообщить об этом сразу в форме, не дожидаясь ответа сервера.
+    if (form.group_type === "individual" && (!selectedStudentId || Number.isNaN(Number(selectedStudentId)))) {
+      setError("Выберите ученика для индивидуального занятия");
+      return;
+    }
     if (form.group_type === "group" && !rosterLoading && !rosterError) {
       const effectiveIds = selectedSubgroup ? subgroupEffectiveIds : manualParticipantIds;
       if (effectiveIds.length === 0) {
@@ -232,8 +238,14 @@ export default function EditLessonModal({
         group_type: form.group_type,
         comment: form.comment || null,
       };
-      if (canReassignTutor) {
-        patch.tutor_id = form.tutor_id ? Number(form.tutor_id) : null;
+      if (canReassignTutor && form.tutor_id) {
+        patch.tutor_id = Number(form.tutor_id);
+      }
+      if (form.group_type === "individual" && selectedStudentId) {
+        const currentStudentId = sortedIds(lesson.participant_ids)[0];
+        if (Number(selectedStudentId) !== currentStudentId || lesson.group_type !== "individual") {
+          patch.student_id = Number(selectedStudentId);
+        }
       }
       // Меняем состав участников только если занятие групповое и состав
       // реально отличается от текущего — не отправляем subgroup_id/
@@ -413,6 +425,31 @@ export default function EditLessonModal({
                 </select>
               </div>
             </div>
+
+            {form.group_type === "individual" && (
+              <div className="flex flex-col gap-stack-sm p-3 rounded-lg border border-outline-variant bg-surface-container-low">
+                <label className="font-label-md text-label-md text-on-surface" htmlFor="edit-student">Ученик</label>
+                {rosterLoading ? (
+                  <p className="text-[13px] text-on-surface-variant">Загрузка учеников…</p>
+                ) : rosterError ? (
+                  <p className="text-[13px] text-error">{rosterError}</p>
+                ) : (
+                  <select
+                    id="edit-student"
+                    value={selectedStudentId}
+                    onChange={(e) => setSelectedStudentId(e.target.value)}
+                    className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
+                  >
+                    <option value="">Выберите ученика</option>
+                    {courseRoster.map(({ id, student }) => (
+                      <option key={id} value={id}>
+                        {student ? fullName(student) : `Ученик #${id}`}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
 
             {form.group_type === "group" && (
               <div className="flex flex-col gap-stack-sm p-3 rounded-lg border border-outline-variant bg-surface-container-low">

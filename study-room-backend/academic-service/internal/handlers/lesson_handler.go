@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"time"
 
 	"studyroom/academic-service/internal/events"
 	"studyroom/academic-service/internal/middleware"
@@ -127,6 +126,40 @@ func (h *LessonHandler) List(w http.ResponseWriter, r *http.Request) {
 		l.ParticipantIDs = participantsByLesson[l.ID]
 	}
 
+	// Помечаем день/занятие проблемным, если хотя бы у одного участника
+	// на дату занятия нет действующего договора. Само занятие при этом
+	// остаётся допустимым и может быть создано/перенесено руководителем.
+	enrollmentCache := make(map[int64][]*models.Enrollment)
+	for _, l := range lessons {
+		if len(l.ParticipantIDs) == 0 {
+			continue
+		}
+		enrs, ok := enrollmentCache[l.CourseID]
+		if !ok {
+			courseID := l.CourseID
+			enrs, _ = h.enrollments.List(r.Context(), repository.EnrollmentFilter{CourseID: &courseID})
+			enrollmentCache[l.CourseID] = enrs
+		}
+		lessonDate := l.LessonDate
+		for _, sid := range l.ParticipantIDs {
+			valid := false
+			for _, e := range enrs {
+				if e.StudentID != sid || e.Status != models.EnrollmentActive || e.StartDate == nil || e.EndDate == nil {
+					continue
+				}
+				if lessonDate.Before(*e.StartDate) || lessonDate.After(*e.EndDate) {
+					continue
+				}
+				valid = true
+				break
+			}
+			if !valid {
+				l.ContractIssue = true
+				break
+			}
+		}
+	}
+
 	// participant_names — фолбэк-имена из user_refs (см. Lesson.ParticipantNames):
 	// не блокируем ответ, если резолв не удался, просто отдаём без имён.
 	allParticipantIDs := make([]int64, 0, len(lessons))
@@ -147,13 +180,6 @@ func (h *LessonHandler) List(w http.ResponseWriter, r *http.Request) {
 			if len(m) > 0 {
 				l.ParticipantNames = m
 			}
-		}
-	}
-
-	overdueByLesson, err := h.lessons.OverdueContractByLessons(r.Context(), lessonIDs)
-	if err == nil {
-		for _, l := range lessons {
-			l.HasOverdueContract = overdueByLesson[l.ID]
 		}
 	}
 
@@ -181,8 +207,7 @@ func nonNilLessons(l []*models.Lesson) []*models.Lesson {
 
 type createLessonRequest struct {
 	CourseID     int64               `json:"course_id"`
-	TutorID      *int64              `json:"tutor_id"`
-	BranchID     *int64              `json:"branch_id"`
+	TutorID      int64               `json:"tutor_id"`
 	Topic        string              `json:"topic"`
 	LessonDate   string              `json:"lesson_date"`
 	StartTime    string              `json:"start_time"`
@@ -221,9 +246,9 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
 		return
 	}
-	if req.CourseID == 0 || req.Topic == "" || req.LessonDate == "" ||
+	if req.CourseID == 0 || req.TutorID == 0 || req.Topic == "" || req.LessonDate == "" ||
 		req.StartTime == "" || req.EndTime == "" {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "course_id, topic, lesson_date, start_time, end_time are required")
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "course_id, tutor_id, topic, lesson_date, start_time, end_time are required")
 		return
 	}
 	if req.LocationType == "" {
@@ -235,66 +260,25 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	switch claims.Role {
 	case models.RoleOwner:
-		if req.TutorID != nil {
-			if branch, err := h.userRefs.BranchOf(r.Context(), *req.TutorID); err == nil && branch != nil {
-				req.BranchID = branch
-			}
-		}
-		if req.TutorID == nil && req.BranchID == nil {
-			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "branch_id is required when no tutor is assigned")
-			return
-		}
+		// любой tutor_id
 	case models.RoleBranchOwner:
-		if claims.BranchID == nil {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "branch owner has no branch")
+		tutorBranch, err := h.userRefs.BranchOf(r.Context(), req.TutorID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check tutor branch")
 			return
 		}
-		req.BranchID = claims.BranchID
-		if req.TutorID != nil {
-			tutorBranch, err := h.userRefs.BranchOf(r.Context(), *req.TutorID)
-			if err != nil || tutorBranch == nil || *tutorBranch != *claims.BranchID {
-				writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor_id must belong to your branch")
-				return
-			}
+		if claims.BranchID == nil || tutorBranch == nil || *claims.BranchID != *tutorBranch {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor_id must belong to your branch")
+			return
 		}
 	default:
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "role not permitted")
 		return
 	}
+
 	enrollments, err := h.enrollments.List(r.Context(), repository.EnrollmentFilter{CourseID: &req.CourseID})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course enrollments")
-		return
-	}
-
-	// Занятие "для одного ученика" (StudentID задан, SubgroupID — нет)
-	// имеет смысл только на индивидуальном курсе. На групповом курсе у
-	// каждого участника и так есть общий enrollment на весь курс — если
-	// разрешить создавать под него отдельное "индивидуальное" занятие
-	// конкретному ученику в обход подгрупп (см. TutorNewLesson.jsx,
-	// availableCourses), это ломает модель "у группового курса есть один
-	// групповой поток с подгруппами" и путает отчётность/посещаемость.
-	// Фронт уже не даёт выбрать такой курс в форме "Ученик" — эта проверка
-	// здесь на случай прямого вызова API в обход интерфейса.
-	if req.StudentID != nil && req.SubgroupID == nil {
-		course, err := h.courses.GetByID(r.Context(), req.CourseID)
-		if err != nil {
-			if errors.Is(err, repository.ErrNotFound) {
-				writeError(w, http.StatusBadRequest, "BAD_REQUEST", "course not found")
-				return
-			}
-			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course")
-			return
-		}
-		if course.Format == models.FormatGroup {
-			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "individual lesson cannot be created for a group course; use subgroup_id instead")
-			return
-		}
-	}
-
-	_, err = time.Parse("2006-01-02", req.LessonDate)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "lesson_date must be YYYY-MM-DD")
 		return
 	}
 
@@ -322,11 +306,12 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, "FORBIDDEN", "subgroup belongs to another tutor")
 			return
 		}
+		// Просроченный/завершённый договор не запрещает поставить занятие:
+		// такой день позже подсветится красным. Берём любого ученика,
+		// который когда-либо был записан на курс.
 		activeOnCourse := make(map[int64]bool, len(enrollments))
 		for _, e := range enrollments {
-			if e.StudentID != 0 {
-				activeOnCourse[e.StudentID] = true
-			}
+			activeOnCourse[e.StudentID] = true
 		}
 		participantIDs = make([]int64, 0, len(sg.StudentIDs))
 		for _, studentID := range sg.StudentIDs {
@@ -351,7 +336,7 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !found {
-			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student has no enrollment on this course")
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student has no active enrollment on this course")
 			return
 		}
 		participantIDs = []int64{*req.StudentID}
@@ -360,16 +345,17 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 		// по-настоящему группового занятия на весь курс: участники это все
 		// активные enrollments.
 		participantIDs = make([]int64, 0, len(enrollments))
+		seen := make(map[int64]bool, len(enrollments))
 		for _, e := range enrollments {
-			participantIDs = append(participantIDs, e.StudentID)
+			if !seen[e.StudentID] {
+				seen[e.StudentID] = true
+				participantIDs = append(participantIDs, e.StudentID)
+			}
 		}
 	}
 
-	// Scheduling is allowed even when a participant's contract is expired.
-	// The calendar marks such lessons red instead of blocking their creation.
-
 	lesson, err := h.lessons.Create(r.Context(), repository.LessonInput{
-		CourseID: req.CourseID, TutorID: req.TutorID, BranchID: req.BranchID, CreatedBy: claims.UserID,
+		CourseID: req.CourseID, TutorID: req.TutorID, CreatedBy: claims.UserID,
 		Topic: req.Topic, LessonDate: req.LessonDate, StartTime: req.StartTime, EndTime: req.EndTime,
 		LocationType: req.LocationType, GroupType: req.GroupType, Comment: req.Comment,
 		ParticipantIDs: participantIDs,
@@ -380,9 +366,7 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, studentID := range participantIDs {
-		if lesson.TutorID != nil {
-			h.publisher.LessonCreated(lesson.ID, *lesson.TutorID, studentID, lesson.Topic, req.LessonDate, req.StartTime)
-		}
+		h.publisher.LessonCreated(lesson.ID, lesson.TutorID, studentID, lesson.Topic, req.LessonDate, req.StartTime)
 	}
 
 	// Новое занятие меняет знаменатель прогресса (см. RecalculateProgress) —
@@ -414,15 +398,15 @@ func (h *LessonHandler) checkLessonAccess(w http.ResponseWriter, r *http.Request
 	case models.RoleOwner:
 		return lesson, true
 	case models.RoleTutor:
-		if lesson.TutorID == nil || *lesson.TutorID != claims.UserID {
+		if lesson.TutorID != claims.UserID {
 			writeError(w, http.StatusForbidden, "FORBIDDEN", "not your lesson")
 			return nil, false
 		}
 		return lesson, true
 	case models.RoleBranchOwner:
-		branchID, err := h.lessons.LessonBranchID(r.Context(), lessonID)
+		branchID, err := h.lessons.TutorBranchID(r.Context(), lessonID)
 		if err != nil {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "lesson has no branch")
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check branch")
 			return nil, false
 		}
 		if claims.BranchID == nil || *claims.BranchID != branchID {
@@ -445,7 +429,7 @@ type updateLessonRequest struct {
 	GroupType    *models.GroupType    `json:"group_type"`
 	Status       *models.LessonStatus `json:"status"`
 	Comment      *string              `json:"comment"`
-	TutorID      **int64              `json:"tutor_id"`
+	TutorID      *int64               `json:"tutor_id"`
 	// SubgroupID — сменить состав участников группового занятия на состав
 	// сохранённой подгруппы (см. models.Subgroup), взаимоисключимо с
 	// ParticipantIDs (приоритет у SubgroupID, как и в Create). Позволяет
@@ -458,10 +442,17 @@ type updateLessonRequest struct {
 	// "поле не передано" от "передан пустой список" — последнее отклоняется
 	// как невалидное (занятие не может остаться без участников).
 	ParticipantIDs *[]int64 `json:"participant_ids"`
+	// StudentID — выбрать одного ученика при переводе группового занятия в индивидуальное.
+	StudentID *int64 `json:"student_id"`
 }
 
 // Update — PATCH /lessons/{id} (api-contracts.md 2.9).
 func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+	if claims.Role == models.RoleTutor {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor cannot edit schedule")
+		return
+	}
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid lesson id")
@@ -478,122 +469,73 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only owner/branch_owner reach this mutation endpoint. A tutor is never
-	// allowed to edit the schedule, including reassigning or clearing a tutor.
-	claims, _ := middleware.FromContext(r.Context())
-	if req.TutorID != nil {
-		if *req.TutorID != nil {
-			tutorBranch, err := h.userRefs.BranchOf(r.Context(), **req.TutorID)
-			if err != nil || tutorBranch == nil {
-				writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid tutor")
-				return
-			}
-			if claims.Role == models.RoleBranchOwner && (claims.BranchID == nil || *tutorBranch != *claims.BranchID) {
-				writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor must belong to your branch")
-				return
-			}
-		}
-	}
-
-	// Перенос занятия не блокируется из-за просроченного договора.
-	// День будет отмечен красным, если на дату занятия нет действующего договора.
-
-	// Смена состава участников группового занятия (subgroup_id и/или
-	// participant_ids) — тьютор редактирует, для какой подгруппы/каких
-	// учеников проводится уже созданное занятие, прямо из карточки в
-	// расписании, не пересоздавая занятие заново. Разрешено только для
-	// занятий, у которых group_type (с учётом возможной смены в этом же
-	// запросе) остаётся "group" — для individual состав жёстко привязан к
-	// одному ученику и меняется только пересозданием занятия.
+	// Состав участников можно менять и при переводе group -> individual.
+	// Для individual нужен ровно один выбранный ученик; для group сохраняются
+	// subgroup_id / participant_ids.
 	var oldParticipantIDs []int64
 	var newParticipantIDs []int64
-	wantsParticipantChange := req.SubgroupID != nil || req.ParticipantIDs != nil
+	wantsParticipantChange := req.SubgroupID != nil || req.ParticipantIDs != nil || req.StudentID != nil || (req.GroupType != nil && *req.GroupType == models.GroupIndividual && lesson.GroupType == models.GroupGroup)
 	if wantsParticipantChange {
-		effectiveGroupType := lesson.GroupType
-		if req.GroupType != nil {
-			effectiveGroupType = *req.GroupType
-		}
-		if effectiveGroupType != models.GroupGroup {
-			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "changing participants is only allowed for group lessons")
-			return
-		}
-
-		effectiveDateStr := lesson.LessonDate.Format("2006-01-02")
-		if req.LessonDate != nil {
-			effectiveDateStr = *req.LessonDate
-		}
-		_, err = time.Parse("2006-01-02", effectiveDateStr)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "lesson_date must be YYYY-MM-DD")
-			return
-		}
-
-		courseEnrollments, err := h.enrollments.List(r.Context(), repository.EnrollmentFilter{CourseID: &lesson.CourseID})
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course enrollments")
-			return
-		}
-		activeOnCourse := make(map[int64]bool, len(courseEnrollments))
-		for _, e := range courseEnrollments {
-			if e.StudentID != 0 {
-				activeOnCourse[e.StudentID] = true
-			}
-		}
-
-		switch {
-		case req.SubgroupID != nil:
-			sg, err := h.subgroups.GetByID(r.Context(), *req.SubgroupID)
-			if err != nil {
-				if errors.Is(err, repository.ErrNotFound) {
-					writeError(w, http.StatusBadRequest, "BAD_REQUEST", "subgroup not found")
-					return
-				}
-				writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load subgroup")
-				return
-			}
-			if sg.CourseID != lesson.CourseID {
-				writeError(w, http.StatusBadRequest, "BAD_REQUEST", "subgroup does not belong to this lesson's course")
-				return
-			}
-			if lesson.TutorID == nil || *lesson.TutorID != sg.TutorID {
-				writeError(w, http.StatusForbidden, "FORBIDDEN", "subgroup belongs to another tutor")
-				return
-			}
-			for _, studentID := range sg.StudentIDs {
-				if activeOnCourse[studentID] {
-					newParticipantIDs = append(newParticipantIDs, studentID)
-				}
-			}
-			if len(newParticipantIDs) == 0 {
-				writeError(w, http.StatusBadRequest, "BAD_REQUEST", "no active students left in this subgroup")
-				return
-			}
-		case req.ParticipantIDs != nil:
-			seen := make(map[int64]bool, len(*req.ParticipantIDs))
-			for _, studentID := range *req.ParticipantIDs {
-				if seen[studentID] {
-					continue
-				}
-				seen[studentID] = true
-				if !activeOnCourse[studentID] {
-					writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student has no enrollment on this course")
-					return
-				}
-				newParticipantIDs = append(newParticipantIDs, studentID)
-			}
-			if len(newParticipantIDs) == 0 {
-				writeError(w, http.StatusBadRequest, "BAD_REQUEST", "participant_ids must not be empty")
-				return
-			}
-		}
-
-		// Участника можно оставить в расписании даже при просроченном договоре;
-		// состояние дня рассчитывается отдельно и подсвечивается красным.
-
 		oldParticipantIDs, err = h.lessons.Participants(r.Context(), id)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load lesson participants")
 			return
+		}
+		effectiveGroupType := lesson.GroupType
+		if req.GroupType != nil {
+			effectiveGroupType = *req.GroupType
+		}
+		if effectiveGroupType == models.GroupIndividual {
+			studentID := req.StudentID
+			if studentID == nil && len(oldParticipantIDs) == 1 {
+				studentID = &oldParticipantIDs[0]
+			}
+			if studentID == nil || *studentID <= 0 {
+				writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student_id is required for an individual lesson")
+				return
+			}
+			newParticipantIDs = []int64{*studentID}
+		} else {
+			courseEnrollments, err := h.enrollments.List(r.Context(), repository.EnrollmentFilter{CourseID: &lesson.CourseID})
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course enrollments")
+				return
+			}
+			active := make(map[int64]bool, len(courseEnrollments))
+			for _, e := range courseEnrollments {
+				active[e.StudentID] = true
+			}
+			switch {
+			case req.SubgroupID != nil:
+				sg, err := h.subgroups.GetByID(r.Context(), *req.SubgroupID)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, "BAD_REQUEST", "subgroup not found")
+					return
+				}
+				if sg.CourseID != lesson.CourseID {
+					writeError(w, http.StatusBadRequest, "BAD_REQUEST", "subgroup does not belong to this lesson's course")
+					return
+				}
+				for _, sid := range sg.StudentIDs {
+					if active[sid] {
+						newParticipantIDs = append(newParticipantIDs, sid)
+					}
+				}
+			case req.ParticipantIDs != nil:
+				seen := map[int64]bool{}
+				for _, sid := range *req.ParticipantIDs {
+					if !seen[sid] && active[sid] {
+						seen[sid] = true
+						newParticipantIDs = append(newParticipantIDs, sid)
+					}
+				}
+			default:
+				newParticipantIDs = oldParticipantIDs
+			}
+			if len(newParticipantIDs) == 0 {
+				writeError(w, http.StatusBadRequest, "BAD_REQUEST", "group lesson must have at least one student")
+				return
+			}
 		}
 	}
 
@@ -623,14 +565,7 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 		fields["comment"] = *req.Comment
 	}
 	if req.TutorID != nil {
-		if *req.TutorID == nil {
-			fields["tutor_id"] = nil
-		} else {
-			fields["tutor_id"] = **req.TutorID
-			if branch, err := h.userRefs.BranchOf(r.Context(), **req.TutorID); err == nil && branch != nil {
-				fields["branch_id"] = *branch
-			}
-		}
+		fields["tutor_id"] = *req.TutorID
 	}
 
 	lesson, err = h.lessons.Update(r.Context(), id, fields)
@@ -708,6 +643,11 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 // строку — занятие остаётся в расписании у всех ролей со статусом
 // "Отменено" вместо того, чтобы бесследно пропадать из истории.
 func (h *LessonHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+	if claims.Role == models.RoleTutor {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor cannot edit schedule")
+		return
+	}
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid lesson id")
@@ -740,51 +680,6 @@ func (h *LessonHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-}
-
-type copyMonthRequest struct {
-	SourceYear  int    `json:"source_year"`
-	SourceMonth int    `json:"source_month"`
-	TargetYear  int    `json:"target_year"`
-	TargetMonth int    `json:"target_month"`
-	BranchID    *int64 `json:"branch_id"`
-}
-
-func (h *LessonHandler) CopyMonth(w http.ResponseWriter, r *http.Request) {
-	claims, _ := middleware.FromContext(r.Context())
-	var req copyMonthRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
-		return
-	}
-	if req.SourceYear < 2000 || req.TargetYear < 2000 || req.SourceMonth < 1 || req.SourceMonth > 12 || req.TargetMonth < 1 || req.TargetMonth > 12 {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid source/target month")
-		return
-	}
-	var branchID *int64
-	switch claims.Role {
-	case models.RoleBranchOwner:
-		if claims.BranchID == nil {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "branch owner has no branch")
-			return
-		}
-		branchID = claims.BranchID
-	case models.RoleOwner:
-		branchID = req.BranchID
-	default:
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "role not permitted")
-		return
-	}
-	sourceFrom := time.Date(req.SourceYear, time.Month(req.SourceMonth), 1, 0, 0, 0, 0, time.UTC)
-	targetFrom := time.Date(req.TargetYear, time.Month(req.TargetMonth), 1, 0, 0, 0, 0, time.UTC)
-	sourceTo := sourceFrom.AddDate(0, 1, -1)
-	targetTo := targetFrom.AddDate(0, 1, -1)
-	copied, err := h.lessons.CopyMonth(r.Context(), sourceFrom, sourceTo, targetFrom, targetTo, branchID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to copy schedule")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"copied": copied})
 }
 
 type attendanceRecord struct {

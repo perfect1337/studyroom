@@ -3,7 +3,7 @@ import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useSearchParams } from "react-router-dom";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchLessons, fetchCourses, fetchEnrollments, fetchAttendance } from "../../api/academic.js";
+import { fetchLessons, fetchCourses, fetchEnrollments, fetchAttendance, updateLesson } from "../../api/academic.js";
 import { fetchMyPeople, fetchUserById } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import { subscribeQuery } from "../../api/queryCache.js";
@@ -98,10 +98,35 @@ export default function TutorSchedule() {
   // навсегда, и прогресс никогда не менялся. Теперь дата/badge — это лишь
   // подсказка "пора отметить", а фактическое изменение статуса — отдельное
   // явное действие тьютора.
+  const [markingCompletedId, setMarkingCompletedId] = useState(null);
   // { lessonId, message } — привязана к конкретному занятию, чтобы ошибка
   // при отметке одного занятия не "размножалась" на все карточки в списке.
+  const [markCompletedError, setMarkCompletedError] = useState(null);
 
+  async function handleMarkCompleted(lesson) {
+    setMarkingCompletedId(lesson.id);
+    setMarkCompletedError(null);
+    try {
+      const updated = await updateLesson(lesson.id, { status: "completed" });
+      setLessons((prev) => prev.map((l) => (l.id === lesson.id ? { ...l, ...(updated ?? { status: "completed" }) } : l)));
+      // updateLesson уже инвалидировал кэш "lessons" (см. api/academic.js),
+      // на который эта страница подписана (см. subscribeQuery ниже) — та
+      // подписка сама перезапросит lessons И enrollments (load() тянет оба
+      // сразу), так что progress_pct на карточках учеников обновится без
+      // дополнительного кода здесь.
+    } catch (err) {
+      setMarkCompletedError({ lessonId: lesson.id, message: err.message || "Не удалось отметить занятие проведённым" });
+    } finally {
+      setMarkingCompletedId(null);
+    }
+  }
 
+  function handleLessonSaved(updated) {
+    setLessons((prev) => prev.map((l) => (l.id === updated.id ? { ...l, ...updated } : l)));
+  }
+  function handleLessonCancelled(lessonId) {
+    setLessons((prev) => prev.map((l) => (l.id === lessonId ? { ...l, status: "cancelled" } : l)));
+  }
 
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstWeekday = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7; // 0 = Monday
@@ -517,9 +542,22 @@ export default function TutorSchedule() {
                         </div>
                         <div className="flex flex-col items-end gap-2 shrink-0">
                           <StatusBadge status={isCancelled ? "Отменено" : isDone ? "Выполнено" : "Ожидание"} />
-
+                          {!isCancelled && !isCompletedInBackend && (
+                            <button
+                              type="button"
+                              onClick={() => handleMarkCompleted(lesson)}
+                              disabled={markingCompletedId === lesson.id}
+                              className="flex items-center gap-1 px-3 py-1 rounded-full font-label-md text-[12px] text-primary bg-primary-container/40 hover:bg-primary-container/70 transition-colors disabled:opacity-60"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">check_circle</span>
+                              {markingCompletedId === lesson.id ? "Отмечаем…" : "Отметить проведённым"}
+                            </button>
+                          )}
                         </div>
                       </div>
+                      {markCompletedError && markCompletedError.lessonId === lesson.id && (
+                        <p className="text-[12px] text-error -mt-2 mb-2">{markCompletedError.message}</p>
+                      )}
 
                       <div className="space-y-4">
                         {/* Карточка преподавателя занятия — по аналогии с карточкой
@@ -618,6 +656,8 @@ export default function TutorSchedule() {
           </div>
         </div>
       </div>
+
+
     </DashboardShell>
   );
 }

@@ -3,9 +3,9 @@ import { useNavigate } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import EditLessonModal from "../../components/lessons/EditLessonModal.jsx";
-import CreateLessonModal from "../../components/lessons/CreateLessonModal.jsx";
+import BulkCreateLessonsModal from "../../components/lessons/BulkCreateLessonsModal.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchLessons, fetchCourses, copyLessonsMonth } from "../../api/academic.js";
+import { fetchLessons, fetchCourses } from "../../api/academic.js";
 import { fetchMyPeople, fetchBranches, fetchUserById } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import { subscribeQuery } from "../../api/queryCache.js";
@@ -98,9 +98,7 @@ export default function ScheduleDirectory({ role }) {
   // своего филиала; но список lessons уже отфильтрован сервером по этой области,
   // так что доступные для открытия модалки занятия и так ограничены правами).
   const [editingLesson, setEditingLesson] = useState(null);
-  const [creatingLesson, setCreatingLesson] = useState(false);
-  const [copyingMonth, setCopyingMonth] = useState(false);
-  const [copyMessage, setCopyMessage] = useState("");
+  const [bulkCreateOpen, setBulkCreateOpen] = useState(false);
 
   // При PATCH обновляем занятие локально, не дожидаясь перезагрузки месяца —
   // отзывчивее для пользователя.
@@ -351,25 +349,17 @@ export default function ScheduleDirectory({ role }) {
     safeDetailPage * LESSONS_PAGE_SIZE + LESSONS_PAGE_SIZE
   );
 
-  async function copyPreviousMonth() {
-    const source = new Date(viewYear, viewMonth - 1, 1);
-    setCopyingMonth(true);
-    setCopyMessage("");
-    try {
-      const res = await copyLessonsMonth({
-        source_year: source.getFullYear(),
-        source_month: source.getMonth() + 1,
-        target_year: viewYear,
-        target_month: viewMonth + 1,
-        branch_id: isOwner && branchFilter ? Number(branchFilter) : undefined,
-      });
-      setCopyMessage(`Скопировано занятий: ${res?.copied ?? 0}`);
-      await load({ silent: true });
-    } catch (e) {
-      setCopyMessage(e.message || "Не удалось скопировать расписание");
-    } finally {
-      setCopyingMonth(false);
-    }
+  function lessonShortInfo(lesson) {
+    const course = coursesById[lesson.course_id];
+    const students = studentsForLesson[lesson.id] ?? [];
+    const classes = [...new Set(students.map((s) => s.class_info).filter(Boolean).map((c) => {
+      const value = String(c).trim();
+      return /^\d+$/.test(value) ? `${value}кл` : value;
+    }))];
+    const subject = course?.subject || course?.title || lesson.topic || "Занятие";
+    const format = lesson.group_type === "individual" ? "И" : "Г";
+    const location = lesson.location_type === "onsite" ? "О" : "Д";
+    return { subject, classes, format, location };
   }
 
   return (
@@ -453,6 +443,17 @@ export default function ScheduleDirectory({ role }) {
         )}
       </div>
 
+      <div className="flex justify-end mb-4">
+        <button
+          type="button"
+          onClick={() => setBulkCreateOpen(true)}
+          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-white font-label-md hover:opacity-90 transition-opacity"
+        >
+          <span className="material-symbols-outlined text-[18px]">calendar_month</span>
+          Быстро создать на месяц
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-stack-lg">
         {/* Calendar */}
         <div className="lg:col-span-8 space-y-stack-lg">
@@ -466,23 +467,7 @@ export default function ScheduleDirectory({ role }) {
                   {loading ? "Загрузка занятий…" : `${lessons.length} занятий в этом месяце`}
                 </p>
               </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCreatingLesson(true)}
-                  className="px-3 py-2 rounded-lg bg-primary text-on-primary font-label-md text-[12px] flex items-center gap-1"
-                >
-                  <span className="material-symbols-outlined text-[16px]">add</span>
-                  Новое занятие
-                </button>
-                <button
-                  type="button"
-                  onClick={copyPreviousMonth}
-                  disabled={copyingMonth}
-                  className="px-3 py-2 rounded-lg border border-outline-variant font-label-md text-[12px] disabled:opacity-50"
-                >
-                  {copyingMonth ? "Копируем…" : "Скопировать прошлый месяц"}
-                </button>
+              <div className="flex gap-2">
                 <button
                   onClick={() => goToMonth(-1)}
                   className="p-2 hover:bg-surface-container rounded-lg transition-colors border border-outline-variant"
@@ -505,13 +490,9 @@ export default function ScheduleDirectory({ role }) {
                 {error}
               </div>
             )}
-            {copyMessage && (
-              <div className="mb-4 p-3 rounded-lg bg-surface-container text-on-surface-variant text-sm">
-                {copyMessage}
-              </div>
-            )}
 
-            <div className="grid grid-cols-7 text-center mb-4 border-b border-outline-variant/30 pb-2">
+            <div className="overflow-x-auto -mx-2 px-2 pb-1">
+            <div className="min-w-[680px] grid grid-cols-7 text-center mb-4 border-b border-outline-variant/30 pb-2">
               {WEEKDAYS.map((d) => (
                 <div key={d} className="font-label-md text-label-md text-outline">
                   {d}
@@ -519,7 +500,7 @@ export default function ScheduleDirectory({ role }) {
               ))}
             </div>
 
-            <div className="grid grid-cols-7 gap-1">
+            <div className="min-w-[680px] grid grid-cols-7 gap-1">
               {Array.from({ length: firstWeekday }).map((_, i) => (
                 <div key={`pad-${i}`} className="h-20 sm:h-24" />
               ))}
@@ -528,24 +509,15 @@ export default function ScheduleDirectory({ role }) {
                 const dayLessons = lessonsByDay[day] ?? [];
                 const isToday = day === todayDay;
                 const isSelected = day === selectedDay;
-                const hasOverdue = dayLessons.some((l) => l.has_overdue_contract);
-                const hasNoTutor = dayLessons.some((l) => !l.tutor_id);
-                const isProblemDay = dayLessons.length > 0 && (hasOverdue || hasNoTutor);
-                const onsiteCount = dayLessons.filter((l) => l.location_type === "onsite").length;
+                const hasProblem = dayLessons.some((l) => l.contract_issue || !l.tutor_id);
+                const hasLessons = dayLessons.length > 0;
+                const dayStateClass = hasLessons ? (hasProblem ? "bg-error-container text-on-error-container border-error" : "bg-primary-container text-on-primary-container border-primary") : "text-on-surface-variant bg-surface-container hover:brightness-95";
 
                 return (
                   <button
                     key={day}
-                    onClick={() => {
-                      setSelectedDay(day);
-                      setDetailPage(0);
-                    }}
-                    className={`text-left h-24 sm:h-28 p-2 rounded-lg font-label-md transition-all relative border
-                      ${dayLessons.length === 0 ? "text-on-surface-variant bg-surface-container hover:brightness-95" : ""}
-                      ${isProblemDay ? "bg-error-container text-on-error-container border-error" : dayLessons.length ? "bg-green-50 text-green-700 border-green-500" : ""}
-                      ${isSelected ? "ring-2 ring-primary scale-[1.02] z-10 shadow-md" : ""}
-                      ${isToday ? "border-4" : ""}
-                    `}
+                    onClick={() => { setSelectedDay(day); setDetailPage(0); }}
+                    className={`text-left min-h-24 sm:min-h-28 p-2 rounded-lg font-label-md transition-all relative border ${dayStateClass} ${isSelected ? "ring-2 ring-primary scale-[1.02] z-10 shadow-md" : ""} ${isToday ? "border-4" : ""}`}
                   >
                     {isToday && (
                       <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-secondary-container text-on-secondary-container text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tighter z-20">
@@ -553,17 +525,25 @@ export default function ScheduleDirectory({ role }) {
                       </span>
                     )}
                     <span className="font-bold">{day}</span>
-                    {dayLessons.length > 0 && (
-                      <div className="mt-1 space-y-0.5 text-[10px] font-semibold">
-                        <div>{dayLessons.length} заняти{dayLessons.length === 1 ? "е" : dayLessons.length < 5 ? "я" : "й"}</div>
-                        <div>Очно: {onsiteCount}</div>
-                        {hasNoTutor && <div>Нет преподавателя</div>}
-                        {hasOverdue && <div>Просроченный договор</div>}
-                      </div>
-                    )}
+                    <div className="mt-1 space-y-1 overflow-hidden">
+                      {dayLessons.slice(0, 3).map((l) => {
+                        const info = lessonShortInfo(l);
+                        return (
+                          <div key={l.id} className="rounded-md bg-white/75 text-on-surface px-1.5 py-1 text-[9px] sm:text-[10px] leading-tight">
+                            <div className="font-bold truncate">{info.subject}</div>
+                            <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 font-semibold opacity-80">
+                              {info.classes.length > 0 && <span>{info.classes.join(", ")}</span>}
+                              <span>{info.format}</span><span>{info.location}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {dayLessons.length > 3 && <div className="text-[9px] font-semibold">+{dayLessons.length - 3} ещё</div>}
+                    </div>
                   </button>
                 );
               })}
+            </div>
             </div>
           </div>
         </div>
@@ -624,7 +604,7 @@ export default function ScheduleDirectory({ role }) {
                       </div>
 
                       <div className="space-y-4">
-                        {tutor ? (
+                        {tutor && (
                           <button
                             type="button"
                             onClick={() => navigate(tutorDetailPath(tutor.id))}
@@ -639,16 +619,6 @@ export default function ScheduleDirectory({ role }) {
                             </div>
                             <span className="material-symbols-outlined text-outline ml-auto shrink-0">chevron_right</span>
                           </button>
-                        ) : (
-                          <div className="w-full flex items-center gap-4 p-3 bg-error-container rounded-lg">
-                            <div className="w-12 h-12 rounded-full bg-surface-container-lowest flex items-center justify-center text-error shrink-0">
-                              <span className="material-symbols-outlined">person_off</span>
-                            </div>
-                            <div>
-                              <p className="font-label-md font-bold text-error">Преподаватель не назначен</p>
-                              <p className="text-[12px] text-on-surface-variant">Назначьте преподавателя в редакторе расписания</p>
-                            </div>
-                          </div>
                         )}
 
                         {(studentsForLesson[lesson.id] ?? []).map((student) => (
@@ -733,6 +703,15 @@ export default function ScheduleDirectory({ role }) {
         </div>
       </div>
 
+      <BulkCreateLessonsModal
+        open={bulkCreateOpen}
+        courses={courses}
+        tutors={people.tutors}
+        students={people.students}
+        onClose={() => setBulkCreateOpen(false)}
+        onCreated={() => load({ silent: true })}
+      />
+
       <EditLessonModal
         open={!!editingLesson}
         lesson={editingLesson}
@@ -741,17 +720,6 @@ export default function ScheduleDirectory({ role }) {
         onClose={() => setEditingLesson(null)}
         onSaved={handleLessonSaved}
         onCancelled={handleLessonCancelled}
-      />
-      <CreateLessonModal
-        open={creatingLesson}
-        courses={courses}
-        tutors={people.tutors}
-        students={people.students}
-        branches={branches}
-        isOwner={isOwner}
-        defaultDate={selectedDay ? toISODate(viewYear, viewMonth, selectedDay) : toISODate(viewYear, viewMonth, 1)}
-        onClose={() => setCreatingLesson(false)}
-        onCreated={() => load({ silent: true })}
       />
     </DashboardShell>
   );
