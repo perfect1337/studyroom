@@ -150,6 +150,13 @@ func (h *LessonHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	overdueByLesson, err := h.lessons.OverdueContractByLessons(r.Context(), lessonIDs)
+	if err == nil {
+		for _, l := range lessons {
+			l.HasOverdueContract = overdueByLesson[l.ID]
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"items": nonNilLessons(lessons)})
 }
 
@@ -174,7 +181,8 @@ func nonNilLessons(l []*models.Lesson) []*models.Lesson {
 
 type createLessonRequest struct {
 	CourseID     int64               `json:"course_id"`
-	TutorID      int64               `json:"tutor_id"`
+	TutorID      *int64              `json:"tutor_id"`
+	BranchID     *int64              `json:"branch_id"`
 	Topic        string              `json:"topic"`
 	LessonDate   string              `json:"lesson_date"`
 	StartTime    string              `json:"start_time"`
@@ -213,9 +221,9 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
 		return
 	}
-	if req.CourseID == 0 || req.TutorID == 0 || req.Topic == "" || req.LessonDate == "" ||
+	if req.CourseID == 0 || req.Topic == "" || req.LessonDate == "" ||
 		req.StartTime == "" || req.EndTime == "" {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "course_id, tutor_id, topic, lesson_date, start_time, end_time are required")
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "course_id, topic, lesson_date, start_time, end_time are required")
 		return
 	}
 	if req.LocationType == "" {
@@ -227,27 +235,32 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	switch claims.Role {
 	case models.RoleOwner:
-		// любой tutor_id
-	case models.RoleTutor:
-		if req.TutorID != claims.UserID {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor can only create lessons for themselves")
+		if req.TutorID != nil {
+			if branch, err := h.userRefs.BranchOf(r.Context(), *req.TutorID); err == nil && branch != nil {
+				req.BranchID = branch
+			}
+		}
+		if req.TutorID == nil && req.BranchID == nil {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "branch_id is required when no tutor is assigned")
 			return
 		}
 	case models.RoleBranchOwner:
-		tutorBranch, err := h.userRefs.BranchOf(r.Context(), req.TutorID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check tutor branch")
+		if claims.BranchID == nil {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "branch owner has no branch")
 			return
 		}
-		if claims.BranchID == nil || tutorBranch == nil || *claims.BranchID != *tutorBranch {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor_id must belong to your branch")
-			return
+		req.BranchID = claims.BranchID
+		if req.TutorID != nil {
+			tutorBranch, err := h.userRefs.BranchOf(r.Context(), *req.TutorID)
+			if err != nil || tutorBranch == nil || *tutorBranch != *claims.BranchID {
+				writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor_id must belong to your branch")
+				return
+			}
 		}
 	default:
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "role not permitted")
 		return
 	}
-
 	enrollments, err := h.enrollments.List(r.Context(), repository.EnrollmentFilter{CourseID: &req.CourseID})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course enrollments")
@@ -311,7 +324,7 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 		activeOnCourse := make(map[int64]bool, len(enrollments))
 		for _, e := range enrollments {
-			if e.Status == models.EnrollmentActive {
+			if e.StudentID != 0 {
 				activeOnCourse[e.StudentID] = true
 			}
 		}
@@ -332,13 +345,13 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 		// первого ученика начали вести).
 		found := false
 		for _, e := range enrollments {
-			if e.Status == models.EnrollmentActive && e.StudentID == *req.StudentID {
+			if e.StudentID == *req.StudentID {
 				found = true
 				break
 			}
 		}
 		if !found {
-			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student has no active enrollment on this course")
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student has no enrollment on this course")
 			return
 		}
 		participantIDs = []int64{*req.StudentID}
@@ -348,55 +361,15 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 		// активные enrollments.
 		participantIDs = make([]int64, 0, len(enrollments))
 		for _, e := range enrollments {
-			if e.Status == models.EnrollmentActive {
-				participantIDs = append(participantIDs, e.StudentID)
-			}
+			participantIDs = append(participantIDs, e.StudentID)
 		}
 	}
 
-	// A lesson may only be scheduled while every participant has an active
-	// enrollment and the lesson date is inside that enrollment's contract
-	// period. This remains effective even if contract.expired is delayed.
-	for _, studentID := range participantIDs {
-		// При нескольких активных периодах по одному курсу достаточно одного
-		// договора, который покрывает дату занятия. Раньше map затирала более
-		// подходящий enrollment последним найденным, из-за чего валидная дата
-		// могла случайно считаться недопустимой.
-		validForDate := false
-		for _, e := range enrollments {
-			if e.StudentID != studentID || e.Status != models.EnrollmentActive {
-				continue
-			}
-			if e.StartDate == nil || e.EndDate == nil {
-				continue
-			}
-			if lessonDate.Before(*e.StartDate) || lessonDate.After(*e.EndDate) {
-				continue
-			}
-			validForDate = true
-			break
-		}
-		if !validForDate {
-			hasActive := false
-			for _, e := range enrollments {
-				if e.StudentID == studentID && e.Status == models.EnrollmentActive {
-					hasActive = true
-					break
-				}
-			}
-			if !hasActive {
-				writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "У ученика нет действующего договора на этот курс.")
-				return
-			}
-			// Даты договора обязательны для планирования занятия: иначе backend
-			// не может доказать, что дата попадает в оплачиваемый период.
-			writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "На выбранную дату у ученика нет действующего договора по этому курсу.")
-			return
-		}
-	}
+	// Scheduling is allowed even when a participant's contract is expired.
+	// The calendar marks such lessons red instead of blocking their creation.
 
 	lesson, err := h.lessons.Create(r.Context(), repository.LessonInput{
-		CourseID: req.CourseID, TutorID: req.TutorID, CreatedBy: claims.UserID,
+		CourseID: req.CourseID, TutorID: req.TutorID, BranchID: req.BranchID, CreatedBy: claims.UserID,
 		Topic: req.Topic, LessonDate: req.LessonDate, StartTime: req.StartTime, EndTime: req.EndTime,
 		LocationType: req.LocationType, GroupType: req.GroupType, Comment: req.Comment,
 		ParticipantIDs: participantIDs,
@@ -407,7 +380,9 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, studentID := range participantIDs {
-		h.publisher.LessonCreated(lesson.ID, lesson.TutorID, studentID, lesson.Topic, req.LessonDate, req.StartTime)
+		if lesson.TutorID != nil {
+			h.publisher.LessonCreated(lesson.ID, *lesson.TutorID, studentID, lesson.Topic, req.LessonDate, req.StartTime)
+		}
 	}
 
 	// Новое занятие меняет знаменатель прогресса (см. RecalculateProgress) —
@@ -439,15 +414,15 @@ func (h *LessonHandler) checkLessonAccess(w http.ResponseWriter, r *http.Request
 	case models.RoleOwner:
 		return lesson, true
 	case models.RoleTutor:
-		if lesson.TutorID != claims.UserID {
+		if lesson.TutorID == nil || *lesson.TutorID != claims.UserID {
 			writeError(w, http.StatusForbidden, "FORBIDDEN", "not your lesson")
 			return nil, false
 		}
 		return lesson, true
 	case models.RoleBranchOwner:
-		branchID, err := h.lessons.TutorBranchID(r.Context(), lessonID)
+		branchID, err := h.lessons.LessonBranchID(r.Context(), lessonID)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check branch")
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "lesson has no branch")
 			return nil, false
 		}
 		if claims.BranchID == nil || *claims.BranchID != branchID {
@@ -470,7 +445,7 @@ type updateLessonRequest struct {
 	GroupType    *models.GroupType    `json:"group_type"`
 	Status       *models.LessonStatus `json:"status"`
 	Comment      *string              `json:"comment"`
-	TutorID      *int64               `json:"tutor_id"`
+	TutorID      **int64              `json:"tutor_id"`
 	// SubgroupID — сменить состав участников группового занятия на состав
 	// сохранённой подгруппы (см. models.Subgroup), взаимоисключимо с
 	// ParticipantIDs (приоритет у SubgroupID, как и в Create). Позволяет
@@ -503,46 +478,25 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Перенос занятия на другую дату разрешён только на дату, когда у каждого
-	// участника есть активная запись на этот курс и дата попадает в период
-	// действия его договора. Проверка обязательна на backend, потому что
-	// фронтенд нельзя считать границей безопасности.
-	if req.LessonDate != nil && *req.LessonDate != lesson.LessonDate.Format("2006-01-02") {
-		newLessonDate, err := time.Parse("2006-01-02", *req.LessonDate)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "lesson_date must be YYYY-MM-DD")
-			return
-		}
-
-		participants, err := h.lessons.Participants(r.Context(), id)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load lesson participants")
-			return
-		}
-		enrollments, err := h.enrollments.List(r.Context(), repository.EnrollmentFilter{CourseID: &lesson.CourseID})
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course enrollments")
-			return
-		}
-
-		for _, studentID := range participants {
-			valid := false
-			for _, e := range enrollments {
-				if e.StudentID != studentID || e.Status != models.EnrollmentActive || e.StartDate == nil || e.EndDate == nil {
-					continue
-				}
-				if newLessonDate.Before(*e.StartDate) || newLessonDate.After(*e.EndDate) {
-					continue
-				}
-				valid = true
-				break
+	// Only owner/branch_owner reach this mutation endpoint. A tutor is never
+	// allowed to edit the schedule, including reassigning or clearing a tutor.
+	claims, _ := middleware.FromContext(r.Context())
+	if req.TutorID != nil {
+		if *req.TutorID != nil {
+			tutorBranch, err := h.userRefs.BranchOf(r.Context(), **req.TutorID)
+			if err != nil || tutorBranch == nil {
+				writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid tutor")
+				return
 			}
-			if !valid {
-				writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "Нельзя перенести занятие: на выбранную дату у ученика нет действующего договора.")
+			if claims.Role == models.RoleBranchOwner && (claims.BranchID == nil || *tutorBranch != *claims.BranchID) {
+				writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor must belong to your branch")
 				return
 			}
 		}
 	}
+
+	// Перенос занятия не блокируется из-за просроченного договора.
+	// День будет отмечен красным, если на дату занятия нет действующего договора.
 
 	// Смена состава участников группового занятия (subgroup_id и/или
 	// participant_ids) — тьютор редактирует, для какой подгруппы/каких
@@ -581,7 +535,7 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 		activeOnCourse := make(map[int64]bool, len(courseEnrollments))
 		for _, e := range courseEnrollments {
-			if e.Status == models.EnrollmentActive {
+			if e.StudentID != 0 {
 				activeOnCourse[e.StudentID] = true
 			}
 		}
@@ -601,7 +555,7 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusBadRequest, "BAD_REQUEST", "subgroup does not belong to this lesson's course")
 				return
 			}
-			if sg.TutorID != lesson.TutorID {
+			if lesson.TutorID == nil || *lesson.TutorID != sg.TutorID {
 				writeError(w, http.StatusForbidden, "FORBIDDEN", "subgroup belongs to another tutor")
 				return
 			}
@@ -622,7 +576,7 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 				}
 				seen[studentID] = true
 				if !activeOnCourse[studentID] {
-					writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student has no active enrollment on this course")
+					writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student has no enrollment on this course")
 					return
 				}
 				newParticipantIDs = append(newParticipantIDs, studentID)
@@ -633,25 +587,8 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Как и при создании занятия/переносе даты — дата занятия должна
-		// попадать в период действия договора у каждого нового участника.
-		for _, studentID := range newParticipantIDs {
-			valid := false
-			for _, e := range courseEnrollments {
-				if e.StudentID != studentID || e.Status != models.EnrollmentActive || e.StartDate == nil || e.EndDate == nil {
-					continue
-				}
-				if effectiveDate.Before(*e.StartDate) || effectiveDate.After(*e.EndDate) {
-					continue
-				}
-				valid = true
-				break
-			}
-			if !valid {
-				writeError(w, http.StatusBadRequest, "CONTRACT_INACTIVE", "На дату занятия у одного из учеников нет действующего договора по этому курсу.")
-				return
-			}
-		}
+		// Участника можно оставить в расписании даже при просроченном договоре;
+		// состояние дня рассчитывается отдельно и подсвечивается красным.
 
 		oldParticipantIDs, err = h.lessons.Participants(r.Context(), id)
 		if err != nil {
@@ -686,7 +623,14 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 		fields["comment"] = *req.Comment
 	}
 	if req.TutorID != nil {
-		fields["tutor_id"] = *req.TutorID
+		if *req.TutorID == nil {
+			fields["tutor_id"] = nil
+		} else {
+			fields["tutor_id"] = **req.TutorID
+			if branch, err := h.userRefs.BranchOf(r.Context(), **req.TutorID); err == nil && branch != nil {
+				fields["branch_id"] = *branch
+			}
+		}
 	}
 
 	lesson, err = h.lessons.Update(r.Context(), id, fields)
@@ -796,6 +740,51 @@ func (h *LessonHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+type copyMonthRequest struct {
+	SourceYear  int    `json:"source_year"`
+	SourceMonth int    `json:"source_month"`
+	TargetYear  int    `json:"target_year"`
+	TargetMonth int    `json:"target_month"`
+	BranchID    *int64 `json:"branch_id"`
+}
+
+func (h *LessonHandler) CopyMonth(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+	var req copyMonthRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
+		return
+	}
+	if req.SourceYear < 2000 || req.TargetYear < 2000 || req.SourceMonth < 1 || req.SourceMonth > 12 || req.TargetMonth < 1 || req.TargetMonth > 12 {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid source/target month")
+		return
+	}
+	var branchID *int64
+	switch claims.Role {
+	case models.RoleBranchOwner:
+		if claims.BranchID == nil {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "branch owner has no branch")
+			return
+		}
+		branchID = claims.BranchID
+	case models.RoleOwner:
+		branchID = req.BranchID
+	default:
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "role not permitted")
+		return
+	}
+	sourceFrom := time.Date(req.SourceYear, time.Month(req.SourceMonth), 1, 0, 0, 0, 0, time.UTC)
+	targetFrom := time.Date(req.TargetYear, time.Month(req.TargetMonth), 1, 0, 0, 0, 0, time.UTC)
+	sourceTo := sourceFrom.AddDate(0, 1, -1)
+	targetTo := targetFrom.AddDate(0, 1, -1)
+	copied, err := h.lessons.CopyMonth(r.Context(), sourceFrom, sourceTo, targetFrom, targetTo, branchID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to copy schedule")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"copied": copied})
 }
 
 type attendanceRecord struct {

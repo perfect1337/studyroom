@@ -251,13 +251,6 @@ function SidebarHeader({ role, user }) {
       <div className="flex flex-col gap-4">
         <div className="font-headline-sm text-headline-sm text-primary font-bold px-2">Study Room</div>
         <TutorProfileCard user={user} />
-        <NavLink
-          to="/tutor/schedule/new"
-          className="w-full bg-primary text-on-primary font-label-md text-label-md py-2 rounded-lg shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2"
-        >
-          <span className="material-symbols-outlined text-[20px]">add</span>
-          Новое занятие
-        </NavLink>
       </div>
     );
   }

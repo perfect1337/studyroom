@@ -27,7 +27,6 @@ export const StudentProfile = lazyPreload(() => import("../pages/student/Student
 export const TutorOverview = lazyPreload(() => import("../pages/tutor/TutorOverview.jsx"));
 export const TutorStudents = lazyPreload(() => import("../pages/tutor/TutorStudents.jsx"));
 export const TutorStudentDetail = lazyPreload(() => import("../pages/tutor/TutorStudentDetail.jsx"));
-export const TutorNewLesson = lazyPreload(() => import("../pages/tutor/TutorNewLesson.jsx"));
 export const TutorSchedule = lazyPreload(() => import("../pages/tutor/TutorSchedule.jsx"));
 export const TutorHomework = lazyPreload(() => import("../pages/tutor/TutorHomework.jsx"));
 export const TutorTests = lazyPreload(() => import("../pages/tutor/TutorTests.jsx"));
@@ -74,7 +73,6 @@ export const ROUTE_COMPONENT_BY_PATH = {
   "/tutor": TutorOverview,
   "/tutor/students": TutorStudents,
   "/tutor/schedule": TutorSchedule,
-  "/tutor/schedule/new": TutorNewLesson,
   "/tutor/homework": TutorHomework,
   "/tutor/tests": TutorTests,
   "/tutor/settings": SettingsPage,

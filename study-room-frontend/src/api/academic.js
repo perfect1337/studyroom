@@ -112,6 +112,17 @@ export function createLesson(payload) {
   });
 }
 
+export function copyLessonsMonth({ source_year, source_month, target_year, target_month, branch_id } = {}) {
+  return academicApi("/lessons/copy-month", {
+    method: "POST",
+    body: { source_year, source_month, target_year, target_month, branch_id },
+  }).then((res) => {
+    invalidateQuery(["lessons"]);
+    invalidateQuery(["enrollments"]);
+    return res;
+  });
+}
+
 // Подгруппы — сохранённый набор учеников на групповом курсе, чтобы не
 // выбирать участников заново при каждом занятии (см. академик-сервис
 // SubgroupHandler). course_id обязателен для List, чтобы не тянуть все

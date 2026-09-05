@@ -34,7 +34,6 @@ import {
   TutorOverview,
   TutorStudents,
   TutorStudentDetail,
-  TutorNewLesson,
   TutorSchedule,
   TutorHomework,
   TutorTests,
@@ -131,7 +130,6 @@ function AppRoutes() {
             <Route path="/tutor/students" element={<ProtectedRoute roles={["tutor"]}><TutorStudents /></ProtectedRoute>} />
             <Route path="/tutor/students/:studentId" element={<ProtectedRoute roles={["tutor"]}><TutorStudentDetail /></ProtectedRoute>} />
             <Route path="/tutor/schedule" element={<ProtectedRoute roles={["tutor"]}><TutorSchedule /></ProtectedRoute>} />
-            <Route path="/tutor/schedule/new" element={<ProtectedRoute roles={["tutor"]}><TutorNewLesson /></ProtectedRoute>} />
             <Route path="/tutor/homework" element={<ProtectedRoute roles={["tutor"]}><TutorHomework /></ProtectedRoute>} />
             <Route path="/tutor/tests" element={<ProtectedRoute roles={["tutor"]}><TutorTests /></ProtectedRoute>} />
             <Route path="/tutor/settings" element={<ProtectedRoute roles={["tutor"]}><SettingsPage role="tutor" /></ProtectedRoute>} />

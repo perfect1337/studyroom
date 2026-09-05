@@ -112,19 +112,21 @@ const (
 
 // Lesson — соответствует таблице lessons.
 type Lesson struct {
-	ID           int64        `json:"id"`
-	CourseID     int64        `json:"course_id"`
-	TutorID      int64        `json:"tutor_id"`
-	CreatedBy    int64        `json:"created_by"`
-	Topic        string       `json:"topic"`
-	LessonDate   time.Time    `json:"lesson_date"`
-	StartTime    string       `json:"start_time"`
-	EndTime      string       `json:"end_time"`
-	LocationType LocationType `json:"location_type"`
-	GroupType    GroupType    `json:"group_type"`
-	Status       LessonStatus `json:"status"`
-	Comment      *string      `json:"comment,omitempty"`
-	CreatedAt    time.Time    `json:"created_at"`
+	ID                 int64        `json:"id"`
+	CourseID           int64        `json:"course_id"`
+	TutorID            *int64       `json:"tutor_id,omitempty"`
+	CreatedBy          int64        `json:"created_by"`
+	Topic              string       `json:"topic"`
+	LessonDate         time.Time    `json:"lesson_date"`
+	StartTime          string       `json:"start_time"`
+	EndTime            string       `json:"end_time"`
+	LocationType       LocationType `json:"location_type"`
+	GroupType          GroupType    `json:"group_type"`
+	Status             LessonStatus `json:"status"`
+	Comment            *string      `json:"comment,omitempty"`
+	CreatedAt          time.Time    `json:"created_at"`
+	BranchID           *int64       `json:"branch_id,omitempty"`
+	HasOverdueContract bool         `json:"has_overdue_contract,omitempty"`
 	// ParticipantIDs — id учеников занятия (lesson_participants). Заполняется
 	// в хендлере (см. LessonHandler.List) отдельным батч-запросом, а не в
 	// каждом scanLesson, чтобы не плодить N+1. Нужно фронту, чтобы строить

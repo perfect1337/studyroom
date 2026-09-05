@@ -104,7 +104,7 @@ export default function EditLessonModal({
     setRosterLoading(true);
     setRosterError("");
     Promise.all([
-      fetchSubgroups({ course_id: lesson.course_id, tutor_id: lesson.tutor_id }),
+      fetchSubgroups({ course_id: lesson.course_id, tutor_id: lesson.tutor_id || undefined }),
       fetchEnrollments({ course_id: lesson.course_id }),
       fetchMyPeople().catch(() => null),
     ])
@@ -232,8 +232,8 @@ export default function EditLessonModal({
         group_type: form.group_type,
         comment: form.comment || null,
       };
-      if (canReassignTutor && form.tutor_id) {
-        patch.tutor_id = Number(form.tutor_id);
+      if (canReassignTutor) {
+        patch.tutor_id = form.tutor_id ? Number(form.tutor_id) : null;
       }
       // Меняем состав участников только если занятие групповое и состав
       // реально отличается от текущего — не отправляем subgroup_id/

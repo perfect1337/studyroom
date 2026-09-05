@@ -1,0 +1,2 @@
+ALTER TABLE lessons DROP COLUMN IF EXISTS branch_id;
+ALTER TABLE lessons ALTER COLUMN tutor_id SET NOT NULL;

@@ -19,12 +19,12 @@ func NewLessonRepository(pool *pgxpool.Pool) *LessonRepository {
 }
 
 const lessonColumns = `id, course_id, tutor_id, created_by, topic, lesson_date, start_time, end_time,
-	location_type, group_type, status, comment, created_at`
+	location_type, group_type, status, comment, created_at, branch_id`
 
 func scanLesson(row pgx.Row) (*models.Lesson, error) {
 	var l models.Lesson
 	err := row.Scan(&l.ID, &l.CourseID, &l.TutorID, &l.CreatedBy, &l.Topic, &l.LessonDate,
-		&l.StartTime, &l.EndTime, &l.LocationType, &l.GroupType, &l.Status, &l.Comment, &l.CreatedAt)
+		&l.StartTime, &l.EndTime, &l.LocationType, &l.GroupType, &l.Status, &l.Comment, &l.CreatedAt, &l.BranchID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -37,7 +37,8 @@ func scanLesson(row pgx.Row) (*models.Lesson, error) {
 // LessonInput — поля, нужные для создания занятия (см. api-contracts.md 2.8).
 type LessonInput struct {
 	CourseID     int64
-	TutorID      int64
+	TutorID      *int64
+	BranchID     *int64
 	CreatedBy    int64
 	Topic        string
 	LessonDate   string
@@ -60,10 +61,10 @@ func (r *LessonRepository) Create(ctx context.Context, in LessonInput) (*models.
 	defer tx.Rollback(ctx)
 
 	query := `INSERT INTO lessons (course_id, tutor_id, created_by, topic, lesson_date,
-		start_time, end_time, location_type, group_type, comment)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING ` + lessonColumns
+		start_time, end_time, location_type, group_type, comment, branch_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING ` + lessonColumns
 	row := tx.QueryRow(ctx, query, in.CourseID, in.TutorID, in.CreatedBy, in.Topic, in.LessonDate,
-		in.StartTime, in.EndTime, in.LocationType, in.GroupType, in.Comment)
+		in.StartTime, in.EndTime, in.LocationType, in.GroupType, in.Comment, in.BranchID)
 	l, err := scanLesson(row)
 	if err != nil {
 		return nil, err
@@ -105,7 +106,7 @@ type LessonFilter struct {
 
 func (r *LessonRepository) List(ctx context.Context, f LessonFilter) ([]*models.Lesson, error) {
 	query := `SELECT DISTINCT l.id, l.course_id, l.tutor_id, l.created_by, l.topic, l.lesson_date,
-		l.start_time, l.end_time, l.location_type, l.group_type, l.status, l.comment, l.created_at
+		l.start_time, l.end_time, l.location_type, l.group_type, l.status, l.comment, l.created_at, l.branch_id
 		FROM lessons l
 		LEFT JOIN user_refs ur ON ur.user_id = l.tutor_id`
 	if f.StudentID != nil || len(f.StudentIDs) > 0 {
@@ -129,7 +130,7 @@ func (r *LessonRepository) List(ctx context.Context, f LessonFilter) ([]*models.
 		i++
 	}
 	if f.BranchID != nil {
-		query += " AND ur.branch_id = $" + strconv.Itoa(i)
+		query += " AND l.branch_id = $" + strconv.Itoa(i)
 		args = append(args, *f.BranchID)
 		i++
 	}
@@ -168,7 +169,7 @@ func (r *LessonRepository) Update(ctx context.Context, id int64, fields map[stri
 	}
 	allowedCols := map[string]bool{
 		"topic": true, "lesson_date": true, "start_time": true, "end_time": true,
-		"location_type": true, "group_type": true, "status": true, "comment": true, "tutor_id": true,
+		"location_type": true, "group_type": true, "status": true, "comment": true, "tutor_id": true, "branch_id": true,
 	}
 	setClauses := ""
 	args := []any{}
@@ -220,14 +221,9 @@ func (r *LessonRepository) Cancel(ctx context.Context, id int64) error {
 	return nil
 }
 
-// DeleteByTutor — полностью удаляет из БД все занятия уволенного репетитора
-// (lessons.tutor_id = tutorID), а не просто снимает его с расписания.
-// lessons удаляются вместе с lesson_participants и attendance каскадно (см.
-// ON DELETE CASCADE в 0001_init.up.sql), поэтому явно чистить эти таблицы
-// отдельно не нужно. Используется при увольнении — см. events/subscriber.go,
-// detachTutor.
-func (r *LessonRepository) DeleteByTutor(ctx context.Context, tutorID int64) (int64, error) {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM lessons WHERE tutor_id = $1`, tutorID)
+// DetachTutorFromLessons keeps the lesson history and only clears its tutor.
+func (r *LessonRepository) DetachTutorFromLessons(ctx context.Context, tutorID int64) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `UPDATE lessons SET tutor_id = NULL WHERE tutor_id = $1`, tutorID)
 	if err != nil {
 		return 0, err
 	}
@@ -440,15 +436,11 @@ func (r *LessonRepository) CancelForStudentAndCourse(ctx context.Context, studen
 	return cancelled, nil
 }
 
-// TutorBranchID — филиал преподавателя занятия, для проверки прав
-// branch_owner (курсы больше не привязаны к филиалу).
-func (r *LessonRepository) TutorBranchID(ctx context.Context, lessonID int64) (int64, error) {
+// LessonBranchID returns the branch stored on the lesson. The branch is
+// intentionally denormalized so a lesson remains visible after its tutor is removed.
+func (r *LessonRepository) LessonBranchID(ctx context.Context, lessonID int64) (int64, error) {
 	var branchID *int64
-	err := r.pool.QueryRow(ctx, `
-		SELECT ur.branch_id FROM lessons l
-		LEFT JOIN user_refs ur ON ur.user_id = l.tutor_id
-		WHERE l.id = $1`,
-		lessonID).Scan(&branchID)
+	err := r.pool.QueryRow(ctx, `SELECT branch_id FROM lessons WHERE id = $1`, lessonID).Scan(&branchID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, ErrNotFound
@@ -552,6 +544,110 @@ func (r *LessonRepository) ReplaceParticipants(ctx context.Context, lessonID int
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+// CopyMonth copies lessons from one calendar month into another, preserving
+// weekday/day number, time, course, participants, location and current tutor.
+func (r *LessonRepository) CopyMonth(ctx context.Context, sourceFrom, sourceTo, targetFrom, targetTo time.Time, branchID *int64) (int, error) {
+	var src []*models.Lesson
+	filter := LessonFilter{DateFrom: sourceFrom.Format("2006-01-02"), DateTo: sourceTo.Format("2006-01-02"), BranchID: branchID}
+	var err error
+	src, err = r.List(ctx, filter)
+	if err != nil {
+		return 0, err
+	}
+	if len(src) == 0 {
+		return 0, nil
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	copied := 0
+	for _, l := range src {
+		day := l.LessonDate.Day()
+		targetDate := time.Date(targetFrom.Year(), targetFrom.Month(), day, 0, 0, 0, 0, targetFrom.Location())
+		if targetDate.Month() != targetFrom.Month() {
+			continue
+		}
+		var targetBranch *int64 = l.BranchID
+		if branchID != nil {
+			targetBranch = branchID
+		}
+		var exists bool
+		err = tx.QueryRow(ctx, `SELECT EXISTS(
+			SELECT 1 FROM lessons
+			WHERE course_id=$1 AND lesson_date=$2 AND start_time=$3 AND end_time=$4
+			  AND location_type=$5 AND group_type=$6
+			  AND (tutor_id IS NOT DISTINCT FROM $7) AND (branch_id IS NOT DISTINCT FROM $8)
+		)`, l.CourseID, targetDate, l.StartTime, l.EndTime, l.LocationType, l.GroupType, l.TutorID, targetBranch).Scan(&exists)
+		if err != nil {
+			return 0, err
+		}
+		if exists {
+			continue
+		}
+		var newID int64
+		err = tx.QueryRow(ctx, `INSERT INTO lessons
+			(course_id,tutor_id,created_by,topic,lesson_date,start_time,end_time,location_type,group_type,status,comment,branch_id)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'scheduled',$10,$11) RETURNING id`,
+			l.CourseID, l.TutorID, l.CreatedBy, l.Topic, targetDate, l.StartTime, l.EndTime, l.LocationType, l.GroupType, l.Comment, targetBranch).Scan(&newID)
+		if err != nil {
+			return 0, err
+		}
+		participants, err := r.Participants(ctx, l.ID)
+		if err != nil {
+			return 0, err
+		}
+		for _, sid := range participants {
+			if _, err := tx.Exec(ctx, `INSERT INTO lesson_participants (lesson_id,student_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, newID, sid); err != nil {
+				return 0, err
+			}
+		}
+		copied++
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return copied, nil
+}
+
+// OverdueContractByLessons marks a lesson when at least one participant has
+// no contract covering the lesson date, or its enrollment is terminated.
+func (r *LessonRepository) OverdueContractByLessons(ctx context.Context, lessonIDs []int64) (map[int64]bool, error) {
+	out := map[int64]bool{}
+	if len(lessonIDs) == 0 {
+		return out, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT lp.lesson_id
+		FROM lesson_participants lp
+		JOIN lessons l ON l.id = lp.lesson_id
+		WHERE lp.lesson_id = ANY($1)
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM enrollments e
+			WHERE e.course_id = l.course_id
+			  AND e.student_id = lp.student_id
+			  AND e.status = 'active'
+			  AND (e.start_date IS NULL OR e.start_date <= l.lesson_date)
+			  AND (e.end_date IS NULL OR e.end_date >= l.lesson_date)
+		  )
+	`, lessonIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
 }
 
 // DigestLessonItem — одно занятие ученика на конкретный день, для

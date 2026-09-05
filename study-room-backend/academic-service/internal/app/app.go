@@ -132,10 +132,14 @@ func NewRouter(d *Deps) http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRoles(models.RoleOwner, models.RoleBranchOwner, models.RoleTutor))
 				r.Patch("/enrollments/{id}", enrollHandler.Update)
+				r.Post("/lessons/{id}/attendance", lessonHandler.MarkAttendance)
+			})
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireRoles(models.RoleOwner, models.RoleBranchOwner))
 				r.Post("/lessons", lessonHandler.Create)
 				r.Patch("/lessons/{id}", lessonHandler.Update)
 				r.Delete("/lessons/{id}", lessonHandler.Delete)
-				r.Post("/lessons/{id}/attendance", lessonHandler.MarkAttendance)
+				r.Post("/lessons/copy-month", lessonHandler.CopyMonth)
 				// Подгруппы: создание/изменение/удаление доступны тем же ролям,
 				// что и управление занятиями — доступ дальше сужается внутри
 				// хендлера (SubgroupHandler.canManage) по фактическому владельцу.

@@ -190,15 +190,14 @@ func (s *Subscriber) detachTutor(ctx context.Context, tutorID int64, reason stri
 	if err := s.enrollRepo.UnassignTutorEverywhere(ctx, tutorID); err != nil {
 		log.Printf("[events] %s: detach tutor %d from enrollments error: %v", reason, tutorID, err)
 	}
-	// Полное каскадное удаление: занятия репетитора физически удаляются из
-	// БД (не просто снимаются с расписания), lesson_participants/attendance
-	// уходят вместе с ними каскадом по FK (ON DELETE CASCADE, см.
-	// 0001_init.up.sql) — см. LessonRepository.DeleteByTutor.
+	// Увольнение преподавателя не удаляет историю расписания. В занятии
+	// сохраняется branch_id, а tutor_id становится NULL — руководитель филиала
+	// видит такое занятие и может назначить нового преподавателя.
 	if s.lessonRepo != nil {
-		if n, err := s.lessonRepo.DeleteByTutor(ctx, tutorID); err != nil {
-			log.Printf("[events] %s: delete lessons for tutor %d error: %v", reason, tutorID, err)
+		if n, err := s.lessonRepo.DetachTutorFromLessons(ctx, tutorID); err != nil {
+			log.Printf("[events] %s: clear tutor from lessons for %d error: %v", reason, tutorID, err)
 		} else if n > 0 {
-			log.Printf("[events] %s: deleted %d lesson(s) for tutor %d", reason, n, tutorID)
+			log.Printf("[events] %s: cleared tutor on %d lesson(s) for tutor %d", reason, n, tutorID)
 		}
 	}
 	// Личные подгруппы тьютора (subgroups/subgroup_members) — отдельная от
