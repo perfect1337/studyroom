@@ -623,7 +623,7 @@ export default function EditLessonModal({
                   disabled={saving}
                   className="px-4 py-2 rounded-lg font-label-md text-label-md text-error border border-error hover:bg-error-container/30 transition-colors disabled:opacity-60"
                 >
-                  Отменить занятие
+                  Удалить занятие
                 </button>
               ) : (
                 <span />
@@ -650,8 +650,7 @@ export default function EditLessonModal({
         ) : (
           <div className="space-y-4">
             <div className="p-4 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">
-              Точно отменить занятие {normalizeDateForInput(lesson.lesson_date)} в {lesson.start_time}? Ученики и
-              родители увидят его как отменённое.
+              Точно удалить занятие {normalizeDateForInput(lesson.lesson_date)} в {lesson.start_time}? Занятие будет удалено из расписания.
             </div>
             <div className="flex gap-3">
               <button
@@ -668,7 +667,7 @@ export default function EditLessonModal({
                 disabled={cancelling}
                 className="flex-1 bg-error text-on-error py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60"
               >
-                {cancelling ? "Отмена…" : "Да, отменить занятие"}
+                {cancelling ? "Удаление…" : "Да, удалить занятие"}
               </button>
             </div>
           </div>
