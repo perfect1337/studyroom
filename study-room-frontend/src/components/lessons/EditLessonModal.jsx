@@ -48,6 +48,7 @@ export default function EditLessonModal({
   open,
   lesson,
   tutors = [],
+  courses = [],
   canReassignTutor = false,
   onClose,
   onSaved,
@@ -81,8 +82,9 @@ export default function EditLessonModal({
         start_time: lesson.start_time ?? "",
         end_time: lesson.end_time ?? "",
         location_type: lesson.location_type ?? "remote",
+        course_id: lesson.course_id ? String(lesson.course_id) : "",
         // Тип занятия больше не редактируется вручную — он жёстко задан
-        // форматом курса (см. CreateLessonModal) и просто отображается.
+        // форматом выбранного курса (см. groupType ниже) и просто отображается.
         group_type: lesson.group_type ?? "individual",
         comment: lesson.comment ?? "",
         tutor_id: lesson.tutor_id ?? "",
@@ -101,17 +103,23 @@ export default function EditLessonModal({
 
   // Подгружаем подгруппы курса и активный состав курса (для ручного выбора
   // учеников), только когда занятие реально групповое — не тратим лишний
-  // запрос на индивидуальные занятия.
+  // запрос на индивидуальные занятия. Использует form.course_id/form.tutor_id
+  // (а не lesson.course_id/lesson.tutor_id), чтобы при смене курса или
+  // преподавателя прямо в модалке состав подгружался для НОВОГО курса, а не
+  // оставался от исходного занятия.
   useEffect(() => {
-    if (!open || !lesson) return;
+    if (!open || !lesson || !form) return;
+    const courseId = form.course_id ? Number(form.course_id) : lesson.course_id;
+    const tutorId = form.tutor_id ? Number(form.tutor_id) : lesson.tutor_id;
+    const courseChanged = String(courseId) !== String(lesson.course_id);
     let cancelled = false;
     setRosterLoading(true);
     setRosterError("");
     Promise.all([
-      form?.group_type === "group"
-        ? fetchSubgroups({ course_id: lesson.course_id, tutor_id: lesson.tutor_id })
+      form.group_type === "group"
+        ? fetchSubgroups({ course_id: courseId, tutor_id: tutorId })
         : Promise.resolve({ items: [] }),
-      fetchEnrollments({ course_id: lesson.course_id }),
+      fetchEnrollments({ course_id: courseId }),
       fetchMyPeople().catch(() => null),
     ])
       .then(([subgroupsRes, enrollRes, peopleRes]) => {
@@ -135,6 +143,16 @@ export default function EditLessonModal({
         const subgroups = subgroupsRes?.items ?? [];
         setCourseSubgroups(subgroups);
 
+        if (courseChanged) {
+          // Курс сменился — старый состав участников относится к другому
+          // курсу и почти наверняка невалиден для нового, поэтому просто
+          // сбрасываем выбор и даём выбрать заново из состава нового курса.
+          setParticipantsMode("custom");
+          setManualParticipantIds([]);
+          setSelectedStudentId("");
+          return;
+        }
+
         // Пытаемся угадать, с какой подгруппой сейчас связано занятие: по
         // совпадению набора участников занятия с составом подгруппы (у
         // занятия нет собственного subgroup_id — см. комментарий в
@@ -155,7 +173,7 @@ export default function EditLessonModal({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, lesson?.id, lesson?.tutor_id, form?.group_type]);
+  }, [open, lesson?.id, form?.course_id, form?.tutor_id, form?.group_type]);
 
   const selectedSubgroup = useMemo(
     () => courseSubgroups.find((sg) => String(sg.id) === String(participantsMode)) ?? null,
@@ -197,6 +215,21 @@ export default function EditLessonModal({
     // может сразу выбрать допустимую дату/время и повторить сохранение.
     // Ошибка не должна блокировать дальнейшее редактирование формы.
     setError("");
+    if (field === "course_id") {
+      // Смена курса тянет за собой смену типа занятия — он всегда равен
+      // формату курса (см. Course.Format на бэкенде), выбора вручную нет.
+      // Тема занятия (скрытое поле, см. комментарий выше) тоже пересинхронизируется
+      // с новым курсом, как и при создании занятия.
+      const nextCourse = courses.find((c) => String(c.id) === String(value));
+      const nextGroupType = nextCourse?.format === "group" ? "group" : "individual";
+      setForm((f) => ({
+        ...f,
+        course_id: value,
+        group_type: nextGroupType,
+        topic: nextCourse?.title || nextCourse?.subject || f.topic,
+      }));
+      return;
+    }
     setForm((f) => ({ ...f, [field]: value }));
   }
 
@@ -240,6 +273,9 @@ export default function EditLessonModal({
         group_type: form.group_type,
         comment: form.comment || null,
       };
+      if (form.course_id && Number(form.course_id) !== lesson.course_id) {
+        patch.course_id = Number(form.course_id);
+      }
       if (canReassignTutor && form.tutor_id) {
         patch.tutor_id = Number(form.tutor_id);
       }
@@ -322,6 +358,35 @@ export default function EditLessonModal({
 
         {!confirmingCancel ? (
           <form onSubmit={handleSave} className="space-y-4">
+            {courses.length > 0 && (
+              <div className="flex flex-col gap-stack-sm">
+                <label className="font-label-md text-label-md text-on-surface" htmlFor="edit-course">
+                  Курс
+                </label>
+                <select
+                  id="edit-course"
+                  value={form.course_id}
+                  onChange={(e) => update("course_id", e.target.value)}
+                  className="w-full px-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
+                >
+                  <option value="">Выберите курс</option>
+                  {courses.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.title || c.subject}
+                    </option>
+                  ))}
+                </select>
+                {form.course_id && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-md text-[11px] w-fit">
+                    <span className="material-symbols-outlined text-[13px]">
+                      {form.group_type === "group" ? "groups" : "person"}
+                    </span>
+                    {form.group_type === "group" ? "Групповой курс" : "Индивидуальный курс"}
+                  </span>
+                )}
+              </div>
+            )}
+
             {canReassignTutor && tutors.length > 0 && (
               <div className="flex flex-col gap-stack-sm">
                 <label className="font-label-md text-label-md text-on-surface" htmlFor="edit-tutor">
@@ -384,30 +449,19 @@ export default function EditLessonModal({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="flex flex-col gap-stack-sm">
-                <label className="font-label-md text-label-md text-on-surface" htmlFor="edit-location">
-                  Формат проведения
-                </label>
-                <select
-                  id="edit-location"
-                  value={form.location_type}
-                  onChange={(e) => update("location_type", e.target.value)}
-                  className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
-                >
-                  <option value="remote">Дистанционно (Zoom)</option>
-                  <option value="onsite">Очно, в филиале</option>
-                </select>
-              </div>
-              <div className="flex flex-col gap-stack-sm">
-                <span className="font-label-md text-label-md text-on-surface">Тип занятия</span>
-                <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-container-low border border-outline-variant/60 font-body-md text-body-md text-on-surface-variant">
-                  <span className="material-symbols-outlined text-[18px]">
-                    {form.group_type === "group" ? "groups" : "person"}
-                  </span>
-                  {form.group_type === "group" ? "Групповое (задано курсом)" : "Индивидуальное (задано курсом)"}
-                </div>
-              </div>
+            <div className="flex flex-col gap-stack-sm">
+              <label className="font-label-md text-label-md text-on-surface" htmlFor="edit-location">
+                Формат проведения
+              </label>
+              <select
+                id="edit-location"
+                value={form.location_type}
+                onChange={(e) => update("location_type", e.target.value)}
+                className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
+              >
+                <option value="remote">Дистанционно (Zoom)</option>
+                <option value="onsite">Очно, в филиале</option>
+              </select>
             </div>
 
             {form.group_type === "individual" && (

@@ -170,6 +170,7 @@ func (r *LessonRepository) Update(ctx context.Context, id int64, fields map[stri
 	allowedCols := map[string]bool{
 		"topic": true, "lesson_date": true, "start_time": true, "end_time": true,
 		"location_type": true, "group_type": true, "status": true, "comment": true, "tutor_id": true, "branch_id": true,
+		"course_id": true,
 	}
 	setClauses := ""
 	args := []any{}

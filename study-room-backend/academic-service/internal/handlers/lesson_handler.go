@@ -428,6 +428,14 @@ type updateLessonRequest struct {
 	Status       *models.LessonStatus `json:"status"`
 	Comment      *string              `json:"comment"`
 	TutorID      *int64               `json:"tutor_id"`
+	// CourseID — сменить курс занятия прямо в модалке редактирования, без
+	// пересоздания занятия. При смене курса состав участников всегда
+	// пересчитывается (см. wantsParticipantChange ниже): старые участники
+	// почти наверняка не записаны на новый курс, поэтому нужно явно указать
+	// student_id/subgroup_id/participant_ids вместе с course_id, либо (для
+	// группового занятия) фронт может явно передать новый список — сервер
+	// в любом случае отфильтрует его по активным enrollments нового курса.
+	CourseID *int64 `json:"course_id"`
 	// SubgroupID — сменить состав участников группового занятия на состав
 	// сохранённой подгруппы (см. models.Subgroup), взаимоисключимо с
 	// ParticipantIDs (приоритет у SubgroupID, как и в Create). Позволяет
@@ -472,7 +480,13 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 	// subgroup_id / participant_ids.
 	var oldParticipantIDs []int64
 	var newParticipantIDs []int64
-	wantsParticipantChange := req.SubgroupID != nil || req.ParticipantIDs != nil || req.StudentID != nil || (req.GroupType != nil && *req.GroupType == models.GroupIndividual && lesson.GroupType == models.GroupGroup)
+	courseChanged := req.CourseID != nil && *req.CourseID != lesson.CourseID
+	targetCourseID := lesson.CourseID
+	oldCourseID := lesson.CourseID
+	if courseChanged {
+		targetCourseID = *req.CourseID
+	}
+	wantsParticipantChange := req.SubgroupID != nil || req.ParticipantIDs != nil || req.StudentID != nil || courseChanged || (req.GroupType != nil && *req.GroupType == models.GroupIndividual && lesson.GroupType == models.GroupGroup)
 	if wantsParticipantChange {
 		oldParticipantIDs, err = h.lessons.Participants(r.Context(), id)
 		if err != nil {
@@ -485,7 +499,7 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 		if effectiveGroupType == models.GroupIndividual {
 			studentID := req.StudentID
-			if studentID == nil && len(oldParticipantIDs) == 1 {
+			if studentID == nil && !courseChanged && len(oldParticipantIDs) == 1 {
 				studentID = &oldParticipantIDs[0]
 			}
 			if studentID == nil || *studentID <= 0 {
@@ -494,7 +508,7 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 			}
 			newParticipantIDs = []int64{*studentID}
 		} else {
-			courseEnrollments, err := h.enrollments.List(r.Context(), repository.EnrollmentFilter{CourseID: &lesson.CourseID})
+			courseEnrollments, err := h.enrollments.List(r.Context(), repository.EnrollmentFilter{CourseID: &targetCourseID})
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course enrollments")
 				return
@@ -510,7 +524,7 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 					writeError(w, http.StatusBadRequest, "BAD_REQUEST", "subgroup not found")
 					return
 				}
-				if sg.CourseID != lesson.CourseID {
+				if sg.CourseID != targetCourseID {
 					writeError(w, http.StatusBadRequest, "BAD_REQUEST", "subgroup does not belong to this lesson's course")
 					return
 				}
@@ -528,12 +542,23 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			default:
-				newParticipantIDs = oldParticipantIDs
+				if courseChanged {
+					// Курс сменился, но фронт не прислал новый состав — оставляем
+					// только тех старых участников, кто и правда записан на новый
+					// курс (обычно это никто, но не будем считать это ошибкой).
+					for _, sid := range oldParticipantIDs {
+						if active[sid] {
+							newParticipantIDs = append(newParticipantIDs, sid)
+						}
+					}
+				} else {
+					newParticipantIDs = oldParticipantIDs
+				}
 			}
-			if len(newParticipantIDs) == 0 {
-				writeError(w, http.StatusBadRequest, "BAD_REQUEST", "group lesson must have at least one student")
-				return
-			}
+		}
+		if len(newParticipantIDs) == 0 {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "group lesson must have at least one student")
+			return
 		}
 	}
 
@@ -565,6 +590,9 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.TutorID != nil {
 		fields["tutor_id"] = *req.TutorID
 	}
+	if courseChanged {
+		fields["course_id"] = targetCourseID
+	}
 
 	lesson, err = h.lessons.Update(r.Context(), id, fields)
 	if err != nil {
@@ -593,6 +621,12 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 				union[sid] = true
 				affected = append(affected, sid)
 			}
+		}
+		// Если сменился курс — прогресс старого курса тоже мог обнулиться для
+		// снятых участников, поэтому пересчитываем оба курса, а не только
+		// текущий (lesson.CourseID уже равен targetCourseID после Update).
+		if courseChanged {
+			h.recalculateProgress(r.Context(), oldCourseID, affected)
 		}
 		h.recalculateProgress(r.Context(), lesson.CourseID, affected)
 	}

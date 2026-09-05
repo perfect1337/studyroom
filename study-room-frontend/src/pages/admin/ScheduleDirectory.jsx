@@ -447,10 +447,12 @@ export default function ScheduleDirectory({ role }) {
         <button
           type="button"
           onClick={() => setBulkCreateOpen(true)}
-          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-white font-label-md hover:opacity-90 transition-opacity"
+          className="group w-full sm:w-auto inline-flex items-center justify-center gap-2.5 pl-3.5 pr-5 py-2.5 rounded-full bg-primary text-on-primary font-label-md text-label-md shadow-sm hover:shadow-md hover:bg-on-primary-fixed-variant active:scale-[0.98] transition-all duration-150"
         >
-          <span className="material-symbols-outlined text-[18px]">calendar_month</span>
-          Быстро создать на месяц
+          <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center shrink-0 group-hover:rotate-90 transition-transform duration-200">
+            <span className="material-symbols-outlined text-[16px]">add</span>
+          </span>
+          Быстро создать занятия на месяц
         </button>
       </div>
 
@@ -511,25 +513,41 @@ export default function ScheduleDirectory({ role }) {
                 const isSelected = day === selectedDay;
                 const hasProblem = dayLessons.some((l) => l.contract_issue || !l.tutor_id);
                 const hasLessons = dayLessons.length > 0;
-                const dayStateClass = hasLessons ? (hasProblem ? "bg-error-container text-on-error-container border-error" : "bg-primary-container text-on-primary-container border-primary") : "text-on-surface-variant bg-surface-container hover:brightness-95";
+                // "Занято" — сколько из занятий этого дня очные (location_type
+                // === "onsite") и не отменены: это то, что реально занимает
+                // помещение/кабинет в филиале, в отличие от дистанционных.
+                const onsiteCount = dayLessons.filter((l) => l.location_type === "onsite" && l.status !== "cancelled").length;
+                const dayStateClass = hasLessons
+                  ? hasProblem
+                    ? "bg-error-container text-on-error-container border-error"
+                    : "bg-primary-container text-on-primary-container border-primary"
+                  : "text-on-surface-variant bg-surface-container border-outline-variant/40 hover:bg-surface-container-high hover:border-outline-variant";
 
                 return (
                   <button
                     key={day}
                     onClick={() => { setSelectedDay(day); setDetailPage(0); }}
-                    className={`text-left min-h-24 sm:min-h-28 p-2 rounded-lg font-label-md transition-all relative border ${dayStateClass} ${isSelected ? "ring-2 ring-primary scale-[1.02] z-10 shadow-md" : ""} ${isToday ? "border-4" : ""}`}
+                    className={`text-left min-h-24 sm:min-h-28 p-2 rounded-xl font-label-md transition-all duration-150 relative border flex flex-col ${dayStateClass} ${isSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-surface-container-lowest scale-[1.03] z-10 shadow-lg" : hasLessons ? "shadow-sm hover:shadow-md hover:brightness-[1.03]" : ""} ${isToday ? "border-2 border-secondary" : ""}`}
                   >
                     {isToday && (
-                      <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-secondary-container text-on-secondary-container text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tighter z-20">
+                      <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-secondary text-on-secondary text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tighter z-20 shadow-sm">
                         Сегодня
                       </span>
                     )}
-                    <span className="font-bold">{day}</span>
-                    <div className="mt-1 space-y-1 overflow-hidden">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[13px]">{day}</span>
+                      {onsiteCount > 0 && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-white/70 text-on-surface text-[8px] sm:text-[9px] font-bold leading-none">
+                          <span className="material-symbols-outlined text-[10px] sm:text-[11px]">meeting_room</span>
+                          Занято {onsiteCount}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 space-y-1 overflow-hidden flex-1">
                       {dayLessons.slice(0, 3).map((l) => {
                         const info = lessonShortInfo(l);
                         return (
-                          <div key={l.id} className="rounded-md bg-white/75 text-on-surface px-1.5 py-1 text-[9px] sm:text-[10px] leading-tight">
+                          <div key={l.id} className="rounded-md bg-white/80 text-on-surface px-1.5 py-1 text-[9px] sm:text-[10px] leading-tight shadow-[0_1px_1px_rgba(0,0,0,0.04)]">
                             <div className="font-bold truncate">{info.subject}</div>
                             <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 font-semibold opacity-80">
                               {info.classes.length > 0 && <span>{info.classes.join(", ")}</span>}
@@ -538,7 +556,11 @@ export default function ScheduleDirectory({ role }) {
                           </div>
                         );
                       })}
-                      {dayLessons.length > 3 && <div className="text-[9px] font-semibold">+{dayLessons.length - 3} ещё</div>}
+                      {dayLessons.length > 3 && (
+                        <div className="text-[9px] font-bold text-center rounded-md bg-white/50 py-0.5">
+                          +{dayLessons.length - 3} ещё
+                        </div>
+                      )}
                     </div>
                   </button>
                 );
@@ -716,6 +738,7 @@ export default function ScheduleDirectory({ role }) {
         open={!!editingLesson}
         lesson={editingLesson}
         tutors={people.tutors}
+        courses={courses}
         canReassignTutor
         onClose={() => setEditingLesson(null)}
         onSaved={handleLessonSaved}
