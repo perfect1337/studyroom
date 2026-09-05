@@ -406,11 +406,7 @@ func (h *LessonHandler) checkLessonAccess(w http.ResponseWriter, r *http.Request
 		}
 		return lesson, true
 	case models.RoleBranchOwner:
-		if lesson.BranchID == nil {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "lesson has no branch")
-			return nil, false
-		}
-		if claims.BranchID == nil || *claims.BranchID != *lesson.BranchID {
+		if lesson.BranchID == nil || claims.BranchID == nil || *claims.BranchID != *lesson.BranchID {
 			writeError(w, http.StatusForbidden, "FORBIDDEN", "lesson belongs to a different branch")
 			return nil, false
 		}
