@@ -823,19 +823,14 @@ export default function FinanceDirectory({ role }) {
 
                   <div>
                     <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Курс *</label>
-                    <select
+                    <SearchableSelect
                       required
                       value={addForm.course_id}
-                      onChange={(e) => setAddForm((f) => ({ ...f, course_id: e.target.value }))}
-                      className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-                    >
-                      <option value="">Выберите курс</option>
-                      {courses.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.title ?? c.subject}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(v) => setAddForm((f) => ({ ...f, course_id: v }))}
+                      options={courses.map((c) => ({ value: c.id, label: c.title ?? c.subject }))}
+                      placeholder="Выберите курс"
+                      searchPlaceholder="Поиск по названию курса…"
+                    />
                   </div>
                   <div>
                     <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Филиал *</label>
