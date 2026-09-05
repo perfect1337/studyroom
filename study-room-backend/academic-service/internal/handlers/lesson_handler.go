@@ -355,7 +355,7 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lesson, err := h.lessons.Create(r.Context(), repository.LessonInput{
-		CourseID: req.CourseID, TutorID: req.TutorID, CreatedBy: claims.UserID,
+		CourseID: req.CourseID, TutorID: &req.TutorID, CreatedBy: claims.UserID,
 		Topic: req.Topic, LessonDate: req.LessonDate, StartTime: req.StartTime, EndTime: req.EndTime,
 		LocationType: req.LocationType, GroupType: req.GroupType, Comment: req.Comment,
 		ParticipantIDs: participantIDs,
@@ -366,7 +366,9 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, studentID := range participantIDs {
-		h.publisher.LessonCreated(lesson.ID, lesson.TutorID, studentID, lesson.Topic, req.LessonDate, req.StartTime)
+		if lesson.TutorID != nil {
+			h.publisher.LessonCreated(lesson.ID, *lesson.TutorID, studentID, lesson.Topic, req.LessonDate, req.StartTime)
+		}
 	}
 
 	// Новое занятие меняет знаменатель прогресса (см. RecalculateProgress) —
@@ -398,18 +400,17 @@ func (h *LessonHandler) checkLessonAccess(w http.ResponseWriter, r *http.Request
 	case models.RoleOwner:
 		return lesson, true
 	case models.RoleTutor:
-		if lesson.TutorID != claims.UserID {
+		if lesson.TutorID == nil || *lesson.TutorID != claims.UserID {
 			writeError(w, http.StatusForbidden, "FORBIDDEN", "not your lesson")
 			return nil, false
 		}
 		return lesson, true
 	case models.RoleBranchOwner:
-		branchID, err := h.lessons.TutorBranchID(r.Context(), lessonID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check branch")
+		if lesson.BranchID == nil {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "lesson has no branch")
 			return nil, false
 		}
-		if claims.BranchID == nil || *claims.BranchID != branchID {
+		if claims.BranchID == nil || *claims.BranchID != *lesson.BranchID {
 			writeError(w, http.StatusForbidden, "FORBIDDEN", "lesson belongs to a different branch")
 			return nil, false
 		}

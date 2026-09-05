@@ -114,8 +114,7 @@ const (
 type Lesson struct {
 	ID           int64        `json:"id"`
 	CourseID     int64        `json:"course_id"`
-	TutorID      int64        `json:"tutor_id"`
-	BranchID     *int64       `json:"branch_id,omitempty"`
+	TutorID      *int64       `json:"tutor_id,omitempty"`
 	CreatedBy    int64        `json:"created_by"`
 	Topic        string       `json:"topic"`
 	LessonDate   time.Time    `json:"lesson_date"`
