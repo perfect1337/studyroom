@@ -23,13 +23,11 @@ export default function BulkCreateLessonsModal({ open, courses = [], tutors = []
     setForm({
       course_id: courses[0]?.id ? String(courses[0].id) : "",
       tutor_id: tutors[0]?.id ? String(tutors[0].id) : "",
-      topic: courses[0]?.title ?? courses[0]?.subject ?? "",
       lesson_date_from: monthStart(),
       lesson_date_to: monthEnd(),
       start_time: "10:00",
       end_time: "11:00",
       location_type: "onsite",
-      group_type: "group",
       student_id: "",
     });
     setDays([1, 2, 3, 4, 5]);
@@ -40,6 +38,8 @@ export default function BulkCreateLessonsModal({ open, courses = [], tutors = []
   if (!open || !form) return null;
 
   const selectedCourse = courses.find((c) => String(c.id) === String(form.course_id));
+  // Тип занятия целиком определяется форматом выбранного курса.
+  const groupType = selectedCourse?.format === "group" ? "group" : "individual";
   const filteredStudents = students;
   const selectedDays = new Set(days);
 
@@ -59,7 +59,7 @@ export default function BulkCreateLessonsModal({ open, courses = [], tutors = []
     }
     if (!days.length) { setError("Выберите хотя бы один день недели."); return; }
     if (form.end_time <= form.start_time) { setError("Время окончания должно быть позже времени начала."); return; }
-    if (form.group_type === "individual" && !form.student_id) { setError("Для индивидуальных занятий выберите ученика."); return; }
+    if (groupType === "individual" && !form.student_id) { setError("Для индивидуальных занятий выберите ученика."); return; }
     if (form.lesson_date_from > form.lesson_date_to) { setError("Начало периода не может быть позже конца."); return; }
 
     const dates = [];
@@ -79,13 +79,13 @@ export default function BulkCreateLessonsModal({ open, courses = [], tutors = []
           await createLesson({
             course_id: Number(form.course_id),
             tutor_id: Number(form.tutor_id),
-            topic: form.topic || selectedCourse?.title || selectedCourse?.subject || "Занятие",
+            topic: selectedCourse?.title || selectedCourse?.subject || "Занятие",
             lesson_date: dates[i],
             start_time: form.start_time,
             end_time: form.end_time,
             location_type: form.location_type,
-            group_type: form.group_type,
-            ...(form.group_type === "individual" ? { student_id: Number(form.student_id) } : {}),
+            group_type: groupType,
+            ...(groupType === "individual" ? { student_id: Number(form.student_id) } : {}),
           });
           created += 1;
         } catch (e2) {
@@ -103,57 +103,79 @@ export default function BulkCreateLessonsModal({ open, courses = [], tutors = []
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-3 sm:p-4" onClick={saving ? undefined : onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-3 sm:p-4" onClick={saving ? undefined : onClose}>
       <div className="bg-surface-container-lowest rounded-2xl shadow-xl w-full max-w-2xl max-h-[92vh] overflow-y-auto p-4 sm:p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 mb-5">
-          <div>
-            <h3 className="font-headline-sm text-headline-sm text-on-surface">Быстро создать занятия на месяц</h3>
-            <p className="text-[13px] text-on-surface-variant mt-1">Одно правило создаст занятия сразу на все выбранные даты.</p>
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary-container text-on-primary-container flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined">event_repeat</span>
+            </div>
+            <div>
+              <h3 className="font-headline-sm text-headline-sm text-on-surface">Быстро создать занятия на месяц</h3>
+              <p className="font-body-md text-[13px] text-on-surface-variant mt-1">Одно правило создаст занятия сразу на все выбранные даты.</p>
+            </div>
           </div>
-          <button type="button" onClick={onClose} disabled={saving} className="p-2 rounded-lg hover:bg-surface-container disabled:opacity-40"><span className="material-symbols-outlined">close</span></button>
+          <button type="button" onClick={onClose} disabled={saving} className="p-2 rounded-lg hover:bg-surface-container-high transition-colors disabled:opacity-40 shrink-0"><span className="material-symbols-outlined">close</span></button>
         </div>
-        {error && <div className="mb-4 p-3 rounded-lg bg-error-container text-on-error-container text-[13px]">{error}</div>}
+        {error && (
+          <div className="mb-4 p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-[13px] flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px]">error</span>
+            {error}
+          </div>
+        )}
         <form onSubmit={submit} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-[13px]">Курс
-              <select value={form.course_id} onChange={(e) => { const c = courses.find((x) => String(x.id) === e.target.value); setForm((f) => ({ ...f, course_id: e.target.value, topic: c?.title ?? c?.subject ?? f.topic })); }} className="px-3 py-2 bg-surface border border-outline-variant rounded-lg">
+            <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">Курс
+              <select value={form.course_id} onChange={(e) => update("course_id", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow">
                 <option value="">Выберите курс</option>{courses.map((c) => <option key={c.id} value={c.id}>{c.title ?? c.subject ?? `Курс #${c.id}`}</option>)}
               </select>
+              {selectedCourse && (
+                <span className="mt-0.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-md text-[11px] w-fit">
+                  <span className="material-symbols-outlined text-[13px]">{groupType === "group" ? "groups" : "person"}</span>
+                  {groupType === "group" ? "Групповой курс" : "Индивидуальный курс"}
+                </span>
+              )}
             </label>
-            <label className="flex flex-col gap-1 text-[13px]">Преподаватель
-              <select value={form.tutor_id} onChange={(e) => update("tutor_id", e.target.value)} className="px-3 py-2 bg-surface border border-outline-variant rounded-lg">
+            <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">Преподаватель
+              <select value={form.tutor_id} onChange={(e) => update("tutor_id", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow">
                 <option value="">Выберите преподавателя</option>{tutors.map((t) => <option key={t.id} value={t.id}>{fullName(t)}</option>)}
               </select>
             </label>
           </div>
-          <label className="flex flex-col gap-1 text-[13px]">Тема
-            <input value={form.topic} onChange={(e) => update("topic", e.target.value)} className="px-3 py-2 bg-surface border border-outline-variant rounded-lg" placeholder="Например, Математика" />
-          </label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-[13px]">С
-              <input type="date" value={form.lesson_date_from} onChange={(e) => update("lesson_date_from", e.target.value)} className="px-3 py-2 bg-surface border border-outline-variant rounded-lg" />
+            <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">С
+              <input type="date" value={form.lesson_date_from} onChange={(e) => update("lesson_date_from", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow" />
             </label>
-            <label className="flex flex-col gap-1 text-[13px]">По
-              <input type="date" value={form.lesson_date_to} onChange={(e) => update("lesson_date_to", e.target.value)} className="px-3 py-2 bg-surface border border-outline-variant rounded-lg" />
+            <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">По
+              <input type="date" value={form.lesson_date_to} onChange={(e) => update("lesson_date_to", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow" />
             </label>
           </div>
           <div>
-            <p className="text-[13px] font-semibold mb-2">Дни недели</p>
-            <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">{WEEKDAYS.map(([day, label]) => <button key={day} type="button" onClick={() => toggleDay(day)} className={`py-2 rounded-lg border text-[13px] font-semibold ${days.includes(day) ? "border-primary bg-primary/10 text-primary" : "border-outline-variant text-on-surface-variant"}`}>{label}</button>)}</div>
+            <p className="font-label-md text-label-md text-on-surface mb-2">Дни недели</p>
+            <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">{WEEKDAYS.map(([day, label]) => <button key={day} type="button" onClick={() => toggleDay(day)} className={`py-2 rounded-lg border font-label-md text-[13px] font-semibold transition-colors ${days.includes(day) ? "border-primary bg-primary text-on-primary shadow-sm" : "border-outline-variant text-on-surface-variant hover:bg-surface-container-high"}`}>{label}</button>)}</div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-[13px]">Начало<input type="time" value={form.start_time} onChange={(e) => update("start_time", e.target.value)} className="px-3 py-2 bg-surface border border-outline-variant rounded-lg" /></label>
-            <label className="flex flex-col gap-1 text-[13px]">Конец<input type="time" value={form.end_time} onChange={(e) => update("end_time", e.target.value)} className="px-3 py-2 bg-surface border border-outline-variant rounded-lg" /></label>
+            <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">Начало<input type="time" value={form.start_time} onChange={(e) => update("start_time", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow" /></label>
+            <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">Конец<input type="time" value={form.end_time} onChange={(e) => update("end_time", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow" /></label>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-[13px]">Формат<select value={form.location_type} onChange={(e) => update("location_type", e.target.value)} className="px-3 py-2 bg-surface border border-outline-variant rounded-lg"><option value="onsite">Очно</option><option value="remote">Дистанционно</option></select></label>
-            <label className="flex flex-col gap-1 text-[13px]">Тип<select value={form.group_type} onChange={(e) => update("group_type", e.target.value)} className="px-3 py-2 bg-surface border border-outline-variant rounded-lg"><option value="group">Групповое</option><option value="individual">Индивидуальное</option></select></label>
+          <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">Формат проведения
+            <select value={form.location_type} onChange={(e) => update("location_type", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow"><option value="onsite">Очно, в филиале</option><option value="remote">Дистанционно (Zoom)</option></select>
+          </label>
+          {groupType === "individual" && (
+            <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface p-3 rounded-lg border border-outline-variant bg-surface-container-low">Ученик
+              <select value={form.student_id} onChange={(e) => update("student_id", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow"><option value="">Выберите ученика</option>{filteredStudents.map((s) => <option key={s.id} value={s.id}>{fullName(s)}{s.class_info ? ` · ${s.class_info}` : ""}</option>)}</select>
+            </label>
+          )}
+          {progress && (
+            <p className="font-label-md text-[13px] text-primary flex items-center gap-2">
+              <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+              {progress}
+            </p>
+          )}
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-3 border-t border-outline-variant/50">
+            <button type="button" onClick={onClose} disabled={saving} className="px-6 py-2 rounded-lg font-label-md text-label-md text-primary border border-primary hover:bg-primary-container/20 transition-colors disabled:opacity-60">Отмена</button>
+            <button type="submit" disabled={saving} className="px-6 py-2 rounded-lg font-label-md text-label-md bg-primary text-on-primary hover:bg-on-primary-fixed-variant shadow-sm hover:shadow-md transition-all active:scale-95 duration-150 disabled:opacity-60">{saving ? "Создаём…" : "Создать на месяц"}</button>
           </div>
-          {form.group_type === "individual" && <label className="flex flex-col gap-1 text-[13px]">Ученик
-            <select value={form.student_id} onChange={(e) => update("student_id", e.target.value)} className="px-3 py-2 bg-surface border border-outline-variant rounded-lg"><option value="">Выберите ученика</option>{filteredStudents.map((s) => <option key={s.id} value={s.id}>{fullName(s)}{s.class_info ? ` · ${s.class_info}` : ""}</option>)}</select>
-          </label>}
-          {progress && <p className="text-[13px] text-primary">{progress}</p>}
-          <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2"><button type="button" onClick={onClose} disabled={saving} className="px-4 py-2 rounded-lg border border-outline-variant">Отмена</button><button type="submit" disabled={saving} className="px-4 py-2 rounded-lg bg-primary text-white disabled:opacity-50">{saving ? "Создаём…" : "Создать на месяц"}</button></div>
         </form>
       </div>
     </div>

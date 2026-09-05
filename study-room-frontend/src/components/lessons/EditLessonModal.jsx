@@ -81,6 +81,8 @@ export default function EditLessonModal({
         start_time: lesson.start_time ?? "",
         end_time: lesson.end_time ?? "",
         location_type: lesson.location_type ?? "remote",
+        // Тип занятия больше не редактируется вручную — он жёстко задан
+        // форматом курса (см. CreateLessonModal) и просто отображается.
         group_type: lesson.group_type ?? "individual",
         comment: lesson.comment ?? "",
         tutor_id: lesson.tutor_id ?? "",
@@ -200,8 +202,8 @@ export default function EditLessonModal({
 
   async function handleSave(e) {
     e.preventDefault();
-    if (!form.topic || !form.lesson_date || !form.start_time || !form.end_time) {
-      setError("Заполните тему, дату и время занятия");
+    if (!form.lesson_date || !form.start_time || !form.end_time) {
+      setError("Заполните дату и время занятия");
       return;
     }
     if (form.end_time <= form.start_time) {
@@ -320,19 +322,6 @@ export default function EditLessonModal({
 
         {!confirmingCancel ? (
           <form onSubmit={handleSave} className="space-y-4">
-            <div className="flex flex-col gap-stack-sm">
-              <label className="font-label-md text-label-md text-on-surface" htmlFor="edit-topic">
-                Тема занятия
-              </label>
-              <input
-                id="edit-topic"
-                required
-                value={form.topic}
-                onChange={(e) => update("topic", e.target.value)}
-                className="w-full px-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
-              />
-            </div>
-
             {canReassignTutor && tutors.length > 0 && (
               <div className="flex flex-col gap-stack-sm">
                 <label className="font-label-md text-label-md text-on-surface" htmlFor="edit-tutor">
@@ -411,18 +400,13 @@ export default function EditLessonModal({
                 </select>
               </div>
               <div className="flex flex-col gap-stack-sm">
-                <label className="font-label-md text-label-md text-on-surface" htmlFor="edit-group">
-                  Тип занятия
-                </label>
-                <select
-                  id="edit-group"
-                  value={form.group_type}
-                  onChange={(e) => update("group_type", e.target.value)}
-                  className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
-                >
-                  <option value="individual">Индивидуальное</option>
-                  <option value="group">Групповое</option>
-                </select>
+                <span className="font-label-md text-label-md text-on-surface">Тип занятия</span>
+                <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-container-low border border-outline-variant/60 font-body-md text-body-md text-on-surface-variant">
+                  <span className="material-symbols-outlined text-[18px]">
+                    {form.group_type === "group" ? "groups" : "person"}
+                  </span>
+                  {form.group_type === "group" ? "Групповое (задано курсом)" : "Индивидуальное (задано курсом)"}
+                </div>
               </div>
             </div>
 
@@ -594,8 +578,8 @@ export default function EditLessonModal({
         ) : (
           <div className="space-y-4">
             <div className="p-4 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">
-              Точно отменить занятие «{lesson.topic}» {lesson.lesson_date} в {lesson.start_time}? Ученики и родители
-              увидят его как отменённое.
+              Точно отменить занятие {normalizeDateForInput(lesson.lesson_date)} в {lesson.start_time}? Ученики и
+              родители увидят его как отменённое.
             </div>
             <div className="flex gap-3">
               <button
