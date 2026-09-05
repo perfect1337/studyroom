@@ -75,9 +75,16 @@ type createCourseRequest struct {
 	Description *string             `json:"description"`
 }
 
-// Create — POST /courses, roles: owner, branch_owner. Курс общий для всей
-// сети — филиал не указывается и не сохраняется.
+// Create — POST /courses, roles: owner ТОЛЬКО. branch_owner курсы не
+// создаёт (может только просматривать общий список — см. List). Курс общий
+// для всей сети — филиал не указывается и не сохраняется.
 func (h *CourseHandler) Create(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+	if claims.Role != models.RoleOwner {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only owner can create courses")
+		return
+	}
+
 	var req createCourseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
@@ -110,11 +117,18 @@ type updateCourseRequest struct {
 	Description *string              `json:"description"`
 }
 
-// Update — PATCH /courses/{id}, roles: owner, branch_owner. Курс общий для
-// всей сети, поэтому доступен для редактирования из любого филиала.
-// Разрешено менять любое из полей курса (title, subject, format,
+// Update — PATCH /courses/{id}, roles: owner ТОЛЬКО. branch_owner курсы не
+// редактирует (может только просматривать — см. List), даже курсы своего
+// же филиала, потому что курс общий для всей сети и не привязан к
+// филиалу. Разрешено менять любое из полей курса (title, subject, format,
 // description) — как по отдельности, так и все сразу.
 func (h *CourseHandler) Update(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+	if claims.Role != models.RoleOwner {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only owner can update courses")
+		return
+	}
+
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid course id")

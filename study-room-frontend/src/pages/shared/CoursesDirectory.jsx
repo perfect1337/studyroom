@@ -3,7 +3,7 @@ import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import ConfirmDeleteModal from "../../components/ui/ConfirmDeleteModal.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople } from "../../api/users.js";
-import { fetchCourses, createCourse, deleteCourse } from "../../api/academic.js";
+import { fetchCourses, createCourse, updateCourse, deleteCourse } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import { usePagination } from "../../utils/usePagination.js";
 import Pagination from "../../components/ui/Pagination.jsx";
@@ -14,11 +14,13 @@ const EMPTY_FORM = { title: "", subject: "", format: "individual", description: 
 
 /**
  * Раздел "Курсы" — общий компонент для owner (/admin/courses) и branch_owner
- * (/branch/courses). Курсы НЕ привязаны к филиалу — единый каталог курсов
- * на всю сеть, виден и редактируется одинаково из любого филиала. Бэкенд
- * (academic-service) поддерживает POST/PATCH/DELETE /courses для обеих
- * ролей без какой-либо фильтрации по филиалу (см.
- * academic-service/internal/handlers/course_handler.go).
+ * (/branch/courses). Курсы НЕ привязаны к филиалу — единый каталог курсов на
+ * всю сеть, виден одинаково из любого филиала. Управлять курсами (создавать,
+ * редактировать, удалять) может только owner — branch_owner видит список
+ * курсов, но кнопок "Добавить курс"/"Редактировать"/"Удалить" у него нет
+ * (сервер и так отклонит эти запросы с 403, см.
+ * academic-service/internal/handlers/course_handler.go, но незачем ему даже
+ * показывать элементы управления, которыми нельзя воспользоваться).
  *
  * Важно: у enrollments/lessons внешний ключ на courses настроен
  * ON DELETE CASCADE — удаление курса удалит и связанные записи на курс, и
@@ -36,6 +38,10 @@ export default function CoursesDirectory({ role }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState(EMPTY_FORM);
   const [addStatus, setAddStatus] = useState("");
+
+  const [courseToEdit, setCourseToEdit] = useState(null);
+  const [editForm, setEditForm] = useState(EMPTY_FORM);
+  const [editStatus, setEditStatus] = useState("");
 
   const [courseToDelete, setCourseToDelete] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -123,6 +129,42 @@ export default function CoursesDirectory({ role }) {
       setDeleteError(err.message || "Не удалось удалить курс");
     } finally {
       setDeleteBusy(false);
+    }
+  }
+
+  // Открыть модалку редактирования — предзаполняем форму текущими значениями
+  // курса, чтобы менять можно было как одно поле, так и сразу все.
+  function openEditModal(course) {
+    setEditForm({
+      title: course.title ?? "",
+      subject: course.subject ?? "",
+      format: course.format ?? "individual",
+      description: course.description ?? "",
+    });
+    setEditStatus("");
+    setCourseToEdit(course);
+  }
+
+  async function handleEditCourse(e) {
+    e.preventDefault();
+    if (!courseToEdit || !editForm.title || !editForm.subject) return;
+    setEditStatus("saving");
+    try {
+      const payload = {
+        title: editForm.title,
+        subject: editForm.subject,
+        format: editForm.format,
+        // Всегда шлём строкой (даже пустой), а не null/undefined: PATCH
+        // различает "поле не передано" (не трогать) и "поле передано" —
+        // это единственный способ явно очистить описание через этот
+        // эндпоинт, см. updateCourseRequest на бэке (*string).
+        description: editForm.description ?? "",
+      };
+      const updated = await updateCourse(courseToEdit.id, payload);
+      setCourses((list) => list.map((c) => (c.id === courseToEdit.id ? { ...c, ...updated } : c)));
+      setCourseToEdit(null);
+    } catch (err) {
+      setEditStatus(err.message || "Не удалось сохранить изменения");
     }
   }
 
@@ -221,16 +263,29 @@ export default function CoursesDirectory({ role }) {
                         )}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={() => {
-                            setDeleteError("");
-                            setCourseToDelete(c);
-                          }}
-                          className="inline-flex items-center gap-1 text-error font-bold text-label-md hover:underline"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">delete</span>
-                          Удалить
-                        </button>
+                        {isOwner ? (
+                          <div className="flex items-center justify-end gap-4">
+                            <button
+                              onClick={() => openEditModal(c)}
+                              className="inline-flex items-center gap-1 text-primary font-bold text-label-md hover:underline"
+                            >
+                              <span className="material-symbols-outlined text-[18px]">edit</span>
+                              Редактировать
+                            </button>
+                            <button
+                              onClick={() => {
+                                setDeleteError("");
+                                setCourseToDelete(c);
+                              }}
+                              className="inline-flex items-center gap-1 text-error font-bold text-label-md hover:underline"
+                            >
+                              <span className="material-symbols-outlined text-[18px]">delete</span>
+                              Удалить
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-outline text-label-md">Только просмотр</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -255,16 +310,27 @@ export default function CoursesDirectory({ role }) {
                       c.description && <div className="text-[12px] text-on-surface-variant mt-0.5 line-clamp-2">{c.description}</div>
                     )}
                   </div>
-                  <button
-                    onClick={() => {
-                      setDeleteError("");
-                      setCourseToDelete(c);
-                    }}
-                    className="shrink-0 p-1.5 -m-1.5 text-error"
-                    aria-label="Удалить курс"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">delete</span>
-                  </button>
+                  {isOwner && (
+                    <div className="shrink-0 flex items-center gap-1">
+                      <button
+                        onClick={() => openEditModal(c)}
+                        className="p-1.5 -m-1.5 text-primary"
+                        aria-label="Редактировать курс"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">edit</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setDeleteError("");
+                          setCourseToDelete(c);
+                        }}
+                        className="p-1.5 -m-1.5 text-error"
+                        aria-label="Удалить курс"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">delete</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap gap-2">
@@ -361,6 +427,78 @@ export default function CoursesDirectory({ role }) {
                 className="w-full bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60"
               >
                 {addStatus === "saving" ? "Сохранение..." : "Создать курс"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка редактирования курса — доступна только owner (см.
+          api-contracts.md 2.3, PATCH /courses/{id} — owner ТОЛЬКО).
+          Можно менять любое поле по отдельности или все сразу. */}
+      {courseToEdit && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setCourseToEdit(null)}>
+          <div
+            className="bg-surface-container-lowest rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-5 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center">
+              <h3 className="font-headline-sm text-headline-sm text-on-surface">Редактировать курс</h3>
+              <button onClick={() => setCourseToEdit(null)} className="p-1 hover:bg-surface-container-high rounded-full">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleEditCourse} className="space-y-4">
+              <div>
+                <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Название *</label>
+                <input
+                  required
+                  value={editForm.title}
+                  onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
+                  className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Предмет *</label>
+                  <input
+                    required
+                    value={editForm.subject}
+                    onChange={(e) => setEditForm((f) => ({ ...f, subject: e.target.value }))}
+                    className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Формат</label>
+                  <select
+                    value={editForm.format}
+                    onChange={(e) => setEditForm((f) => ({ ...f, format: e.target.value }))}
+                    className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                  >
+                    <option value="individual">Индивидуально</option>
+                    <option value="group">Группа</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Описание</label>
+                <textarea
+                  value={editForm.description}
+                  onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                  rows={3}
+                  className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-none"
+                />
+              </div>
+
+              {editStatus && editStatus !== "saving" && <p className="text-sm text-error">{editStatus}</p>}
+
+              <button
+                type="submit"
+                disabled={editStatus === "saving"}
+                className="w-full bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60"
+              >
+                {editStatus === "saving" ? "Сохранение..." : "Сохранить изменения"}
               </button>
             </form>
           </div>
