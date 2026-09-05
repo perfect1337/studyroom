@@ -137,10 +137,11 @@ export default function ScheduleDirectory({ role }) {
         const params = isOwner && branchFilter ? { branch_id: Number(branchFilter) } : {};
         const res = await fetchMyPeople(params);
         if (cancelled) return;
-        setPeople({ students: res?.students ?? [], tutors: res?.tutors ?? [] });
+        const activeTutors = (res?.tutors ?? []).filter((t) => t && t.is_active === true);
+        setPeople({ students: res?.students ?? [], tutors: activeTutors });
         // Если ранее выбранный преподаватель/ученик больше не входит в список
-        // (например, сменили филиал), сбрасываем фильтр.
-        setTutorFilter((prev) => (prev && !(res?.tutors ?? []).some((t) => String(t.id) === String(prev)) ? "" : prev));
+        // (например, сменили филиал или преподавателя уволили), сбрасываем фильтр.
+        setTutorFilter((prev) => (prev && !activeTutors.some((t) => String(t.id) === String(prev)) ? "" : prev));
         setStudentFilter((prev) => (prev && !(res?.students ?? []).some((s) => String(s.id) === String(prev)) ? "" : prev));
       } catch {
         if (!cancelled) setPeople({ students: [], tutors: [] });
@@ -459,7 +460,7 @@ export default function ScheduleDirectory({ role }) {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-stack-lg">
         {/* Calendar */}
         <div className="lg:col-span-8 space-y-stack-lg">
-          <div className="bg-surface-container-lowest rounded-xl p-3 sm:p-6 shadow-sm border border-outline-variant">
+          <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant">
             <div className="flex items-center justify-between mb-8">
               <div>
                 <h3 className="font-headline-sm text-headline-sm text-on-surface">
@@ -493,8 +494,67 @@ export default function ScheduleDirectory({ role }) {
               </div>
             )}
 
-            <div className="-mx-1 px-1 pb-1">
-            <div className="grid grid-cols-7 text-center mb-3 sm:mb-4 border-b border-outline-variant/30 pb-2">
+            <div className="pb-1">
+            <div className="sm:hidden space-y-2">
+              {Array.from({ length: daysInMonth }).map((_, i) => {
+                const day = i + 1;
+                const dayLessons = lessonsByDay[day] ?? [];
+                const isToday = day === todayDay;
+                const isSelected = day === selectedDay;
+                const hasProblem = dayLessons.some((l) => l.contract_issue || !l.tutor_id);
+                const dayStateClass = hasProblem
+                  ? "bg-error-container/60 border-error/50"
+                  : dayLessons.length
+                    ? "bg-primary-container/60 border-primary/40"
+                    : "bg-surface-container border-outline-variant/40";
+
+                return (
+                  <button
+                    key={`mobile-day-${day}`}
+                    onClick={() => { setSelectedDay(day); setDetailPage(0); }}
+                    className={`w-full text-left p-3 rounded-xl border ${dayStateClass} ${isSelected ? "ring-2 ring-primary ring-offset-1" : ""}`}
+                  >
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-base font-bold text-on-surface shrink-0">{day}</span>
+                        <span className="text-sm font-semibold text-on-surface-variant shrink-0">{WEEKDAYS[(firstWeekday + day - 1) % 7]}</span>
+                        {isToday && (
+                          <span className="bg-primary text-on-primary text-[10px] px-2 py-0.5 rounded-full font-bold uppercase shrink-0">Сегодня</span>
+                        )}
+                      </div>
+                      {dayLessons.length > 0 && (
+                        <span className="text-xs font-bold text-on-surface-variant shrink-0">{dayLessons.length} {dayLessons.length === 1 ? "занятие" : dayLessons.length < 5 ? "занятия" : "занятий"}</span>
+                      )}
+                    </div>
+                    {dayLessons.length === 0 ? (
+                      <div className="text-sm text-on-surface-variant">Занятий нет</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {dayLessons.slice(0, 6).map((l) => {
+                          const info = lessonShortInfo(l);
+                          return (
+                            <div key={l.id} className="rounded-lg bg-white/80 text-on-surface px-3 py-2">
+                              <div className="text-sm font-bold leading-snug break-words">{info.subject}</div>
+                              <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs font-semibold text-on-surface-variant">
+                                <span>{l.start_time?.slice(0, 5) || "—"}{l.end_time ? `–${l.end_time.slice(0, 5)}` : ""}</span>
+                                {info.classes.length > 0 && <span>{info.classes.join(", ")}</span>}
+                                <span>{info.format}</span>
+                                <span>{info.location}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {dayLessons.length > 6 && (
+                          <div className="text-sm font-bold text-primary">+ ещё {dayLessons.length - 6}</div>
+                        )}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="hidden sm:grid sm:grid-cols-7 text-center mb-4 border-b border-outline-variant/30 pb-2">
               {WEEKDAYS.map((d) => (
                 <div key={d} className="font-label-md text-label-md text-outline">
                   {d}
@@ -502,9 +562,9 @@ export default function ScheduleDirectory({ role }) {
               ))}
             </div>
 
-            <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
+            <div className="hidden sm:grid sm:grid-cols-7 gap-1.5">
               {Array.from({ length: firstWeekday }).map((_, i) => (
-                <div key={`pad-${i}`} className="min-h-16 sm:min-h-24" />
+                <div key={`pad-${i}`} className="h-20 sm:h-24" />
               ))}
               {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day = i + 1;
@@ -527,37 +587,37 @@ export default function ScheduleDirectory({ role }) {
                   <button
                     key={day}
                     onClick={() => { setSelectedDay(day); setDetailPage(0); }}
-                    className={`text-left min-h-16 sm:min-h-28 p-1 sm:p-2 rounded-lg sm:rounded-xl font-label-md transition-all duration-150 relative border flex flex-col overflow-hidden ${dayStateClass} ${isSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-surface-container-lowest scale-[1.02] z-10 shadow-lg" : hasLessons ? "shadow-sm hover:shadow-md hover:brightness-[1.03]" : ""} ${isToday ? "border-2 border-secondary" : ""}`}
+                    className={`text-left min-h-24 sm:min-h-28 p-2 rounded-xl font-label-md transition-all duration-150 relative border flex flex-col ${dayStateClass} ${isSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-surface-container-lowest scale-[1.03] z-10 shadow-lg" : hasLessons ? "shadow-sm hover:shadow-md hover:brightness-[1.03]" : ""} ${isToday ? "ring-2 ring-primary/50 ring-inset" : ""}`}
                   >
                     {isToday && (
-                      <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-secondary text-on-secondary text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tighter z-20 shadow-sm">
+                      <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-primary text-on-primary text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tighter z-20 shadow-sm">
                         Сегодня
                       </span>
                     )}
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-[13px]">{day}</span>
                       {onsiteCount > 0 && (
-                        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 sm:px-1.5 rounded-full bg-white/70 text-on-surface text-[7px] sm:text-[9px] font-bold leading-none">
-                          <span className="material-symbols-outlined text-[9px] sm:text-[11px]">meeting_room</span>
-                          <span className="hidden sm:inline">Занято </span>{onsiteCount}
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-white/70 text-on-surface text-[8px] sm:text-[9px] font-bold leading-none">
+                          <span className="material-symbols-outlined text-[10px] sm:text-[11px]">meeting_room</span>
+                          Занято {onsiteCount}
                         </span>
                       )}
                     </div>
-                    <div className="mt-1 sm:mt-1.5 space-y-0.5 sm:space-y-1 overflow-hidden flex-1">
+                    <div className="mt-1 space-y-1 overflow-hidden flex-1">
                       {dayLessons.slice(0, 3).map((l) => {
                         const info = lessonShortInfo(l);
                         return (
-                          <div key={l.id} className="rounded-md bg-white/80 text-on-surface px-1 py-0.5 sm:px-1.5 sm:py-1 text-[8px] sm:text-[10px] leading-tight shadow-[0_1px_1px_rgba(0,0,0,0.04)]">
+                          <div key={l.id} className="rounded-md bg-white/80 text-on-surface px-1.5 py-1 text-[9px] sm:text-[10px] leading-tight shadow-[0_1px_1px_rgba(0,0,0,0.04)]">
                             <div className="font-bold truncate">{info.subject}</div>
-                            <div className="flex flex-wrap gap-x-1 sm:gap-x-1.5 gap-y-0.5 font-semibold opacity-80">
-                              {info.classes.length > 0 && <span className="hidden sm:inline">{info.classes.join(", ")}</span>}
+                            <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 font-semibold opacity-80">
+                              {info.classes.length > 0 && <span>{info.classes.join(", ")}</span>}
                               <span>{info.format}</span><span>{info.location}</span>
                             </div>
                           </div>
                         );
                       })}
                       {dayLessons.length > 3 && (
-                        <div className="text-[8px] sm:text-[9px] font-bold text-center rounded-md bg-white/50 py-0.5">
+                        <div className="text-[9px] font-bold text-center rounded-md bg-white/50 py-0.5">
                           +{dayLessons.length - 3} ещё
                         </div>
                       )}
@@ -572,7 +632,7 @@ export default function ScheduleDirectory({ role }) {
 
         {/* Detail panel */}
         <div className="lg:col-span-4">
-          <div className="lg:sticky lg:top-24 space-y-stack-lg">
+          <div className="sticky top-24 space-y-stack-lg">
             {!selectedDay || selectedLessons.length === 0 ? (
               <div className="bg-surface-container-lowest rounded-xl shadow-xl overflow-hidden border border-outline-variant border-t-8 border-primary">
                 <div className="p-6 flex flex-col items-center text-center">

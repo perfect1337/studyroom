@@ -74,14 +74,6 @@ export default function EditLessonModal({
   const [manualStudentQuery, setManualStudentQuery] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState("");
 
-  // В расписании нельзя назначать уволенного преподавателя. Увольнение в
-  // user-service означает is_active=false; отпуск/больничный не считаются
-  // увольнением и поэтому остаются доступными для переназначения.
-  const availableTutors = useMemo(
-    () => tutors.filter((t) => t && t.is_active !== false),
-    [tutors]
-  );
-
   useEffect(() => {
     if (open && lesson) {
       setForm({
@@ -95,7 +87,9 @@ export default function EditLessonModal({
         // форматом выбранного курса (см. groupType ниже) и просто отображается.
         group_type: lesson.group_type ?? "individual",
         comment: lesson.comment ?? "",
-        tutor_id: lesson.tutor_id ?? "",
+        tutor_id: (tutors ?? []).some((t) => t && String(t.id) === String(lesson.tutor_id) && t.is_active === true)
+          ? String(lesson.tutor_id)
+          : "",
       });
       setError("");
       setConfirmingCancel(false);
@@ -284,7 +278,14 @@ export default function EditLessonModal({
       if (form.course_id && Number(form.course_id) !== lesson.course_id) {
         patch.course_id = Number(form.course_id);
       }
-      if (canReassignTutor && form.tutor_id) {
+      if (canReassignTutor) {
+        if (!form.tutor_id) {
+          throw new Error("Выберите активного преподавателя");
+        }
+        const selectedTutor = availableTutors.find((t) => String(t.id) === String(form.tutor_id));
+        if (!selectedTutor || selectedTutor.is_active !== true) {
+          throw new Error("Можно назначить только активного преподавателя");
+        }
         patch.tutor_id = Number(form.tutor_id);
       }
       if (form.group_type === "individual" && selectedStudentId) {
@@ -404,8 +405,11 @@ export default function EditLessonModal({
                   id="edit-tutor"
                   value={form.tutor_id}
                   onChange={(e) => update("tutor_id", e.target.value)}
+                  required
+                  disabled={availableTutors.length === 0}
                   className="w-full px-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
                 >
+                  <option value="">Выберите активного преподавателя</option>
                   {availableTutors.map((t) => (
                     <option key={t.id} value={t.id}>
                       {fullName(t)}
