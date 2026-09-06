@@ -417,6 +417,27 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 		if students != nil {
 			out.Students = students
 		}
+
+		// Если branch_owner включил себе "версию учителя" (см. PATCH
+		// /users/me/tutor-mode), он должен появляться в разделе "Преподаватели"
+		// своего же филиала — иначе ни TeachersDirectory (карточка), ни
+		// TeacherDetail (назначение курсов через course_tutors) его не найдут,
+		// хотя POST /courses/{id}/tutors для его собственного user_id уже
+		// прекрасно работает (см. course_handler.go — там роль tutor_id не
+		// проверяется). Загружаем актуальный флаг из БД, а не из claims.IsTutor:
+		// на другой вкладке/устройстве токен мог ещё не перевыпуститься после
+		// переключения тумблера, а список преподавателей должен быть верным
+		// в любом случае.
+		self, err := h.users.GetByID(ctx, claims.UserID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
+			return
+		}
+		if self.IsTutor && matchesSearch(self, search) {
+			// В начало списка — это тот самый преподаватель, ради которого
+			// он и открыл раздел ("сам себе назначить курс").
+			tutors = append([]*models.User{self}, tutors...)
+		}
 		if tutors != nil {
 			out.Tutors = tutors
 		}
@@ -1320,3 +1341,17 @@ func (h *UserHandler) ResetStudentCredentials(w http.ResponseWriter, r *http.Req
 }
 
 func rolePtr(r models.Role) *models.Role { return &r }
+
+// matchesSearch — то же самое условие, что ILIKE last_name/first_name в
+// user_repository.go (buildListQuery), но применённое к одному, уже
+// загруженному пользователю — см. добавление branch_owner-а самого себя в
+// список преподавателей выше (UserHandler.List, ветка RoleBranchOwner):
+// его нельзя прогнать через тот же SQL-фильтр, т.к. он выбирается не из
+// БД по роли tutor, а подставляется вручную.
+func matchesSearch(u *models.User, search string) bool {
+	if search == "" {
+		return true
+	}
+	q := strings.ToLower(search)
+	return strings.Contains(strings.ToLower(u.LastName), q) || strings.Contains(strings.ToLower(u.FirstName), q)
+}
