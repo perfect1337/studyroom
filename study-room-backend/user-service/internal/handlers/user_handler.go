@@ -512,6 +512,21 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
 			return
 		}
+
+		// Владельцы филиалов, включившие себе "версию учителя" (см. PATCH
+		// /users/me/tutor-mode), должны попадать в раздел "Преподаватели" не
+		// только у себя самих (см. ветку RoleBranchOwner выше — там self
+		// добавляется вручную), но и у owner'а — иначе список тьюторов у
+		// владельца сети не совпадает с тем, что видит branch_owner про
+		// самого себя, и owner не может назначить его на курс/увидеть в
+		// TeachersDirectory. Owner видит сразу все филиалы, поэтому просто
+		// проверяем флаг у уже загруженных branchOwners, без похода в БД.
+		for _, bo := range branchOwners {
+			if bo.IsTutor && matchesSearch(bo, search) {
+				tutors = append(tutors, bo)
+			}
+		}
+
 		if students != nil {
 			out.Students = students
 		}
