@@ -208,7 +208,13 @@ function WeekGrid({ weekDays, weekTimes, lessonsByDay, todayDay, lessonShortInfo
 
       {/* Десктопный вид: время x день, как в исходной таблице */}
       <div className="hidden sm:block overflow-x-auto">
-        <table className="w-full border-collapse min-w-[640px]">
+        <table className="w-full border-collapse min-w-[640px] table-fixed">
+          <colgroup>
+            <col className="w-16" />
+            {weekDays.map((_, idx) => (
+              <col key={idx} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
               <th className="w-16" />
@@ -579,6 +585,13 @@ export default function ScheduleDirectory({ role }) {
       if (!day) continue;
       (map[day] ??= []).push(lesson);
     }
+    // Сортируем занятия каждого дня по времени начала (раньше -> позже) —
+    // и в мини-карточках месячного вида, и в недельной сетке (там порядок
+    // внутри одной ячейки времени не важен, но остальным местам, где
+    // используется этот же map, порядок нужен).
+    Object.values(map).forEach((dayLessons) => {
+      dayLessons.sort((a, b) => String(a.start_time ?? "").localeCompare(String(b.start_time ?? "")));
+    });
     return map;
   }, [lessons]);
 
@@ -645,6 +658,14 @@ export default function ScheduleDirectory({ role }) {
   // неделю — так пролистывание недель работает бесшовно, а не упирается в
   // границу месяца.
   function goToWeek(offset) {
+    // Переключение недели меняет высоту контента (разное число занятий/
+    // строк-времени на разных неделях), и если новая неделя короче текущей
+    // прокрутки страницы, браузер сам подтягивает scroll наверх — визуально
+    // это выглядит как "перекинуло страницу". Запоминаем текущую позицию
+    // и восстанавливаем её сразу после того, как React применит обновление
+    // DOM (requestAnimationFrame гарантированно срабатывает уже после
+    // коммита, но до следующей отрисовки — скачка не видно).
+    const scrollY = window.scrollY;
     setSelectedLesson(null);
     const next = weekIndex + offset;
     if (next < 0) {
@@ -664,6 +685,7 @@ export default function ScheduleDirectory({ role }) {
     } else {
       setWeekIndex(next);
     }
+    requestAnimationFrame(() => window.scrollTo(0, scrollY));
   }
 
   const currentWeek = monthWeeks[Math.min(weekIndex, monthWeeks.length - 1)] ?? [];
@@ -1022,11 +1044,16 @@ export default function ScheduleDirectory({ role }) {
                       {dayLessons.slice(0, 3).map((l) => {
                         const info = lessonShortInfo(l);
                         return (
-                          <div key={l.id} className="rounded-md bg-white/80 text-on-surface px-1.5 py-1 text-[9px] sm:text-[10px] leading-tight shadow-[0_1px_1px_rgba(0,0,0,0.04)]">
-                            <div className="font-bold truncate">{info.subject}</div>
-                            <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 font-semibold opacity-80">
-                              {info.classes.length > 0 && <span>{info.classes.join(", ")}</span>}
-                              <span>{info.format}</span><span>{info.location}</span>
+                          <div key={l.id} className="rounded-md bg-white/80 text-on-surface px-1.5 py-1 text-[9px] sm:text-[10px] leading-tight shadow-[0_1px_1px_rgba(0,0,0,0.04)] flex items-start gap-1">
+                            <span className="shrink-0 text-[8px] sm:text-[9px] font-semibold opacity-70 pt-px">
+                              {l.start_time?.slice(0, 5) || "—"}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="font-bold truncate">{info.subject}</div>
+                              <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 font-semibold opacity-80">
+                                {info.classes.length > 0 && <span>{info.classes.join(", ")}</span>}
+                                <span>{info.format}</span><span>{info.location}</span>
+                              </div>
                             </div>
                           </div>
                         );
