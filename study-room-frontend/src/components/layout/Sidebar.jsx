@@ -3,6 +3,7 @@ import { academicApi } from "../../api/http.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { preloadRoute } from "../../routes/routeComponents.js";
 import { useQuery } from "../../hooks/useQuery.js";
+import { invalidateAllQueries } from "../../api/queryCache.js";
 import Avatar from "../ui/Avatar.jsx";
 
 // Пункты меню для каждой роли. `end: true` — пункт активен только на точном совпадении пути
@@ -107,11 +108,24 @@ function FooterLinks({ showSwitchAccount = true, teacherToggle = null }) {
     }
   };
 
+  // Переключение "версия учителя" <-> "панель филиала" не перевыпускает
+  // токен (см. комментарий выше про teacherToggle) — это просто переход по
+  // другому маршруту в пределах того же SPA. Чтобы страница за ним при
+  // этом выглядела "как после обновления" (актуальные ученики/курсы/
+  // расписание), а не тем, что могло осесть в кэше useQuery с прошлого
+  // раза, тихо инвалидируем весь кэш перед переходом — каждый виджет сам
+  // перезапросит свои данные в фоне (см. invalidateAllQueries), без
+  // видимого мигания и без настоящей перезагрузки вкладки браузером.
+  const handleTeacherToggle = () => {
+    invalidateAllQueries();
+    navigate(teacherToggle.to);
+  };
+
   return (
     <div className="mt-auto pt-4 border-t border-outline-variant flex flex-col gap-1">
       {teacherToggle && (
         <button
-          onClick={() => navigate(teacherToggle.to)}
+          onClick={handleTeacherToggle}
           className="flex items-center gap-3 px-4 py-3 text-primary hover:bg-primary-container/40 rounded-lg transition-all text-left font-label-md text-label-md font-bold"
         >
           <span className="material-symbols-outlined">{teacherToggle.icon}</span>
