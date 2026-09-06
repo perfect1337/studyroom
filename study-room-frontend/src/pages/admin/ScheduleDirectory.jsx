@@ -60,11 +60,20 @@ function weekBadgeClasses(kind, value) {
   return "bg-surface-container text-on-surface-variant";
 }
 
+// Занятие считается "проблемным" (нет преподавателя или расхождение по
+// договору) — та же логика, что уже подсвечивает дни красным в месячном
+// виде (см. hasProblem/dayStateClass ниже). В недельном виде подсвечиваем
+// так же, но каждое занятие по отдельности, а не весь день целиком.
+function isLessonProblem(lesson) {
+  return Boolean(lesson.contract_issue || !lesson.tutor_id);
+}
+
 // WeekLessonChip — карточка занятия внутри ячейки недельной сетки (десктоп).
 // Специально БЕЗ имени ученика — только предмет, класс(ы) и бейджи
 // И/Г, О/Д. Имя появляется в панели деталей справа после клика (см.
-// selectedLesson/onSelectLesson в ScheduleDirectory).
-function WeekLessonChip({ info, selected, onClick }) {
+// selectedLesson/onSelectLesson в ScheduleDirectory). Цвет карточки —
+// синий (обычное занятие) или красный (проблемное), как и в месячной сетке.
+function WeekLessonChip({ info, problem, selected, onClick }) {
   return (
     <button
       type="button"
@@ -72,7 +81,9 @@ function WeekLessonChip({ info, selected, onClick }) {
       className={`w-full text-left rounded-lg border px-2 py-1.5 mb-1.5 last:mb-0 transition-colors ${
         selected
           ? "border-primary bg-primary-container/40"
-          : "border-outline-variant/50 bg-surface-container-lowest hover:bg-surface-container"
+          : problem
+            ? "bg-error-container/60 border-error/50 hover:brightness-95"
+            : "bg-primary-container/60 border-primary/40 hover:brightness-95"
       }`}
     >
       <div className="font-label-md text-[11px] font-bold text-on-surface truncate">{info.subject}</div>
@@ -156,13 +167,18 @@ function WeekGrid({ weekDays, weekTimes, lessonsByDay, todayDay, lessonShortInfo
             {mobileDayLessons.map((l) => {
               const info = lessonShortInfo(l);
               const isSelected = selectedLesson?.id === l.id;
+              const problem = isLessonProblem(l);
               return (
                 <button
                   key={l.id}
                   type="button"
                   onClick={() => onSelectLesson(l)}
                   className={`w-full text-left rounded-xl border px-3 py-2.5 transition-colors ${
-                    isSelected ? "border-primary bg-primary-container/40" : "border-outline-variant bg-surface-container-lowest"
+                    isSelected
+                      ? "border-primary bg-primary-container/40"
+                      : problem
+                        ? "bg-error-container/60 border-error/50"
+                        : "bg-primary-container/60 border-primary/40"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -192,7 +208,7 @@ function WeekGrid({ weekDays, weekTimes, lessonsByDay, todayDay, lessonShortInfo
 
       {/* Десктопный вид: время x день, как в исходной таблице */}
       <div className="hidden sm:block overflow-x-auto">
-        <table className="w-full border-collapse min-w-[720px]">
+        <table className="w-full border-collapse min-w-[640px]">
           <thead>
             <tr>
               <th className="w-16" />
@@ -220,13 +236,14 @@ function WeekGrid({ weekDays, weekTimes, lessonsByDay, todayDay, lessonShortInfo
                       ? (lessonsByDay[day] ?? []).filter((l) => l.start_time?.slice(0, 5) === time)
                       : [];
                     return (
-                      <td key={idx} className="align-top border border-outline-variant/30 p-1.5 min-w-[120px]">
+                      <td key={idx} className="align-top border border-outline-variant/30 p-1.5 min-w-[100px]">
                         {cellLessons.map((l) => {
                           const info = lessonShortInfo(l);
                           return (
                             <WeekLessonChip
                               key={l.id}
                               info={info}
+                              problem={isLessonProblem(l)}
                               selected={selectedLesson?.id === l.id}
                               onClick={() => onSelectLesson(l)}
                             />
@@ -290,7 +307,7 @@ export default function ScheduleDirectory({ role }) {
   // Только для owner/branch_owner (эта страница им и так ограничена — см.
   // AdminSchedule.jsx/BranchSchedule.jsx); у tutor/student/parent — свои
   // отдельные компоненты расписания, их этот переключатель не касается.
-  const [viewMode, setViewMode] = useState("month");
+  const [viewMode, setViewMode] = useState("week");
   // weekIndex — индекс строки календарной сетки месяца (см. monthWeeks
   // ниже), которая сейчас показана как "неделя". Недель получается 4-6 в
   // зависимости от того, на какой день недели падает 1-е число и сколько
@@ -330,6 +347,28 @@ export default function ScheduleDirectory({ role }) {
 
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstWeekday = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7; // 0 = Monday
+
+  // Варианты для фильтра "выбрать конкретный месяц" — год назад / год вперёд
+  // от текущего года, плюс сам текущий год. Этого достаточно для выбора
+  // произвольного месяца одним кликом, не листая стрелками.
+  const monthOptions = useMemo(() => {
+    const options = [];
+    const baseYear = today.getFullYear();
+    for (let y = baseYear - 1; y <= baseYear + 1; y++) {
+      for (let m = 0; m < 12; m++) {
+        options.push({ year: y, month: m });
+      }
+    }
+    return options;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function selectMonth(year, month) {
+    setSelectedDay(null);
+    setSelectedLesson(null);
+    setViewYear(year);
+    setViewMonth(month);
+  }
 
   // Список филиалов — нужен только owner, для фильтра.
   useEffect(() => {
@@ -673,6 +712,7 @@ export default function ScheduleDirectory({ role }) {
 
   return (
     <DashboardShell
+      fullWidth
       role={isOwner ? "admin" : "branch_owner"}
       user={toSidebarUser(user)}
       searchPlaceholder="Поиск по расписанию..."
@@ -689,6 +729,23 @@ export default function ScheduleDirectory({ role }) {
 
       {/* Фильтры */}
       <div className="flex flex-wrap gap-3 mb-4">
+        <div className="relative">
+          <select
+            value={`${viewYear}-${viewMonth}`}
+            onChange={(e) => {
+              const [y, m] = e.target.value.split("-").map(Number);
+              selectMonth(y, m);
+            }}
+            className="appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+          >
+            {monthOptions.map(({ year, month }) => (
+              <option key={`${year}-${month}`} value={`${year}-${month}`}>
+                {MONTH_NAMES[month]} {year}
+              </option>
+            ))}
+          </select>
+        </div>
+
         {isOwner && (
           <div className="relative">
             <select
@@ -767,7 +824,7 @@ export default function ScheduleDirectory({ role }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-stack-lg">
         {/* Calendar */}
-        <div className="lg:col-span-8 space-y-stack-lg">
+        <div className="lg:col-span-9 space-y-stack-lg">
           <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant">
             <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
               <div>
@@ -783,21 +840,11 @@ export default function ScheduleDirectory({ role }) {
                 </p>
               </div>
               <div className="flex items-center gap-3 flex-wrap">
-                {/* Переключатель Месяц/Неделя — только владельцу и владельцу
-                    филиала; у преподавателя/ученика — прежнее расписание. */}
+                {/* Переключатель Неделя/Месяц — только владельцу и владельцу
+                    филиала; у преподавателя/ученика — прежнее расписание.
+                    По умолчанию открывается текущая неделя (см. viewMode),
+                    отсюда можно переключиться на месяц. */}
                 <div className="flex rounded-full border border-outline-variant p-0.5 bg-surface-container">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setViewMode("month");
-                      setSelectedLesson(null);
-                    }}
-                    className={`px-4 py-1.5 rounded-full font-label-md text-label-md transition-colors ${
-                      !isWeekMode ? "bg-primary text-on-primary" : "text-on-surface-variant"
-                    }`}
-                  >
-                    Месяц
-                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -809,6 +856,18 @@ export default function ScheduleDirectory({ role }) {
                     }`}
                   >
                     Неделя
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewMode("month");
+                      setSelectedLesson(null);
+                    }}
+                    className={`px-4 py-1.5 rounded-full font-label-md text-label-md transition-colors ${
+                      !isWeekMode ? "bg-primary text-on-primary" : "text-on-surface-variant"
+                    }`}
+                  >
+                    Месяц
                   </button>
                 </div>
                 <div className="flex gap-2">
@@ -1003,7 +1062,7 @@ export default function ScheduleDirectory({ role }) {
         </div>
 
         {/* Detail panel */}
-        <div className="lg:col-span-4">
+        <div className="lg:col-span-3">
           <div className="sticky top-24 space-y-stack-lg">
             {detailLessons.length === 0 ? (
               <div className="bg-surface-container-lowest rounded-xl shadow-xl overflow-hidden border border-outline-variant border-t-8 border-primary">
