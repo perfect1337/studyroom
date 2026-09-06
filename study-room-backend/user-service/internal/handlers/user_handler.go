@@ -196,12 +196,24 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 // branch_owner — ни owner, ни tutor, ни остальным ролям переключать
 // нечего (у tutor это право уже есть по самой роли).
 //
-// Выключение НЕ удаляет ни tutor_profile, ни назначения курсов
-// (course_tutors), ни уже выданные задания/тесты — только прячет
-// функциональность и запрещает новые tutor-only действия, пока флаг не
-// включат обратно. Именно поэтому это отдельный простой булев флаг, а не
-// "разжалование" в отдельную сущность: все данные преподавателя остаются
-// на месте между переключениями.
+// Выключение, наоборот, УДАЛЯЕТ всю информацию о пользователе как о
+// преподавателе:
+//   - tutor_profile (специализация/статус/рейтинг/стаж) — физически, см.
+//     h.tutorProfiles.Delete ниже;
+//   - назначения курсов (course_tutors) и личные подгруппы в Academic
+//     Service — асинхронно, через событие user.tutor_mode_disabled (см.
+//     TutorModeDisabled в events/publisher.go и detachTutor в
+//     academic-service/internal/events/subscriber.go).
+//
+// При этом уже стоящие в расписании занятия НЕ удаляются и не отменяются —
+// у них только обнуляется tutor_id (см. LessonRepository.
+// DetachTutorFromLessons), т.е. занятие остаётся на месте в расписании
+// филиала, но сам пользователь как преподаватель из него пропадает
+// (назначить занятие может заново любой tutor того же курса).
+//
+// Повторное включение — это, по сути, регистрация заново: профиль
+// преподавателя создаётся с нуля (см. SetStatus ниже), старые course_tutors
+// не восстанавливаются — их нужно назначить заново.
 type setTutorModeRequest struct {
 	Enabled bool `json:"enabled"`
 }
@@ -226,13 +238,25 @@ func (h *UserHandler) SetTutorMode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Enabled {
-		// Заводим профиль преподавателя, если его ещё не было (первое
-		// включение) — Upsert идемпотентен, повторное включение ничего не
-		// портит и не затирает уже выставленную специализацию/статус.
+		// Заводим профиль преподавателя с нуля — Upsert идемпотентен и не
+		// упадёт, даже если по каким-то причинам строка уже существует, но
+		// после выключения (см. ветку else) её физически не остаётся, так
+		// что для повторного включения это всегда фактически новая
+		// регистрация в роли преподавателя.
 		if err := h.tutorProfiles.SetStatus(r.Context(), claims.UserID, models.TutorStatusActive); err != nil {
 			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to set up teacher profile")
 			return
 		}
+	} else {
+		// Выключение тумблера — полное удаление информации о пользователе
+		// как о преподавателе (см. комментарий над setTutorModeRequest):
+		// сам tutor_profile — здесь, синхронно; назначения курсов/подгруппы
+		// в Academic Service — асинхронно, событием ниже.
+		if err := h.tutorProfiles.Delete(r.Context(), claims.UserID); err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to remove teacher profile")
+			return
+		}
+		h.events.TutorModeDisabled(claims.UserID)
 	}
 
 	// is_tutor меняет содержимое JWT — перевыпускаем токены сразу (как при

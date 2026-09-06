@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
+import ConfirmToggleModal from "../../components/ui/ConfirmToggleModal.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { updateMe, changePassword } from "../../api/auth.js";
 import { fetchNotificationSettings, updateNotificationSettings, unlinkTelegram, unlinkMax } from "../../api/notifications.js";
@@ -90,17 +91,35 @@ export default function SettingsPage({ role }) {
 
   const [tutorModeLoading, setTutorModeLoading] = useState(false);
   const [tutorModeError, setTutorModeError] = useState("");
+  // Доп. подтверждение при переключении тумблера "версия учителя" — как при
+  // включении, так и при выключении (см. кнопку switch ниже: она теперь
+  // только открывает эту модалку, а не дёргает API напрямую). При выключении
+  // это особенно важно: оно необратимо удаляет профиль преподавателя
+  // (специализацию/статус) и назначения курсов на бэкенде — см.
+  // handleTutorModeConfirm.
+  const [tutorModeConfirmOpen, setTutorModeConfirmOpen] = useState(false);
 
-  async function handleTutorModeToggle() {
+  function handleTutorModeToggle() {
+    setTutorModeError("");
+    setTutorModeConfirmOpen(true);
+  }
+
+  async function handleTutorModeConfirm() {
     setTutorModeError("");
     setTutorModeLoading(true);
     try {
       await setTutorMode(!user?.is_tutor);
+      setTutorModeConfirmOpen(false);
     } catch (e) {
       setTutorModeError(e?.message || "Не удалось изменить режим. Попробуйте ещё раз.");
     } finally {
       setTutorModeLoading(false);
     }
+  }
+
+  function handleTutorModeCancel() {
+    if (tutorModeLoading) return;
+    setTutorModeConfirmOpen(false);
   }
 
   const { status: tgStatus, loading: tgLoading, refresh: refreshTg } = useTelegramStatus();
@@ -361,8 +380,15 @@ export default function SettingsPage({ role }) {
             Включает тот же UI и функционал, что у обычного преподавателя
             (назначение себе курсов, задания, тесты), не создавая отдельный
             логин — переключиться обратно можно кнопкой внизу сайдбара
-            "Вернуться в панель филиала". Все данные преподавателя сохраняются
-            между включениями/выключениями. */}
+            "Вернуться в панель филиала". Данные владельца филиала (роль,
+            договоры, филиал и т.д.) не затрагиваются в любом случае.
+            Выключение тумблера, в отличие от прошлой версии, ПОЛНОСТЬЮ
+            удаляет информацию о вас как о преподавателе (специализацию,
+            статус, назначенные курсы) — см. ConfirmToggleModal ниже и
+            комментарий в user_handler.go/SetTutorMode на бэкенде. Уже
+            стоящие занятия при этом остаются в расписании филиала — просто
+            перестают быть "вашими": у них снимается закреплённый
+            преподаватель, и любой tutor этого курса сможет взять их себе. */}
         {role === "branch_owner" && (
           <section className="bg-surface-container-lowest rounded-xl p-stack-md shadow-[0_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant">
             <div className="flex items-center gap-3 mb-stack-md">
@@ -375,7 +401,12 @@ export default function SettingsPage({ role }) {
                 <p className="text-sm text-on-surface-variant mt-1">
                   Включите, чтобы получить кнопку «Сменить на версию учителя» внизу меню слева. В этом режиме
                   доступны интерфейс и функции преподавателя: можно назначать себе курсы, выдавать задания и тесты —
-                  как обычному учителю. Все ваши данные владельца филиала при этом сохраняются.
+                  как обычному учителю. Ваши данные владельца филиала при этом сохраняются в любом случае.
+                </p>
+                <p className="text-sm text-on-surface-variant mt-1">
+                  При выключении вся информация о вас как о преподавателе (специализация, статус, назначенные курсы)
+                  будет удалена без возможности восстановления — уже стоящие в расписании занятия останутся, но
+                  преподавателем в них вы больше не будете значиться.
                 </p>
               </div>
               <button
@@ -398,6 +429,23 @@ export default function SettingsPage({ role }) {
             {tutorModeError && <p className="text-sm text-error mt-3">{tutorModeError}</p>}
           </section>
         )}
+
+        <ConfirmToggleModal
+          open={tutorModeConfirmOpen}
+          danger={!!user?.is_tutor}
+          busy={tutorModeLoading}
+          error={tutorModeError}
+          title={user?.is_tutor ? "Выключить режим преподавателя?" : "Включить режим преподавателя?"}
+          description={
+            user?.is_tutor
+              ? "Это удалит вашу специализацию, статус преподавателя и назначения на курсы — восстановить их будет нельзя, при повторном включении придётся настраивать заново.\n\nУже стоящие занятия останутся в расписании филиала, но преподавателем в них вы больше не будете указаны — их сможет взять себе любой другой преподаватель этого курса.\n\nВы также сразу пропадёте из списка «Преподаватели» своего филиала."
+              : "Вы получите интерфейс и функции преподавателя: назначение себе курсов, задания и тесты — как у обычного учителя. Роль владельца филиала и все её данные при этом сохранятся."
+          }
+          confirmLabel={user?.is_tutor ? "Да, выключить" : "Да, включить"}
+          cancelLabel="Отмена"
+          onCancel={handleTutorModeCancel}
+          onConfirm={handleTutorModeConfirm}
+        />
 
         {/* Personal Information */}
         <section className="bg-surface-container-lowest rounded-xl p-stack-md shadow-[0_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant">

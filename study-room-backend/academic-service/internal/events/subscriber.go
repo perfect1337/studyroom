@@ -76,6 +76,15 @@ type UserDeletedEvent struct {
 	Role models.Role `json:"role"`
 }
 
+// TutorModeDisabledEvent — соответствует events.TutorModeDisabledEvent из
+// User Service (см. user-service/internal/events/publisher.go):
+// branch_owner выключил тумблер "версия учителя" в настройках. Отдельный
+// маленький ивент, а не переиспользование user.updated — см. комментарий
+// над SubjectUserTutorModeDisabled там же.
+type TutorModeDisabledEvent struct {
+	UserID int64 `json:"user_id"`
+}
+
 func Connect(url string) (*nats.Conn, error) {
 	return nats.Connect(url,
 		nats.MaxReconnects(-1),
@@ -134,6 +143,9 @@ func (s *Subscriber) Start(ctx context.Context) error {
 		return err
 	}
 	if _, err := s.nc.QueueSubscribe("user.deleted", "academic-service", s.handleUserDeleted(ctx)); err != nil {
+		return err
+	}
+	if _, err := s.nc.QueueSubscribe("user.tutor_mode_disabled", "academic-service", s.handleTutorModeDisabled(ctx)); err != nil {
 		return err
 	}
 	return nil
@@ -280,6 +292,33 @@ func (s *Subscriber) handleUserDeleted(ctx context.Context) nats.MsgHandler {
 		if ev.Role == models.RoleStudent {
 			s.detachStudent(ctx, ev.ID)
 		}
+	}
+}
+
+// handleTutorModeDisabled — реакция на выключение branch_owner'ом тумблера
+// "версия учителя" в настройках (см. user-service/internal/handlers/
+// user_handler.go, SetTutorMode, и events/publisher.go, TutorModeDisabled).
+//
+// Переиспользует ТОТ ЖЕ detachTutor, что и увольнение обычного tutor'а
+// (is_active=false, см. handleUserUpdated ниже) — семантика одинаковая:
+// отвязать от course_tutors/enrollments, обнулить tutor_id на занятиях (сами
+// занятия остаются в расписании), удалить личные подгруппы, поставить на
+// паузу осиротевшие курсы. Единственное отличие от увольнения — сам
+// пользователь никуда не девается (роль/is_active не меняются, это по-прежнему
+// branch_owner), поэтому отдельный узкий ивент, а не переиспользование
+// user.updated с IsActive=false.
+func (s *Subscriber) handleTutorModeDisabled(ctx context.Context) nats.MsgHandler {
+	return func(msg *nats.Msg) {
+		var ev TutorModeDisabledEvent
+		if err := json.Unmarshal(msg.Data, &ev); err != nil {
+			log.Printf("[events] user.tutor_mode_disabled unmarshal error: %v", err)
+			return
+		}
+		if ev.UserID == 0 {
+			log.Printf("[events] user.tutor_mode_disabled: missing user_id, skip")
+			return
+		}
+		s.detachTutor(ctx, ev.UserID, "branch owner disabled tutor mode")
 	}
 }
 
