@@ -53,6 +53,86 @@ function isLessonPast(lesson, today) {
   return endTime <= nowHHMM();
 }
 
+// Переводит "HH:MM" или "HH:MM:SS" в минуты от начала суток. Возвращает
+// null для пустого/некорректного значения — такие занятия просто
+// исключаются из расчёта пересечений (см. computeRoomOverlaps ниже).
+function timeToMinutes(value) {
+  if (!value) return null;
+  const [h, m] = String(value).split(":");
+  const hh = Number(h);
+  const mm = Number(m);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  return hh * 60 + mm;
+}
+function minutesToHHMM(mins) {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${pad(h)}:${pad(m)}`;
+}
+
+// Реальная нагрузка на аудитории филиала за день: сколько ОЧНЫХ
+// (location_type === "onsite") и не отменённых занятий идут ОДНОВРЕМЕННО —
+// то есть их временные интервалы пересекаются, — а не просто общее число
+// очных занятий за день. Раньше бейдж "Занято N" в календаре складывал все
+// очные занятия дня, даже если они шли друг за другом в разное время (например,
+// 9:00-10:00 и 15:00-16:00), из-за чего нагрузка на кабинеты филиала выглядела
+// завышенной, хотя реального конфликта по аудиториям не было.
+//
+// Считаем отдельно по каждому филиалу (branch_id занятия): два очных занятия
+// в РАЗНЫХ филиалах в одно и то же время друг другу не мешают и не должны
+// суммироваться в один счётчик.
+//
+// Возвращает отсортированные по времени начала непересекающиеся отрезки
+// {start, end, count} (в минутах от полуночи), где count — сколько очных
+// занятий идёт одновременно в этом отрезке. В результат попадают только
+// отрезки с count >= 2 (когда фактически два и более занятия делят
+// аудитории в одно время) — если очное занятие в дне одно, показывать
+// "нагрузку" незачем.
+function computeRoomOverlaps(dayLessons) {
+  const byBranch = new Map();
+  dayLessons
+    .filter((l) => l.location_type === "onsite" && l.status !== "cancelled")
+    .forEach((l) => {
+      const start = timeToMinutes(l.start_time);
+      const end = timeToMinutes(l.end_time);
+      if (start === null || end === null || end <= start) return;
+      const key = l.branch_id ?? "unknown";
+      if (!byBranch.has(key)) byBranch.set(key, []);
+      byBranch.get(key).push({ start, end });
+    });
+
+  const segments = [];
+  byBranch.forEach((intervals) => {
+    if (intervals.length < 2) return;
+    // Классический sweep-line: берём все уникальные границы интервалов,
+    // на каждом получившемся под-отрезке между двумя соседними границами
+    // подсчёт занятий, покрывающих этот под-отрезок целиком, постоянен.
+    const points = [...new Set(intervals.flatMap((iv) => [iv.start, iv.end]))].sort((a, b) => a - b);
+    for (let i = 0; i < points.length - 1; i++) {
+      const segStart = points[i];
+      const segEnd = points[i + 1];
+      if (segEnd <= segStart) continue;
+      const count = intervals.filter((iv) => iv.start <= segStart && iv.end >= segEnd).length;
+      if (count >= 2) segments.push({ start: segStart, end: segEnd, count });
+    }
+  });
+  segments.sort((a, b) => a.start - b.start);
+
+  // Склеиваем соседние отрезки с одинаковой нагрузкой в один — например,
+  // 10:00-10:30 и 10:30-11:00 с одинаковым count=2 по сути одно и то же
+  // "окно" пересечения, показывать его двумя отдельными бейджами не нужно.
+  const merged = [];
+  for (const seg of segments) {
+    const last = merged[merged.length - 1];
+    if (last && last.count === seg.count && last.end === seg.start) {
+      last.end = seg.end;
+    } else {
+      merged.push({ ...seg });
+    }
+  }
+  return merged;
+}
+
 function weekBadgeClasses(kind, value) {
   if (kind === "location") {
     return value === "О" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700";
@@ -340,15 +420,37 @@ export default function ScheduleDirectory({ role }) {
 
   // При PATCH обновляем занятие локально, не дожидаясь перезагрузки месяца —
   // отзывчивее для пользователя.
+  //
+  // ВАЖНО: помимо списка lessons, нужно синхронизировать и selectedLesson —
+  // отдельное состояние, которое хранит недельный вид (см. WeekGrid/
+  // detailLessons выше) для карточки занятия в правой панели. Модалка
+  // редактирования открывается из этой самой карточки (кнопка
+  // "Редактировать" внутри detailLessons), поэтому lesson, который сейчас
+  // редактируют/удаляют, почти всегда совпадает с selectedLesson.
+  //
+  // Раньше эти хендлеры трогали только `lessons`, а selectedLesson оставался
+  // прежним объектом. В месячном виде это было незаметно, потому что
+  // detailLessons там берётся заново из lessonsByDay[selectedDay] (то есть
+  // из актуального `lessons`). А в недельном виде detailLessons — это ровно
+  // `[selectedLesson]`, так что после удаления занятия карточка с ним
+  // никуда не девалась: занятие пропадало из сетки недели, но "призрак"
+  // старой карточки с кнопкой "Редактировать" оставался в панели справа.
+  // Повторное открытие такой карточки открывало модалку с уже
+  // несуществующим (или уже гружёным как cancelled) занятием, и следующее
+  // нажатие "Удалить"/"Отменить"/"Сохранить" падало с ошибкой
+  // "занятие не найдено" — выглядело так, будто удаление занятий не работает.
   function handleLessonSaved(updated) {
     setLessons((prev) => prev.map((l) => (l.id === updated.id ? { ...l, ...updated } : l)));
+    setSelectedLesson((prev) => (prev && updated?.id === prev.id ? { ...prev, ...updated } : prev));
   }
   function handleLessonCancelled(lessonId) {
     setLessons((prev) => prev.map((l) => (l.id === lessonId ? { ...l, status: "cancelled" } : l)));
+    setSelectedLesson((prev) => (prev && prev.id === lessonId ? { ...prev, status: "cancelled" } : prev));
   }
   function handleLessonDeleted(lessonId) {
     setLessons((prev) => prev.filter((l) => l.id !== lessonId));
     setEditingLesson(null);
+    setSelectedLesson((prev) => (prev && prev.id === lessonId ? null : prev));
   }
 
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
@@ -939,6 +1041,11 @@ export default function ScheduleDirectory({ role }) {
                 const isToday = day === todayDay;
                 const isSelected = day === selectedDay;
                 const hasProblem = dayLessons.some((l) => l.contract_issue || !l.tutor_id);
+                const roomOverlaps = computeRoomOverlaps(dayLessons);
+                const peakOverlap = roomOverlaps.reduce(
+                  (max, seg) => (!max || seg.count > max.count ? seg : max),
+                  null
+                );
                 const dayStateClass = hasProblem
                   ? "bg-error-container/60 border-error/50"
                   : dayLessons.length
@@ -959,9 +1066,20 @@ export default function ScheduleDirectory({ role }) {
                           <span className="bg-primary text-on-primary text-[10px] px-2 py-0.5 rounded-full font-bold uppercase shrink-0">Сегодня</span>
                         )}
                       </div>
-                      {dayLessons.length > 0 && (
-                        <span className="text-xs font-bold text-on-surface-variant shrink-0">{dayLessons.length} {dayLessons.length === 1 ? "занятие" : dayLessons.length < 5 ? "занятия" : "занятий"}</span>
-                      )}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {peakOverlap && (
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-white/80 text-on-surface text-[10px] font-bold leading-none border border-outline-variant/40"
+                            title={`Одновременно ${peakOverlap.count} очных занятия в филиале, в ${minutesToHHMM(peakOverlap.start)}`}
+                          >
+                            <span className="material-symbols-outlined text-[11px]">meeting_room</span>
+                            {peakOverlap.count} в {minutesToHHMM(peakOverlap.start)}
+                          </span>
+                        )}
+                        {dayLessons.length > 0 && (
+                          <span className="text-xs font-bold text-on-surface-variant">{dayLessons.length} {dayLessons.length === 1 ? "занятие" : dayLessons.length < 5 ? "занятия" : "занятий"}</span>
+                        )}
+                      </div>
                     </div>
                     {dayLessons.length === 0 ? (
                       <div className="text-sm text-on-surface-variant">Занятий нет</div>
@@ -1010,10 +1128,15 @@ export default function ScheduleDirectory({ role }) {
                 const isSelected = day === selectedDay;
                 const hasProblem = dayLessons.some((l) => l.contract_issue || !l.tutor_id);
                 const hasLessons = dayLessons.length > 0;
-                // "Занято" — сколько из занятий этого дня очные (location_type
-                // === "onsite") и не отменены: это то, что реально занимает
-                // помещение/кабинет в филиале, в отличие от дистанционных.
-                const onsiteCount = dayLessons.filter((l) => l.location_type === "onsite" && l.status !== "cancelled").length;
+                // Пересечения очных занятий этого дня по времени (см.
+                // computeRoomOverlaps) — сколько занятий реально делят
+                // аудитории филиала ОДНОВРЕМЕННО, а не просто сумма очных
+                // занятий за весь день.
+                const roomOverlaps = computeRoomOverlaps(dayLessons);
+                const peakOverlap = roomOverlaps.reduce(
+                  (max, seg) => (!max || seg.count > max.count ? seg : max),
+                  null
+                );
                 const dayStateClass = hasLessons
                   ? hasProblem
                     ? "bg-error-container text-on-error-container border-error"
@@ -1033,10 +1156,14 @@ export default function ScheduleDirectory({ role }) {
                     )}
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-[13px]">{day}</span>
-                      {onsiteCount > 0 && (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-white/70 text-on-surface text-[8px] sm:text-[9px] font-bold leading-none">
+                      {peakOverlap && (
+                        <span
+                          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-white/70 text-on-surface text-[8px] sm:text-[9px] font-bold leading-none"
+                          title={`Одновременно ${peakOverlap.count} очных занятия в филиале, в ${minutesToHHMM(peakOverlap.start)}${roomOverlaps.length > 1 ? " (и в другое время тоже есть пересечения)" : ""}`}
+                        >
                           <span className="material-symbols-outlined text-[10px] sm:text-[11px]">meeting_room</span>
-                          Занято {onsiteCount}
+                          {peakOverlap.count} в {minutesToHHMM(peakOverlap.start)}
+                          {roomOverlaps.length > 1 && ` +${roomOverlaps.length - 1}`}
                         </span>
                       )}
                     </div>
