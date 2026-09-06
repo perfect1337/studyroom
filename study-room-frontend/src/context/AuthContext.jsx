@@ -100,9 +100,24 @@ export function AuthProvider({ children }) {
     });
   }, []);
 
+  // Включает/выключает "версию учителя" для branch_owner (настройки ->
+  // тумблер "Зарегистрироваться как учитель", см. SettingsPage.jsx).
+  // PATCH /users/me/tutor-mode меняет is_tutor на бэкенде и тут же
+  // перевыпускает access_token — сохраняем его через setTokens(), иначе
+  // право пользоваться /tutor/* появится только после следующего
+  // /auth/refresh (а до этого ProtectedRoute будет пускать по старому,
+  // ещё не обновлённому токену).
+  const setTutorMode = useCallback(async (enabled) => {
+    const data = await authApi.setTutorMode(enabled);
+    setTokens(data);
+    setStoredUser(data.user);
+    setUser(data.user);
+    return data.user;
+  }, []);
+
   const value = useMemo(
-    () => ({ user, loading, isAuthenticated: !!user, login, registerParent, logout, updateUser }),
-    [user, loading, login, registerParent, logout, updateUser]
+    () => ({ user, loading, isAuthenticated: !!user, login, registerParent, logout, updateUser, setTutorMode }),
+    [user, loading, login, registerParent, logout, updateUser, setTutorMode]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

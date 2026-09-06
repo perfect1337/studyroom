@@ -18,7 +18,23 @@ type Claims struct {
 	UserID   int64       `json:"user_id"`
 	Role     models.Role `json:"role"`
 	BranchID *int64      `json:"branch_id"`
+	// IsTutor — приходит из User Service (см. его internal/auth/jwt.go и
+	// PATCH /users/me/tutor-mode): владелец филиала (role=branch_owner)
+	// включил себе "версию учителя". Используется только через
+	// CanActAsTutor() ниже — сам по себе роль в токене не меняет.
+	IsTutor bool `json:"is_tutor"`
 	jwt.RegisteredClaims
+}
+
+// CanActAsTutor — true для обычного tutor (право по самой роли) и для
+// branch_owner, включившего себе "версию учителя" (см. IsTutor). Используется
+// там, где иначе стояла бы жёсткая проверка `Role == models.RoleTutor` для
+// действий, которые должны остаться доступны и такому branch_owner —
+// см. middleware.RequireTutorCapable, а также HomeworkHandler/TestHandler,
+// где эта же branch_owner-ветка используется, чтобы сузить списки только
+// до "своих" через явный ?tutor_id=, как уже сделано для Lessons/Courses.
+func (c *Claims) CanActAsTutor() bool {
+	return c.Role == models.RoleTutor || (c.Role == models.RoleBranchOwner && c.IsTutor)
 }
 
 type TokenManager struct {

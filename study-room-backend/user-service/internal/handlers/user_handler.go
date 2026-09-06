@@ -27,6 +27,12 @@ type UserHandler struct {
 	tutorProfiles   *repository.TutorProfileRepository
 	studentProfiles *repository.StudentProfileRepository
 	events          events.Publisher
+	// tm/cookies — только для SetTutorMode ниже: переключение "версии
+	// учителя" меняет is_tutor в JWT-claims, поэтому нужно сразу
+	// перевыпустить пару токенов (как при логине), а не ждать, пока
+	// естественный /auth/refresh подтянет новое значение.
+	tm      *auth.TokenManager
+	cookies cookieSettings
 }
 
 func NewUserHandler(
@@ -37,6 +43,8 @@ func NewUserHandler(
 	tutorProfiles *repository.TutorProfileRepository,
 	studentProfiles *repository.StudentProfileRepository,
 	pub events.Publisher,
+	tm *auth.TokenManager,
+	cookieOpts CookieOptions,
 ) *UserHandler {
 	if pub == nil {
 		pub = events.NoopPublisher{}
@@ -44,6 +52,12 @@ func NewUserHandler(
 	return &UserHandler{
 		users: users, branches: branches, parentChild: pc,
 		authRepo: authRepo, tutorProfiles: tutorProfiles, studentProfiles: studentProfiles, events: pub,
+		tm: tm,
+		cookies: cookieSettings{
+			secure:   cookieOpts.Secure,
+			sameSite: parseSameSite(cookieOpts.SameSite),
+			domain:   cookieOpts.Domain,
+		},
 	}
 }
 
@@ -171,6 +185,86 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 	h.events.UserUpdated(updated)
 	writeJSON(w, http.StatusOK, updated)
+}
+
+// --- PATCH /users/me/tutor-mode ---
+// Включает/выключает "версию учителя" для владельца филиала (см. models.User.
+// IsTutor): тот же UI и функционал, что у обычного tutor (назначение себе
+// курсов через POST /courses/{id}/tutors в academic-service, создание
+// homework/tests, выставление оценок — см. RequireTutorCapable там), при
+// этом сама роль в токене остаётся branch_owner. Доступно только
+// branch_owner — ни owner, ни tutor, ни остальным ролям переключать
+// нечего (у tutor это право уже есть по самой роли).
+//
+// Выключение НЕ удаляет ни tutor_profile, ни назначения курсов
+// (course_tutors), ни уже выданные задания/тесты — только прячет
+// функциональность и запрещает новые tutor-only действия, пока флаг не
+// включат обратно. Именно поэтому это отдельный простой булев флаг, а не
+// "разжалование" в отдельную сущность: все данные преподавателя остаются
+// на месте между переключениями.
+type setTutorModeRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+func (h *UserHandler) SetTutorMode(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+	if claims.Role != models.RoleBranchOwner {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only a branch owner can toggle teacher mode")
+		return
+	}
+
+	var req setTutorModeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid body")
+		return
+	}
+
+	updated, err := h.users.Update(r.Context(), claims.UserID, map[string]any{"is_tutor": req.Enabled})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to update teacher mode")
+		return
+	}
+
+	if req.Enabled {
+		// Заводим профиль преподавателя, если его ещё не было (первое
+		// включение) — Upsert идемпотентен, повторное включение ничего не
+		// портит и не затирает уже выставленную специализацию/статус.
+		if err := h.tutorProfiles.SetStatus(r.Context(), claims.UserID, models.TutorStatusActive); err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to set up teacher profile")
+			return
+		}
+	}
+
+	// is_tutor меняет содержимое JWT — перевыпускаем токены сразу (как при
+	// логине), иначе фронту пришлось бы ждать естественного /auth/refresh,
+	// чтобы получить доступ к учительским эндпоинтам сразу после переключения
+	// тумблера в настройках.
+	access, err := h.tm.GenerateAccessToken(updated)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "token generation failed")
+		return
+	}
+	refreshPlain, err := auth.GenerateOpaqueToken()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "token generation failed")
+		return
+	}
+	if err := h.authRepo.SaveRefreshToken(r.Context(), updated.ID, auth.HashToken(refreshPlain), h.tm.RefreshTokenExpiry()); err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "could not persist refresh token")
+		return
+	}
+	setRefreshCookie(w, h.cookies, refreshPlain, h.tm.RefreshTokenExpiry())
+
+	full, err := h.users.GetByID(r.Context(), claims.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load user")
+		return
+	}
+	h.events.UserUpdated(full)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"access_token": access,
+		"user":         full,
+	})
 }
 
 // --- 1.8. POST /users/me/change-password ---

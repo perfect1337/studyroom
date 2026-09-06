@@ -64,7 +64,7 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, pub events.Publisher, ap
 // NewRouter собирает HTTP-роутер user-service (общий для main и тестов).
 func NewRouter(d *Deps) http.Handler {
 	authHandler := handlers.NewAuthHandler(d.Users, d.Auth, d.TM, d.Events, d.AppPublicURL, d.CookieOptions)
-	userHandler := handlers.NewUserHandler(d.Users, d.Branches, d.ParentChild, d.Auth, d.TutorProfiles, d.StudentProfiles, d.Events)
+	userHandler := handlers.NewUserHandler(d.Users, d.Branches, d.ParentChild, d.Auth, d.TutorProfiles, d.StudentProfiles, d.Events, d.TM, d.CookieOptions)
 	tutorHandler := handlers.NewTutorHandler(d.TutorProfiles, d.Users)
 
 	r := chi.NewRouter()
@@ -103,6 +103,11 @@ func NewRouter(d *Deps) http.Handler {
 			r.Get("/users/me", userHandler.Me)
 			r.Patch("/users/me", userHandler.UpdateMe)
 			r.Post("/users/me/change-password", userHandler.ChangePassword)
+			// Переключатель "версии учителя" для branch_owner — роль внутри
+			// самого хендлера (SetTutorMode), не через RequireRoles, чтобы
+			// дать branch_owner-у внятную 403 ("только владелец филиала"),
+			// а не общую от middleware.
+			r.Patch("/users/me/tutor-mode", userHandler.SetTutorMode)
 
 			r.Get("/users", userHandler.List)
 			r.Get("/users/{id}", userHandler.GetByID)

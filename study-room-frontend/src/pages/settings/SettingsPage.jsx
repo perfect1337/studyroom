@@ -86,7 +86,22 @@ function resizeImageFile(file) {
  * сам подключать/отключать уведомления в своём профиле (см. ниже, isStudent).
  */
 export default function SettingsPage({ role }) {
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, setTutorMode } = useAuth();
+
+  const [tutorModeLoading, setTutorModeLoading] = useState(false);
+  const [tutorModeError, setTutorModeError] = useState("");
+
+  async function handleTutorModeToggle() {
+    setTutorModeError("");
+    setTutorModeLoading(true);
+    try {
+      await setTutorMode(!user?.is_tutor);
+    } catch (e) {
+      setTutorModeError(e?.message || "Не удалось изменить режим. Попробуйте ещё раз.");
+    } finally {
+      setTutorModeLoading(false);
+    }
+  }
 
   const { status: tgStatus, loading: tgLoading, refresh: refreshTg } = useTelegramStatus();
   const { status: maxStatus, loading: maxLoading, refresh: refreshMax } = useMaxStatus();
@@ -341,6 +356,48 @@ export default function SettingsPage({ role }) {
             <p className="text-[12px] text-on-surface-variant mt-1 text-left">JPEG, PNG или WebP. Изменения сохранятся после нажатия «Сохранить изменения» ниже.</p>
           </div>
         </section>
+
+        {/* Режим "версия учителя" — только для владельца филиала (branch_owner).
+            Включает тот же UI и функционал, что у обычного преподавателя
+            (назначение себе курсов, задания, тесты), не создавая отдельный
+            логин — переключиться обратно можно кнопкой внизу сайдбара
+            "Вернуться в панель филиала". Все данные преподавателя сохраняются
+            между включениями/выключениями. */}
+        {role === "branch_owner" && (
+          <section className="bg-surface-container-lowest rounded-xl p-stack-md shadow-[0_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant">
+            <div className="flex items-center gap-3 mb-stack-md">
+              <span className="material-symbols-outlined text-primary">school</span>
+              <h3 className="font-headline-sm text-[20px] text-on-surface">Режим преподавателя</h3>
+            </div>
+            <div className="flex items-start justify-between gap-4">
+              <div className="max-w-[520px]">
+                <p className="font-label-md font-bold text-on-surface">Зарегистрироваться как учитель</p>
+                <p className="text-sm text-on-surface-variant mt-1">
+                  Включите, чтобы получить кнопку «Сменить на версию учителя» внизу меню слева. В этом режиме
+                  доступны интерфейс и функции преподавателя: можно назначать себе курсы, выдавать задания и тесты —
+                  как обычному учителю. Все ваши данные владельца филиала при этом сохраняются.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={!!user?.is_tutor}
+                disabled={tutorModeLoading}
+                onClick={handleTutorModeToggle}
+                className={`shrink-0 relative inline-flex h-7 w-12 items-center rounded-full transition-colors disabled:opacity-60 ${
+                  user?.is_tutor ? "bg-primary" : "bg-surface-container-highest border border-outline-variant"
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                    user?.is_tutor ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+            {tutorModeError && <p className="text-sm text-error mt-3">{tutorModeError}</p>}
+          </section>
+        )}
 
         {/* Personal Information */}
         <section className="bg-surface-container-lowest rounded-xl p-stack-md shadow-[0_10px_30px_rgba(0,0,0,0.05)] border border-outline-variant">

@@ -87,7 +87,12 @@ function NavList({ role, onNavigate }) {
   );
 }
 
-function FooterLinks({ showSwitchAccount = true }) {
+// teacherToggle — { label, icon, to }, см. Sidebar() ниже: кнопка
+// переключения между панелью филиала и "версией учителя" для branch_owner
+// с включённым user.is_tutor. Рендерится над "Сменить аккаунт"/"Выйти",
+// отдельной кнопкой, чтобы не путать с реальной сменой аккаунта — это
+// переключение вида в пределах ОДНОЙ и той же сессии/токена.
+function FooterLinks({ showSwitchAccount = true, teacherToggle = null }) {
   const navigate = useNavigate();
   const { logout } = useAuth();
 
@@ -104,6 +109,15 @@ function FooterLinks({ showSwitchAccount = true }) {
 
   return (
     <div className="mt-auto pt-4 border-t border-outline-variant flex flex-col gap-1">
+      {teacherToggle && (
+        <button
+          onClick={() => navigate(teacherToggle.to)}
+          className="flex items-center gap-3 px-4 py-3 text-primary hover:bg-primary-container/40 rounded-lg transition-all text-left font-label-md text-label-md font-bold"
+        >
+          <span className="material-symbols-outlined">{teacherToggle.icon}</span>
+          <span>{teacherToggle.label}</span>
+        </button>
+      )}
       {showSwitchAccount && (
         <button
           onClick={handleLogout}
@@ -302,6 +316,23 @@ function SidebarHeader({ role, user }) {
  * открывается через гамбургер-кнопку в TopBar (см. DashboardShell).
  */
 export default function Sidebar({ role, user, mobileOpen = false, onClose = () => {} }) {
+  // teacherToggle — кнопка переключения между панелью филиала и "версией
+  // учителя" для branch_owner (см. toSidebarUser: user.role/user.isTutor —
+  // это НАСТОЯЩАЯ роль из токена, в отличие от проп'а `role`, который задаёт
+  // только то, какую навигацию рисовать на этой конкретной странице).
+  //
+  // Тутор-страницы (TutorOverview.jsx и т.п.) сами решают, какой `role`
+  // передать в DashboardShell/Sidebar: "tutor", если это настоящий tutor
+  // ИЛИ branch_owner с открытой "версией учителя" — в обоих случаях здесь
+  // рисуется одна и та же навигация tutor'а. Различить эти два случая
+  // можно только по user.role, отсюда и разветвление ниже.
+  let teacherToggle = null;
+  if (role === "tutor" && user?.role === "branch_owner") {
+    teacherToggle = { label: "Вернуться в панель филиала", icon: "store", to: "/branch" };
+  } else if (role === "branch_owner" && user?.isTutor) {
+    teacherToggle = { label: "Сменить на версию учителя", icon: "school", to: "/tutor" };
+  }
+
   return (
     <>
       {/* Затемнение фона на мобильных, когда меню открыто */}
@@ -338,7 +369,7 @@ export default function Sidebar({ role, user, mobileOpen = false, onClose = () =
           </div>
         )}
 
-        <FooterLinks showSwitchAccount={role !== "student"} />
+        <FooterLinks showSwitchAccount={role !== "student"} teacherToggle={teacherToggle} />
       </aside>
     </>
   );

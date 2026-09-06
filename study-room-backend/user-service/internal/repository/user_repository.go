@@ -24,7 +24,7 @@ func NewUserRepository(pool *pgxpool.Pool) *UserRepository {
 }
 
 const userColumns = `id, email, phone, password_hash, role, last_name, first_name,
-	patronymic, avatar_url, branch_id, is_active, created_at, updated_at`
+	patronymic, avatar_url, branch_id, is_active, created_at, updated_at, is_tutor`
 
 // profileColumns — то же самое + профиль репетитора и профиль ученика (nil для
 // ролей, к которым не относятся — LEFT JOIN). Нужен, чтобы List/ListAll/GetByID
@@ -34,7 +34,7 @@ const userColumns = `id, email, phone, password_hash, role, last_name, first_nam
 // дефолтный, а карточка ученика никогда не показывала класс/школу, хотя в БД
 // данные были записаны корректно.
 const profileColumns = `users.id, users.email, users.phone, users.password_hash, users.role, users.last_name, users.first_name,
-	users.patronymic, users.avatar_url, users.branch_id, users.is_active, users.created_at, users.updated_at,
+	users.patronymic, users.avatar_url, users.branch_id, users.is_active, users.created_at, users.updated_at, users.is_tutor,
 	tutor_profiles.specialization, tutor_profiles.status,
 	student_profiles.class_info, student_profiles.school, student_profiles.avg_grade, student_profiles.attendance_pct,
 	branches.name`
@@ -48,7 +48,7 @@ func scanUser(row pgx.Row) (*models.User, error) {
 	var u models.User
 	err := row.Scan(&u.ID, &u.Email, &u.Phone, &u.PasswordHash, &u.Role, &u.LastName,
 		&u.FirstName, &u.Patronymic, &u.AvatarURL, &u.BranchID, &u.IsActive,
-		&u.CreatedAt, &u.UpdatedAt)
+		&u.CreatedAt, &u.UpdatedAt, &u.IsTutor)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -62,7 +62,7 @@ func scanUserWithProfiles(row pgx.Row) (*models.User, error) {
 	var u models.User
 	err := row.Scan(&u.ID, &u.Email, &u.Phone, &u.PasswordHash, &u.Role, &u.LastName,
 		&u.FirstName, &u.Patronymic, &u.AvatarURL, &u.BranchID, &u.IsActive,
-		&u.CreatedAt, &u.UpdatedAt, &u.Specialization, &u.TutorStatus,
+		&u.CreatedAt, &u.UpdatedAt, &u.IsTutor, &u.Specialization, &u.TutorStatus,
 		&u.ClassInfo, &u.School, &u.AvgGrade, &u.AttendancePct, &u.BranchName)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -111,6 +111,12 @@ func (r *UserRepository) Update(ctx context.Context, id int64, fields map[string
 		"first_name": true, "last_name": true, "patronymic": true, "avatar_url": true,
 		"password_hash": true, "is_active": true, "phone": true, "branch_id": true,
 		"email": true,
+		// is_tutor — переключатель "версии учителя" для branch_owner, см.
+		// UserHandler.SetTutorMode. Ни один другой хендлер это поле в fields
+		// не кладёт (UpdateMe собирает свой fields из первого_name/last_name/
+		// patronymic/avatar_url/email — is_tutor там нет), поэтому расширение
+		// allowedCols здесь безопасно и не открывает путь поменять его откуда-то ещё.
+		"is_tutor": true,
 	}
 	setClauses := ""
 	args := []any{}

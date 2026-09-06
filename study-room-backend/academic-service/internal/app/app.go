@@ -164,7 +164,12 @@ func NewRouter(d *Deps) http.Handler {
 			})
 
 			r.Group(func(r chi.Router) {
-				r.Use(middleware.RequireRoles(models.RoleTutor))
+				// RequireTutorCapable вместо RequireRoles(RoleTutor): пропускает
+				// ещё и branch_owner, включившего себе "версию учителя" (см.
+				// auth.Claims.CanActAsTutor и users-service PATCH
+				// /users/me/tutor-mode) — единственные три tutor-only действия,
+				// которые иначе оставались бы недоступны такому branch_owner.
+				r.Use(middleware.RequireTutorCapable())
 				r.Post("/homework", homeworkHandler.Create)
 				r.Post("/tests", testHandler.Create)
 				r.Patch("/tests/{id}/grade", testHandler.Grade)

@@ -62,6 +62,30 @@ func RequireRoles(roles ...models.Role) func(http.Handler) http.Handler {
 	}
 }
 
+// RequireTutorCapable — как RequireRoles(RoleTutor), но дополнительно
+// пропускает branch_owner, включившего себе "версию учителя" (см.
+// auth.Claims.CanActAsTutor). Используется вместо RequireRoles(RoleTutor)
+// на homework/tests create+grade — единственных tutor-only эндпоинтах,
+// которые до этого были недоступны такому branch_owner (назначение курсов
+// и создание уроков ему и так уже разрешено — см. RequireRoles(RoleOwner,
+// RoleBranchOwner, RoleTutor) выше по файлу app.go).
+func RequireTutorCapable() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims, ok := FromContext(r.Context())
+			if !ok {
+				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "no auth context")
+				return
+			}
+			if !claims.CanActAsTutor() {
+				writeError(w, http.StatusForbidden, "FORBIDDEN", "role not permitted for this action")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func FromContext(ctx context.Context) (*auth.Claims, bool) {
 	claims, ok := ctx.Value(claimsKey).(*auth.Claims)
 	return claims, ok

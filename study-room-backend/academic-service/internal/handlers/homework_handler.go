@@ -109,6 +109,15 @@ func (h *HomeworkHandler) List(w http.ResponseWriter, r *http.Request) {
 		// область branch_owner — ученики его филиала; фильтруем в памяти,
 		// т.к. связи "ученик -> branch_id" физически лежат в user_refs,
 		// а не в homework.
+		//
+		// ?tutor_id= — необязательное сужение до "только своих" (как уже
+		// работает для Lessons/Courses), которым пользуется фронт, когда
+		// branch_owner открывает "версию учителя" (см. TutorHomework.jsx) —
+		// без этого параметра поведение не меняется (весь филиал, как раньше).
+		if v, ok := parseIntQuery(r, "tutor_id"); ok && v != nil {
+			createdBy := *v
+			filter.CreatedBy = &createdBy
+		}
 	default:
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "role not permitted")
 		return
