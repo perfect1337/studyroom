@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createLesson, fetchEnrollments } from "../../api/academic.js";
 import { fullName } from "../../utils/userDisplay.js";
+import { addMinutesToTime, DEFAULT_LESSON_DURATION_MINUTES } from "../../utils/time.js";
 
 export default function CreateLessonModal({ open, onClose, onCreated, courses = [], tutors = [], students: peopleStudents = [], branches = [], isOwner = false, defaultDate = "" }) {
   const [form, setForm] = useState({
@@ -13,11 +14,18 @@ export default function CreateLessonModal({ open, onClose, onCreated, courses = 
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // endTimeTouched — как только пользователь сам поменял время окончания,
+  // автоподстановка (+105 минут от начала, см. update ниже) перестаёт его
+  // трогать при дальнейших изменениях времени начала. Сбрасывается при
+  // каждом открытии модалки, чтобы для новой формы автоподстановка снова
+  // работала.
+  const endTimeTouched = useRef(false);
 
   useEffect(() => {
     if (!open) return;
     setForm((f) => ({ ...f, lesson_date: defaultDate || f.lesson_date }));
     setError("");
+    endTimeTouched.current = false;
   }, [open, defaultDate]);
 
   useEffect(() => {
@@ -62,7 +70,21 @@ export default function CreateLessonModal({ open, onClose, onCreated, courses = 
 
   function update(name, value) {
     setError("");
-    setForm((f) => ({ ...f, [name]: value }));
+    setForm((f) => {
+      const next = { ...f, [name]: value };
+      // Автоподстановка времени окончания: +105 минут от времени начала,
+      // но только пока пользователь не поменял окончание вручную (см.
+      // updateEndTime) — иначе поле остаётся полностью редактируемым.
+      if (name === "start_time" && value && !endTimeTouched.current) {
+        next.end_time = addMinutesToTime(value, DEFAULT_LESSON_DURATION_MINUTES);
+      }
+      return next;
+    });
+  }
+
+  function updateEndTime(value) {
+    endTimeTouched.current = true;
+    update("end_time", value);
   }
 
   async function submit(e) {
@@ -189,7 +211,7 @@ export default function CreateLessonModal({ open, onClose, onCreated, courses = 
           </label>
           <label className="block">
             <span className="font-label-md text-label-md text-on-surface">Окончание</span>
-            <input type="time" value={form.end_time} onChange={(e) => update("end_time", e.target.value)} className="mt-1.5 w-full px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow" />
+            <input type="time" value={form.end_time} onChange={(e) => updateEndTime(e.target.value)} className="mt-1.5 w-full px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow" />
           </label>
         </div>
 

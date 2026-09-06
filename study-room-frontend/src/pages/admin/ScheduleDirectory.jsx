@@ -53,6 +53,198 @@ function isLessonPast(lesson, today) {
   return endTime <= nowHHMM();
 }
 
+function weekBadgeClasses(kind, value) {
+  if (kind === "location") {
+    return value === "О" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700";
+  }
+  return "bg-surface-container text-on-surface-variant";
+}
+
+// WeekLessonChip — карточка занятия внутри ячейки недельной сетки (десктоп).
+// Специально БЕЗ имени ученика — только предмет, класс(ы) и бейджи
+// И/Г, О/Д. Имя появляется в панели деталей справа после клика (см.
+// selectedLesson/onSelectLesson в ScheduleDirectory).
+function WeekLessonChip({ info, selected, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full text-left rounded-lg border px-2 py-1.5 mb-1.5 last:mb-0 transition-colors ${
+        selected
+          ? "border-primary bg-primary-container/40"
+          : "border-outline-variant/50 bg-surface-container-lowest hover:bg-surface-container"
+      }`}
+    >
+      <div className="font-label-md text-[11px] font-bold text-on-surface truncate">{info.subject}</div>
+      {info.classes.length > 0 && (
+        <div className="text-[10px] text-on-surface-variant truncate">{info.classes.join(", ")}</div>
+      )}
+      <div className="flex gap-1 mt-1">
+        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${weekBadgeClasses("location", info.location)}`}>
+          {info.location}
+        </span>
+        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${weekBadgeClasses("group", info.format)}`}>
+          {info.format}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+/**
+ * Недельный вид расписания (owner/branch_owner). Десктоп — сетка "время x
+ * день", как в исходной таблице-первоисточнике (время слева, дни сверху,
+ * несколько занятий в ячейке — стопкой). Мобильный — вкладки дней недели
+ * сверху и вертикальный список занятий выбранного дня, время видно сразу
+ * (как и просили — "как на ПК"), а имя ученика — только после клика по
+ * занятию (открывает ту же панель деталей, что и десктоп).
+ *
+ * Дни, не входящие в текущий месяц (края первой/последней недели), в
+ * weekDays приходят как null — просто показываем пустую колонку без даты.
+ */
+function WeekGrid({ weekDays, weekTimes, lessonsByDay, todayDay, lessonShortInfo, selectedLesson, onSelectLesson }) {
+  const [mobileDayIdx, setMobileDayIdx] = useState(0);
+
+  useEffect(() => {
+    const todayIdx = todayDay ? weekDays.indexOf(todayDay) : -1;
+    if (todayIdx >= 0) {
+      setMobileDayIdx(todayIdx);
+      return;
+    }
+    const firstWithLessons = weekDays.findIndex((d) => d && (lessonsByDay[d] ?? []).length > 0);
+    setMobileDayIdx(firstWithLessons >= 0 ? firstWithLessons : 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekDays]);
+
+  const mobileDay = weekDays[mobileDayIdx];
+  const mobileDayLessons = mobileDay
+    ? (lessonsByDay[mobileDay] ?? [])
+        .slice()
+        .sort((a, b) => String(a.start_time ?? "").localeCompare(String(b.start_time ?? "")))
+    : [];
+
+  return (
+    <div>
+      {/* Мобильный вид */}
+      <div className="sm:hidden">
+        <div className="grid grid-cols-7 gap-1 mb-3">
+          {weekDays.map((day, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => day && setMobileDayIdx(idx)}
+              disabled={!day}
+              className={`text-center py-2 rounded-lg font-label-md text-[11px] border transition-colors ${
+                idx === mobileDayIdx
+                  ? "bg-primary text-on-primary border-primary"
+                  : day
+                    ? "bg-surface-container border-outline-variant text-on-surface-variant"
+                    : "bg-surface-container/40 border-outline-variant/30 text-on-surface-variant/40"
+              }`}
+            >
+              <div>{WEEKDAYS[idx]}</div>
+              {day && <div className="text-[10px] font-bold mt-0.5">{day}</div>}
+            </button>
+          ))}
+        </div>
+        {!mobileDay ? (
+          <div className="text-sm text-on-surface-variant py-4 text-center">Нет данных за этот день</div>
+        ) : mobileDayLessons.length === 0 ? (
+          <div className="text-sm text-on-surface-variant py-4 text-center">Занятий нет</div>
+        ) : (
+          <div className="space-y-2">
+            {mobileDayLessons.map((l) => {
+              const info = lessonShortInfo(l);
+              const isSelected = selectedLesson?.id === l.id;
+              return (
+                <button
+                  key={l.id}
+                  type="button"
+                  onClick={() => onSelectLesson(l)}
+                  className={`w-full text-left rounded-xl border px-3 py-2.5 transition-colors ${
+                    isSelected ? "border-primary bg-primary-container/40" : "border-outline-variant bg-surface-container-lowest"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-label-md text-[13px] font-bold text-on-surface shrink-0">
+                      {l.start_time?.slice(0, 5)}
+                      {l.end_time ? `–${l.end_time.slice(0, 5)}` : ""}
+                    </span>
+                    <span className="text-[12px] text-on-surface-variant truncate">{info.subject}</span>
+                  </div>
+                  {info.classes.length > 0 && (
+                    <div className="text-[11px] text-on-surface-variant mt-0.5">{info.classes.join(", ")}</div>
+                  )}
+                  <div className="flex gap-1 mt-1.5">
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${weekBadgeClasses("location", info.location)}`}>
+                      {info.location}
+                    </span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${weekBadgeClasses("group", info.format)}`}>
+                      {info.format}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Десктопный вид: время x день, как в исходной таблице */}
+      <div className="hidden sm:block overflow-x-auto">
+        <table className="w-full border-collapse min-w-[720px]">
+          <thead>
+            <tr>
+              <th className="w-16" />
+              {weekDays.map((day, idx) => (
+                <th key={idx} className="text-center pb-2 font-label-md text-label-md text-outline">
+                  <div>{WEEKDAYS[idx]}</div>
+                  {day && <div className="text-[11px] font-bold text-on-surface-variant">{day}</div>}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {weekTimes.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="text-center py-10 text-on-surface-variant font-body-md">
+                  На этой неделе занятий нет
+                </td>
+              </tr>
+            ) : (
+              weekTimes.map((time) => (
+                <tr key={time}>
+                  <td className="align-top pt-2 pr-2 text-[12px] font-bold text-on-surface-variant whitespace-nowrap">{time}</td>
+                  {weekDays.map((day, idx) => {
+                    const cellLessons = day
+                      ? (lessonsByDay[day] ?? []).filter((l) => l.start_time?.slice(0, 5) === time)
+                      : [];
+                    return (
+                      <td key={idx} className="align-top border border-outline-variant/30 p-1.5 min-w-[120px]">
+                        {cellLessons.map((l) => {
+                          const info = lessonShortInfo(l);
+                          return (
+                            <WeekLessonChip
+                              key={l.id}
+                              info={info}
+                              selected={selectedLesson?.id === l.id}
+                              onClick={() => onSelectLesson(l)}
+                            />
+                          );
+                        })}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Общий раздел "Расписание" для двух ролей:
  * - owner (раздел /admin/schedule): видит занятия по всей сети, доступны фильтры
@@ -93,6 +285,29 @@ export default function ScheduleDirectory({ role }) {
   const [selectedDay, setSelectedDay] = useState(null); // day number in current month, or null
   const [detailPage, setDetailPage] = useState(0); // пагинация занятий выбранного дня
   const LESSONS_PAGE_SIZE = 2;
+
+  // viewMode — переключатель "Месяц"/"Неделя" (см. кнопки в шапке ниже).
+  // Только для owner/branch_owner (эта страница им и так ограничена — см.
+  // AdminSchedule.jsx/BranchSchedule.jsx); у tutor/student/parent — свои
+  // отдельные компоненты расписания, их этот переключатель не касается.
+  const [viewMode, setViewMode] = useState("month");
+  // weekIndex — индекс строки календарной сетки месяца (см. monthWeeks
+  // ниже), которая сейчас показана как "неделя". Недель получается 4-6 в
+  // зависимости от того, на какой день недели падает 1-е число и сколько
+  // дней в месяце — само распределяется, отдельно хардкодить 4/5 не нужно.
+  const [weekIndex, setWeekIndex] = useState(0);
+  // selectedLesson — выбранное занятие в недельном виде (клик по карточке
+  // занятия в ячейке недели). В отличие от месячного вида, где кликают на
+  // весь день (см. selectedDay) и видят все его занятия списком, в
+  // недельном виде каждая ячейка уже содержит одно конкретное занятие —
+  // имя ученика в самой ячейке не показывается (см. WeekLessonChip ниже),
+  // оно появляется только в этой подробной карточке после клика.
+  const [selectedLesson, setSelectedLesson] = useState(null);
+  // Флаг для goToWeek(-1): при переходе на предыдущий месяц нужно встать
+  // на его ПОСЛЕДНЮЮ неделю, а эффект ниже по умолчанию поставил бы первую
+  // (или неделю с сегодняшним днём) — флаг просит эффект пропустить один раз
+  // свой авто-сброс, чтобы не затереть explicit-значение из goToWeek.
+  const skipWeekAutoResetRef = useRef(false);
 
   // Занятие, которое сейчас редактируется (owner — любое, branch_owner — только
   // своего филиала; но список lessons уже отфильтрован сервером по этой области,
@@ -331,8 +546,48 @@ export default function ScheduleDirectory({ role }) {
   const isCurrentMonthView = viewYear === today.getFullYear() && viewMonth === today.getMonth();
   const todayDay = isCurrentMonthView ? today.getDate() : null;
 
+  // monthWeeks — строки той же сетки, что рисует месячный календарь: каждая
+  // строка — 7 ячеек (Пн..Вс), где значение — число месяца либо null для
+  // дней соседнего месяца (те же "пустые" ячейки, что и в сетке месяца).
+  // Недельный вид — это одна такая строка, показанная подробно (по времени),
+  // поэтому количество недель само получается 4/5/6 в зависимости от того,
+  // на какой день недели пришлось 1-е число и сколько дней в месяце —
+  // отдельно хардкодить не нужно.
+  const monthWeeks = useMemo(() => {
+    const totalCells = firstWeekday + daysInMonth;
+    const rowCount = Math.ceil(totalCells / 7);
+    const weeks = [];
+    for (let r = 0; r < rowCount; r++) {
+      const week = [];
+      for (let c = 0; c < 7; c++) {
+        const day = r * 7 + c - firstWeekday + 1;
+        week.push(day >= 1 && day <= daysInMonth ? day : null);
+      }
+      weeks.push(week);
+    }
+    return weeks;
+  }, [firstWeekday, daysInMonth]);
+
+  // При смене месяца выставляем неделю, которая содержит сегодняшний день
+  // (если смотрим текущий месяц), иначе — первую неделю месяца.
+  useEffect(() => {
+    setSelectedLesson(null);
+    if (skipWeekAutoResetRef.current) {
+      skipWeekAutoResetRef.current = false;
+      return;
+    }
+    if (isCurrentMonthView && todayDay) {
+      const row = monthWeeks.findIndex((week) => week.includes(todayDay));
+      setWeekIndex(row >= 0 ? row : 0);
+    } else {
+      setWeekIndex(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewYear, viewMonth]);
+
   function goToMonth(offset) {
     setSelectedDay(null);
+    setSelectedLesson(null);
     let m = viewMonth + offset;
     let y = viewYear;
     if (m < 0) {
@@ -346,10 +601,59 @@ export default function ScheduleDirectory({ role }) {
     setViewYear(y);
   }
 
-  const selectedLessons = selectedDay ? lessonsByDay[selectedDay] ?? [] : [];
-  const detailPageCount = Math.max(1, Math.ceil(selectedLessons.length / LESSONS_PAGE_SIZE));
+  // Переключение недель внутри месяца. На границах месяца (первая/последняя
+  // неделя) переходим в соседний месяц и встаём на его первую/последнюю
+  // неделю — так пролистывание недель работает бесшовно, а не упирается в
+  // границу месяца.
+  function goToWeek(offset) {
+    setSelectedLesson(null);
+    const next = weekIndex + offset;
+    if (next < 0) {
+      skipWeekAutoResetRef.current = true;
+      goToMonth(-1);
+      // Хотим встать на ПОСЛЕДНЮЮ неделю предыдущего месяца — считаем её
+      // отдельно, зная, каким будет предыдущий месяц.
+      const prevMonthDate = new Date(viewYear, viewMonth, 0); // последний день предыдущего месяца
+      const prevDaysInMonth = prevMonthDate.getDate();
+      const prevFirstWeekday = (new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), 1).getDay() + 6) % 7;
+      const rowCount = Math.ceil((prevFirstWeekday + prevDaysInMonth) / 7);
+      setWeekIndex(rowCount - 1);
+    } else if (next >= monthWeeks.length) {
+      skipWeekAutoResetRef.current = true;
+      goToMonth(1);
+      setWeekIndex(0);
+    } else {
+      setWeekIndex(next);
+    }
+  }
+
+  const currentWeek = monthWeeks[Math.min(weekIndex, monthWeeks.length - 1)] ?? [];
+  // Время начала занятий этой недели, по возрастанию — строки недельной сетки.
+  const weekTimes = useMemo(() => {
+    const set = new Set();
+    currentWeek.forEach((day) => {
+      if (!day) return;
+      (lessonsByDay[day] ?? []).forEach((l) => {
+        if (l.start_time) set.add(String(l.start_time).slice(0, 5));
+      });
+    });
+    return [...set].sort();
+  }, [currentWeek, lessonsByDay]);
+
+  const isWeekMode = viewMode === "week";
+  // Список занятий для панели деталей справа: в месячном виде — все
+  // занятия выбранного дня (как раньше), в недельном — ровно одно кликнутое
+  // занятие (см. selectedLesson) — там имя ученика видно только тут.
+  const detailLessons = isWeekMode
+    ? selectedLesson
+      ? [selectedLesson]
+      : []
+    : selectedDay
+      ? lessonsByDay[selectedDay] ?? []
+      : [];
+  const detailPageCount = Math.max(1, Math.ceil(detailLessons.length / LESSONS_PAGE_SIZE));
   const safeDetailPage = Math.min(detailPage, detailPageCount - 1);
-  const paginatedLessons = selectedLessons.slice(
+  const paginatedLessons = detailLessons.slice(
     safeDetailPage * LESSONS_PAGE_SIZE,
     safeDetailPage * LESSONS_PAGE_SIZE + LESSONS_PAGE_SIZE
   );
@@ -465,32 +769,79 @@ export default function ScheduleDirectory({ role }) {
         {/* Calendar */}
         <div className="lg:col-span-8 space-y-stack-lg">
           <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant">
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
               <div>
                 <h3 className="font-headline-sm text-headline-sm text-on-surface">
-                  {MONTH_NAMES[viewMonth]} {viewYear}
+                  {isWeekMode ? `Неделя ${weekIndex + 1} из ${monthWeeks.length}` : `${MONTH_NAMES[viewMonth]} ${viewYear}`}
                 </h3>
                 <p className="font-body-md text-body-md text-on-surface-variant">
-                  {loading ? "Загрузка занятий…" : `${lessons.length} занятий в этом месяце`}
+                  {loading
+                    ? "Загрузка занятий…"
+                    : isWeekMode
+                      ? `${MONTH_NAMES[viewMonth]} ${viewYear}`
+                      : `${lessons.length} занятий в этом месяце`}
                 </p>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => goToMonth(-1)}
-                  className="p-2 hover:bg-surface-container rounded-lg transition-colors border border-outline-variant"
-                  aria-label="Предыдущий месяц"
-                >
-                  <span className="material-symbols-outlined">chevron_left</span>
-                </button>
-                <button
-                  onClick={() => goToMonth(1)}
-                  className="p-2 hover:bg-surface-container rounded-lg transition-colors border border-outline-variant"
-                  aria-label="Следующий месяц"
-                >
-                  <span className="material-symbols-outlined">chevron_right</span>
-                </button>
+              <div className="flex items-center gap-3 flex-wrap">
+                {/* Переключатель Месяц/Неделя — только владельцу и владельцу
+                    филиала; у преподавателя/ученика — прежнее расписание. */}
+                <div className="flex rounded-full border border-outline-variant p-0.5 bg-surface-container">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewMode("month");
+                      setSelectedLesson(null);
+                    }}
+                    className={`px-4 py-1.5 rounded-full font-label-md text-label-md transition-colors ${
+                      !isWeekMode ? "bg-primary text-on-primary" : "text-on-surface-variant"
+                    }`}
+                  >
+                    Месяц
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewMode("week");
+                      setSelectedDay(null);
+                    }}
+                    className={`px-4 py-1.5 rounded-full font-label-md text-label-md transition-colors ${
+                      isWeekMode ? "bg-primary text-on-primary" : "text-on-surface-variant"
+                    }`}
+                  >
+                    Неделя
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => (isWeekMode ? goToWeek(-1) : goToMonth(-1))}
+                    className="p-2 hover:bg-surface-container rounded-lg transition-colors border border-outline-variant"
+                    aria-label={isWeekMode ? "Предыдущая неделя" : "Предыдущий месяц"}
+                  >
+                    <span className="material-symbols-outlined">chevron_left</span>
+                  </button>
+                  <button
+                    onClick={() => (isWeekMode ? goToWeek(1) : goToMonth(1))}
+                    className="p-2 hover:bg-surface-container rounded-lg transition-colors border border-outline-variant"
+                    aria-label={isWeekMode ? "Следующая неделя" : "Следующий месяц"}
+                  >
+                    <span className="material-symbols-outlined">chevron_right</span>
+                  </button>
+                </div>
               </div>
             </div>
+
+            {isWeekMode && (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 mb-4 font-label-md text-[12px] text-on-surface-variant">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-500" /> О — очно
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-amber-500" /> Д — дистант
+                </span>
+                <span>И — индивидуально</span>
+                <span>Г — группа</span>
+              </div>
+            )}
 
             {error && (
               <div className="mb-4 p-3 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md">
@@ -498,6 +849,7 @@ export default function ScheduleDirectory({ role }) {
               </div>
             )}
 
+            {!isWeekMode && (
             <div className="pb-1">
             <div className="sm:hidden space-y-2">
               {Array.from({ length: daysInMonth }).map((_, i) => {
@@ -631,20 +983,38 @@ export default function ScheduleDirectory({ role }) {
               })}
             </div>
             </div>
+            )}
+
+            {isWeekMode && (
+              <WeekGrid
+                weekDays={currentWeek}
+                weekTimes={weekTimes}
+                lessonsByDay={lessonsByDay}
+                todayDay={todayDay}
+                lessonShortInfo={lessonShortInfo}
+                selectedLesson={selectedLesson}
+                onSelectLesson={(l) => {
+                  setSelectedLesson(l);
+                  setDetailPage(0);
+                }}
+              />
+            )}
           </div>
         </div>
 
         {/* Detail panel */}
         <div className="lg:col-span-4">
           <div className="sticky top-24 space-y-stack-lg">
-            {!selectedDay || selectedLessons.length === 0 ? (
+            {detailLessons.length === 0 ? (
               <div className="bg-surface-container-lowest rounded-xl shadow-xl overflow-hidden border border-outline-variant border-t-8 border-primary">
                 <div className="p-6 flex flex-col items-center text-center">
                   <span className="material-symbols-outlined text-4xl mb-2 text-outline">event_busy</span>
                   <p className="font-body-md text-on-surface-variant">
-                    {selectedDay
-                      ? `На ${selectedDay} ${MONTH_NAMES[viewMonth].toLowerCase()} занятий не запланировано`
-                      : "Выберите день в календаре, чтобы увидеть детали"}
+                    {isWeekMode
+                      ? "Выберите занятие в расписании, чтобы увидеть детали"
+                      : selectedDay
+                        ? `На ${selectedDay} ${MONTH_NAMES[viewMonth].toLowerCase()} занятий не запланировано`
+                        : "Выберите день в календаре, чтобы увидеть детали"}
                   </p>
                 </div>
               </div>
@@ -769,8 +1139,8 @@ export default function ScheduleDirectory({ role }) {
                   </button>
                   <span className="font-label-md text-label-md text-on-surface-variant">
                     Занятия {safeDetailPage * LESSONS_PAGE_SIZE + 1}
-                    –{Math.min(selectedLessons.length, safeDetailPage * LESSONS_PAGE_SIZE + LESSONS_PAGE_SIZE)} из{" "}
-                    {selectedLessons.length}
+                    –{Math.min(detailLessons.length, safeDetailPage * LESSONS_PAGE_SIZE + LESSONS_PAGE_SIZE)} из{" "}
+                    {detailLessons.length}
                   </span>
                   <button
                     type="button"

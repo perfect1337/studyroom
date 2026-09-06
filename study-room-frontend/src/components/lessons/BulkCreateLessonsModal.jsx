@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createLesson } from "../../api/academic.js";
 import { fullName } from "../../utils/userDisplay.js";
+import { addMinutesToTime, DEFAULT_LESSON_DURATION_MINUTES } from "../../utils/time.js";
 
 const WEEKDAYS = [
   [1, "Пн"], [2, "Вт"], [3, "Ср"], [4, "Чт"], [5, "Пт"], [6, "Сб"], [0, "Вс"],
@@ -17,22 +18,29 @@ export default function BulkCreateLessonsModal({ open, courses = [], tutors = []
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
+  // endTimeTouched — см. CreateLessonModal.jsx: пока пользователь сам не
+  // поменял время окончания, оно пересчитывается от времени начала
+  // (+105 минут) в update(); после ручного изменения автоподстановка для
+  // этой формы отключается.
+  const endTimeTouched = useRef(false);
 
   useEffect(() => {
     if (!open) return;
+    const startTime = "10:00";
     setForm({
       course_id: courses[0]?.id ? String(courses[0].id) : "",
       tutor_id: tutors[0]?.id ? String(tutors[0].id) : "",
       lesson_date_from: monthStart(),
       lesson_date_to: monthEnd(),
-      start_time: "10:00",
-      end_time: "11:00",
+      start_time: startTime,
+      end_time: addMinutesToTime(startTime, DEFAULT_LESSON_DURATION_MINUTES),
       location_type: "onsite",
       student_id: "",
     });
     setDays([1, 2, 3, 4, 5]);
     setError("");
     setProgress("");
+    endTimeTouched.current = false;
   }, [open]);
 
   if (!open || !form) return null;
@@ -45,7 +53,18 @@ export default function BulkCreateLessonsModal({ open, courses = [], tutors = []
 
   function update(field, value) {
     setError("");
-    setForm((f) => ({ ...f, [field]: value }));
+    setForm((f) => {
+      const next = { ...f, [field]: value };
+      if (field === "start_time" && value && !endTimeTouched.current) {
+        next.end_time = addMinutesToTime(value, DEFAULT_LESSON_DURATION_MINUTES);
+      }
+      return next;
+    });
+  }
+
+  function updateEndTime(value) {
+    endTimeTouched.current = true;
+    update("end_time", value);
   }
 
   function toggleDay(day) {
@@ -156,7 +175,7 @@ export default function BulkCreateLessonsModal({ open, courses = [], tutors = []
           </div>
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">Начало<input type="time" value={form.start_time} onChange={(e) => update("start_time", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow" /></label>
-            <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">Конец<input type="time" value={form.end_time} onChange={(e) => update("end_time", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow" /></label>
+            <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">Конец<input type="time" value={form.end_time} onChange={(e) => updateEndTime(e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow" /></label>
           </div>
           <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">Формат проведения
             <select value={form.location_type} onChange={(e) => update("location_type", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow"><option value="onsite">Очно, в филиале</option><option value="remote">Дистанционно (Zoom)</option></select>
