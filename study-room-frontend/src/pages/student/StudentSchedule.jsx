@@ -59,6 +59,10 @@ export default function StudentSchedule() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedDay, setSelectedDay] = useState(null); // day number in current month, or null
+  // Дни месяца, для которых развёрнут полный список занятий (карточка дня в
+  // календаре по умолчанию показывает первые 3 занятия — как у управляющего
+  // филиалом, см. ScheduleDirectory.jsx).
+  const [expandedDays, setExpandedDays] = useState(new Set());
 
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstWeekday = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7; // 0 = Monday
@@ -159,6 +163,18 @@ export default function StudentSchedule() {
 
   const selectedLessons = selectedDay ? lessonsByDay[selectedDay] ?? [] : [];
 
+  // Краткая информация по занятию для карточки дня в календаре — тот же
+  // формат, что и в расписании управляющего филиалом (ScheduleDirectory.jsx),
+  // но без какой-либо логики по статусу оплаты договора: карточка всегда
+  // отображается в одном и том же светло-голубом стиле.
+  function lessonShortInfo(lesson) {
+    const course = coursesById[lesson.course_id];
+    const subject = course?.subject || course?.title || lesson.topic || "Занятие";
+    const format = lesson.group_type === "individual" ? "И" : "Г";
+    const location = lesson.location_type === "onsite" ? "О" : "Д";
+    return { subject, classes: [], format, location };
+  }
+
   return (
     <DashboardShell
       role="student"
@@ -212,7 +228,7 @@ export default function StudentSchedule() {
               ))}
             </div>
 
-            <div className="grid grid-cols-7 gap-1">
+            <div className="grid grid-cols-7 gap-1.5">
               {Array.from({ length: firstWeekday }).map((_, i) => (
                 <div key={`pad-${i}`} className="h-20 sm:h-24" />
               ))}
@@ -221,38 +237,83 @@ export default function StudentSchedule() {
                 const dayLessons = lessonsByDay[day] ?? [];
                 const isToday = day === todayDay;
                 const isSelected = day === selectedDay;
-                const firstLesson = dayLessons[0];
-                const color = firstLesson ? courseColor[firstLesson.course_id] ?? "#004ac6" : null;
+                const isExpanded = expandedDays.has(day);
+                const hasLessons = dayLessons.length > 0;
+                // Карточка дня всегда одного и того же светло-голубого цвета,
+                // если в этот день есть занятия — без учёта статуса оплаты
+                // договора (в отличие от расписания управляющего филиалом,
+                // где проблемные дни подсвечиваются красным).
+                const dayStateClass = hasLessons
+                  ? "bg-primary-container text-on-primary-container border-primary"
+                  : "text-on-surface-variant bg-surface-container border-outline-variant/40 hover:bg-surface-container-high hover:border-outline-variant";
 
                 return (
                   <button
                     key={day}
                     onClick={() => setSelectedDay(day)}
-                    className={`text-left h-20 sm:h-24 p-2 rounded-lg font-label-md transition-all relative border
-                      ${dayLessons.length ? "text-white" : "text-on-surface-variant bg-surface-container hover:brightness-95"}
-                      ${isSelected ? "ring-2 ring-primary scale-[1.02] z-10 shadow-md" : ""}
-                      ${isToday ? "border-4" : "border-outline-variant"}
-                    `}
-                    style={dayLessons.length ? { backgroundColor: color, borderColor: color } : undefined}
+                    className={`text-left min-h-20 sm:min-h-24 p-2 rounded-xl font-label-md transition-all duration-150 relative border flex flex-col ${dayStateClass} ${isSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-surface-container-lowest scale-[1.03] z-10 shadow-lg" : hasLessons ? "shadow-sm hover:shadow-md hover:brightness-[1.03]" : ""} ${isToday ? "ring-2 ring-primary/50 ring-inset" : ""}`}
                   >
                     {isToday && (
-                      <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-secondary-container text-on-secondary-container text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tighter z-20">
+                      <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-primary text-on-primary text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tighter z-20 shadow-sm">
                         Сегодня
                       </span>
                     )}
-                    <span className="font-bold">{day}</span>
-                    {dayLessons.slice(0, 1).map((l) => (
-                      <div
-                        key={l.id}
-                        className="mt-1 hidden sm:block overflow-hidden text-ellipsis whitespace-nowrap text-[10px] bg-white rounded px-1"
-                        style={{ color }}
-                      >
-                        {coursesById[l.course_id]?.title ?? coursesById[l.course_id]?.subject ?? l.topic}
-                      </div>
-                    ))}
-                    {dayLessons.length > 1 && (
-                      <div className="text-[9px] mt-0.5 opacity-90">+{dayLessons.length - 1} ещё</div>
-                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[13px]">{day}</span>
+                    </div>
+                    <div className="mt-1 space-y-1 overflow-hidden flex-1">
+                      {(isExpanded ? dayLessons : dayLessons.slice(0, 3)).map((l) => {
+                        const info = lessonShortInfo(l);
+                        return (
+                          <div
+                            key={l.id}
+                            className="rounded-md bg-white/80 text-on-surface px-1.5 py-1 text-[9px] sm:text-[10px] leading-tight shadow-[0_1px_1px_rgba(0,0,0,0.04)] flex items-start gap-1"
+                          >
+                            <span className="shrink-0 text-[8px] sm:text-[9px] font-semibold opacity-70 pt-px">
+                              {l.start_time?.slice(0, 5) || "—"}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="font-bold truncate">{info.subject}</div>
+                              <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 font-semibold opacity-80">
+                                {info.classes.length > 0 && <span>{info.classes.join(", ")}</span>}
+                                <span>{info.format}</span>
+                                <span>{info.location}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {dayLessons.length > 3 && (
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setExpandedDays((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(day)) next.delete(day);
+                              else next.add(day);
+                              return next;
+                            });
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setExpandedDays((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(day)) next.delete(day);
+                                else next.add(day);
+                                return next;
+                              });
+                            }
+                          }}
+                          className="text-[9px] font-bold text-primary cursor-pointer hover:underline"
+                        >
+                          {isExpanded ? "Свернуть" : `+ ещё ${dayLessons.length - 3}`}
+                        </div>
+                      )}
+                    </div>
                   </button>
                 );
               })}
