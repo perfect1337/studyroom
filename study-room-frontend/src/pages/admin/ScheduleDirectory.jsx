@@ -1115,20 +1115,6 @@ export default function ScheduleDirectory({ role }) {
                           <span className="bg-primary text-on-primary text-[10px] px-2 py-0.5 rounded-full font-bold uppercase shrink-0">Сегодня</span>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {peakOverlap && (
-                          <span
-                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-white/80 text-on-surface text-[10px] font-bold leading-none border border-outline-variant/40"
-                            title={`Одновременно ${peakOverlap.count} очных занятия в филиале, в ${minutesToHHMM(peakOverlap.start)}`}
-                          >
-                            <span className="material-symbols-outlined text-[11px]">meeting_room</span>
-                            {peakOverlap.count} в {minutesToHHMM(peakOverlap.start)}
-                          </span>
-                        )}
-                        {dayLessons.length > 0 && (
-                          <span className="text-xs font-bold text-on-surface-variant">{dayLessons.length} {dayLessons.length === 1 ? "занятие" : dayLessons.length < 5 ? "занятия" : "занятий"}</span>
-                        )}
-                      </div>
                     </div>
                     {dayLessons.length === 0 ? (
                       <div className="text-sm text-on-surface-variant">Занятий нет</div>
