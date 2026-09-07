@@ -1223,16 +1223,6 @@ export default function ScheduleDirectory({ role }) {
                     )}
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-[13px]">{day}</span>
-                      {peakOverlap && (
-                        <span
-                          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-white/70 text-on-surface text-[8px] sm:text-[9px] font-bold leading-none"
-                          title={`Одновременно ${peakOverlap.count} очных занятия в филиале, в ${minutesToHHMM(peakOverlap.start)}${roomOverlaps.length > 1 ? " (и в другое время тоже есть пересечения)" : ""}`}
-                        >
-                          <span className="material-symbols-outlined text-[10px] sm:text-[11px]">meeting_room</span>
-                          {peakOverlap.count} в {minutesToHHMM(peakOverlap.start)}
-                          {roomOverlaps.length > 1 && ` +${roomOverlaps.length - 1}`}
-                        </span>
-                      )}
                     </div>
                     <div className="mt-1 space-y-1 overflow-hidden flex-1">
                       {(isExpanded ? dayLessons : dayLessons.slice(0, 3)).map((l) => {
