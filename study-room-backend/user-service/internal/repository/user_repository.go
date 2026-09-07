@@ -221,7 +221,7 @@ func (r *UserRepository) DeleteParentCascade(ctx context.Context, parentID int64
 		return nil, ErrNotFound
 	}
 
-	rows, err := tx.Query(ctx, `SELECT u.id, u.email, u.phone, u.password_hash, u.role, u.last_name, u.first_name, u.patronymic, u.avatar_url, u.branch_id, u.is_active, u.created_at, u.updated_at FROM users u WHERE u.id = $1 OR u.id IN (SELECT student_id FROM parent_student WHERE parent_id = $1) ORDER BY u.id`, parentID)
+	rows, err := tx.Query(ctx, `SELECT u.id, u.email, u.phone, u.password_hash, u.role, u.last_name, u.first_name, u.patronymic, u.avatar_url, u.branch_id, u.is_active, u.created_at, u.updated_at, u.is_tutor FROM users u WHERE u.id = $1 OR u.id IN (SELECT student_id FROM parent_student WHERE parent_id = $1) ORDER BY u.id`, parentID)
 	if err != nil {
 		return nil, err
 	}

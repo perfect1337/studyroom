@@ -161,7 +161,7 @@ func (r *ParentChildRepository) ListChildren(ctx context.Context, parentID int64
 		args = append(args, "%"+search+"%")
 	}
 	query := `SELECT u.id, u.email, u.phone, u.password_hash, u.role, u.last_name, u.first_name,
-		u.patronymic, u.avatar_url, u.branch_id, u.is_active, u.created_at, u.updated_at
+		u.patronymic, u.avatar_url, u.branch_id, u.is_active, u.created_at, u.updated_at, u.is_tutor
 		FROM users u
 		INNER JOIN parent_student ps ON ps.student_id = u.id
 		` + where + ` ORDER BY u.id`
