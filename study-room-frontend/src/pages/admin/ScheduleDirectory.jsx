@@ -4,8 +4,9 @@ import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import EditLessonModal from "../../components/lessons/EditLessonModal.jsx";
 import BulkCreateLessonsModal from "../../components/lessons/BulkCreateLessonsModal.jsx";
+import CreateLessonModal from "../../components/lessons/CreateLessonModal.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchLessons, fetchCourses } from "../../api/academic.js";
+import { fetchLessons, fetchCourses, createLesson } from "../../api/academic.js";
 import { fetchMyPeople, fetchBranches, fetchUserById } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import { subscribeQuery } from "../../api/queryCache.js";
@@ -433,6 +434,9 @@ export default function ScheduleDirectory({ role }) {
   // так что доступные для открытия модалки занятия и так ограничены правами).
   const [editingLesson, setEditingLesson] = useState(null);
   const [bulkCreateOpen, setBulkCreateOpen] = useState(false);
+  const [singleCreateOpen, setSingleCreateOpen] = useState(false);
+  const [copyingMonth, setCopyingMonth] = useState(false);
+  const [copyProgress, setCopyProgress] = useState("");
 
   // При PATCH обновляем занятие локально, не дожидаясь перезагрузки месяца —
   // отзывчивее для пользователя.
@@ -486,6 +490,75 @@ export default function ScheduleDirectory({ role }) {
     setLessons((prev) => prev.filter((l) => l.id !== lessonId));
     setEditingLesson(null);
     setSelectedLesson((prev) => (prev && prev.id === lessonId ? null : prev));
+  }
+
+  async function handleCopyMonthToNext() {
+    setCopyingMonth(true);
+    setCopyProgress("Загрузка занятий...");
+    try {
+      const date_from = toISODate(viewYear, viewMonth, 1);
+      const date_to = toISODate(viewYear, viewMonth, daysInMonth);
+      const [lessonsRes] = await Promise.all([
+        fetchLessons({
+          tutor_id: tutorFilter ? Number(tutorFilter) : undefined,
+          student_id: studentFilter ? Number(studentFilter) : undefined,
+          branch_id: isOwner && branchFilter ? Number(branchFilter) : undefined,
+          date_from,
+          date_to,
+        }),
+      ]);
+      const sourceLessons = lessonsRes?.items ?? [];
+      if (!sourceLessons.length) {
+        setCopyProgress("В этом месяце нет занятий для дублирования");
+        setCopyingMonth(false);
+        return;
+      }
+      const targetMonth = viewMonth === 11 ? 0 : viewMonth + 1;
+      const targetYear = viewMonth === 11 ? viewYear + 1 : viewYear;
+      const daysInTarget = new Date(targetYear, targetMonth + 1, 0).getDate();
+      let created = 0;
+      let failed = [];
+      for (const lesson of sourceLessons) {
+        setCopyProgress(`Дублирование: ${created + 1} из ${sourceLessons.length}...`);
+        const sourceDate = new Date(String(lesson.lesson_date).slice(0, 10) + "T12:00:00");
+        const dayOfWeek = sourceDate.getDay();
+        const targetDate = new Date(targetYear, targetMonth, 1);
+        const firstDayOfWeek = targetDate.getDay();
+        const weekOffset = Math.floor((sourceDate.getDate() - 1 + firstDayOfWeek) / 7);
+        let targetDay = 1 + (dayOfWeek - firstDayOfWeek + 7) % 7 + weekOffset * 7;
+        if (targetDay > daysInTarget) {
+          failed.push(`${lesson.lesson_date} — нет такой даты в следующем месяце`);
+          continue;
+        }
+        const targetISO = `${targetYear}-${pad(targetMonth + 1)}-${pad(targetDay)}`;
+        try {
+          await createLesson({
+            course_id: lesson.course_id,
+            tutor_id: lesson.tutor_id,
+            topic: lesson.topic,
+            lesson_date: targetISO,
+            start_time: lesson.start_time,
+            end_time: lesson.end_time,
+            location_type: lesson.location_type,
+            group_type: lesson.group_type,
+            comment: lesson.comment,
+            student_id: lesson.student_id,
+            participant_ids: lesson.participant_ids,
+          });
+          created++;
+        } catch (e) {
+          failed.push(`${targetISO} — ${e.message || "ошибка"}`);
+        }
+      }
+      setCopyProgress(`Создано ${created} из ${sourceLessons.length}${failed.length ? `. Ошибок: ${failed.length}` : "."}`);
+      if (failed.length === 0) {
+        load({ silent: true });
+      }
+    } catch (e) {
+      setCopyProgress("Ошибка: " + (e.message || "не удалось загрузить занятия"));
+    } finally {
+      setCopyingMonth(false);
+    }
   }
 
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
@@ -995,7 +1068,7 @@ export default function ScheduleDirectory({ role }) {
         )}
       </div>
 
-      <div className="flex justify-end mb-4">
+      <div className="flex flex-wrap justify-end gap-3 mb-4">
         <button
           type="button"
           onClick={() => setBulkCreateOpen(true)}
@@ -1004,7 +1077,28 @@ export default function ScheduleDirectory({ role }) {
           <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center shrink-0 group-hover:rotate-90 transition-transform duration-200">
             <span className="material-symbols-outlined text-[16px]">add</span>
           </span>
-          Быстро создать занятия на месяц
+          Добавить занятие
+        </button>
+        <button
+          type="button"
+          onClick={() => setSingleCreateOpen(true)}
+          className="group w-full sm:w-auto inline-flex items-center justify-center gap-2.5 pl-3.5 pr-5 py-2.5 rounded-full border border-outline-variant text-on-surface-variant font-label-md text-label-md hover:bg-surface-container-high transition-all duration-150 active:scale-[0.98]"
+        >
+          <span className="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center shrink-0 group-hover:bg-surface-container-high transition-colors duration-200">
+            <span className="material-symbols-outlined text-[16px]">event</span>
+          </span>
+          Добавить одно занятие
+        </button>
+        <button
+          type="button"
+          onClick={handleCopyMonthToNext}
+          disabled={copyingMonth}
+          className="group w-full sm:w-auto inline-flex items-center justify-center gap-2.5 pl-3.5 pr-5 py-2.5 rounded-full border border-outline-variant text-on-surface-variant font-label-md text-label-md hover:bg-surface-container-high transition-all duration-150 disabled:opacity-60 active:scale-[0.98]"
+        >
+          <span className="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center shrink-0 group-hover:bg-surface-container-high transition-colors duration-200">
+            <span className="material-symbols-outlined text-[16px]">content_copy</span>
+          </span>
+          {copyingMonth ? "Копирование..." : "Дублировать на след. месяц"}
         </button>
       </div>
 
@@ -1484,6 +1578,39 @@ export default function ScheduleDirectory({ role }) {
         onClose={() => setBulkCreateOpen(false)}
         onCreated={() => load({ silent: true })}
       />
+
+      <CreateLessonModal
+        open={singleCreateOpen}
+        onClose={() => setSingleCreateOpen(false)}
+        onCreated={() => load({ silent: true })}
+        courses={courses}
+        tutors={people.tutors}
+        students={people.students}
+        branches={branches}
+        isOwner={isOwner}
+      />
+
+      {copyProgress && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-surface-container-lowest rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-primary">content_copy</span>
+              </div>
+              <h3 className="font-headline-sm text-headline-sm text-on-surface">Дублирование занятий</h3>
+            </div>
+            <p className="font-body-md text-on-surface-variant">{copyProgress}</p>
+            {copyProgress.includes("Создано") && (
+              <button
+                onClick={() => setCopyProgress("")}
+                className="w-full px-6 py-2.5 rounded-lg font-label-md text-label-md bg-primary text-on-primary hover:bg-on-primary-fixed-variant transition-colors"
+              >
+                Закрыть
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <EditLessonModal
         open={!!editingLesson}
