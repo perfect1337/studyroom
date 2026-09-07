@@ -645,7 +645,7 @@ func (r *LessonRepository) OverdueContractByLessons(ctx context.Context, lessonI
 			FROM enrollments e
 			WHERE e.course_id = l.course_id
 			  AND e.student_id = lp.student_id
-			  AND e.status = 'active'
+			  AND e.status <> 'terminated'
 			  AND (e.start_date IS NULL OR e.start_date <= l.lesson_date)
 			  AND (e.end_date IS NULL OR e.end_date >= l.lesson_date)
 		  )

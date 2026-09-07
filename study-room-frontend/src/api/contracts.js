@@ -76,6 +76,7 @@ export function setContractPaymentStatus(id, payment_status) {
   return contractsApi(`/${id}/payment-status`, { method: "PATCH", body: { payment_status } }).then((res) => {
     invalidateQuery(["contracts"]);
     invalidateQuery(["myContracts"]);
+    invalidateQuery(["lessons"]);
     return res;
   });
 }
