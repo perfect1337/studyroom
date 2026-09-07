@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import * as authApi from "../api/auth.js";
 import { clearSession, getStoredUser, setStoredUser, setTokens } from "../api/http.js";
-import { clearQueryCache } from "../api/queryCache.js";
+import { clearQueryCache, invalidateAllQueries } from "../api/queryCache.js";
 
 const AuthContext = createContext(null);
 
@@ -100,9 +100,42 @@ export function AuthProvider({ children }) {
     });
   }, []);
 
+  // Включает/выключает "версию учителя" для branch_owner (настройки ->
+  // тумблер "Зарегистрироваться как учитель", см. SettingsPage.jsx).
+  // PATCH /users/me/tutor-mode меняет is_tutor на бэкенде и тут же
+  // перевыпускает access_token — сохраняем его через setTokens(), иначе
+  // право пользоваться /tutor/* появится только после следующего
+  // /auth/refresh (а до этого ProtectedRoute будет пускать по старому,
+  // ещё не обновлённому токену).
+  const setTutorMode = useCallback(async (enabled) => {
+    const data = await authApi.setTutorMode(enabled);
+    setTokens(data);
+    setStoredUser(data.user);
+    setUser(data.user);
+    // Раньше здесь кэш не трогали: GET /users (fetchMyPeople) кэшируется на
+    // 20с по ключу ["myPeople", {...}] и именно из него берут список
+    // преподавателей и TeachersDirectory.jsx (раздел "Учителя" — включённый
+    // is_tutor должен добавить/убрать самого branch_owner из списка), и
+    // ScheduleDirectory.jsx (тьютор в фильтре и в выпадающих списках формы
+    // создания занятия). Ни та, ни другая страница не подписаны на
+    // invalidateQuery для "myPeople" (только грузят его при монтировании), а
+    // сам тумблер лежит в /settings — отдельном маршруте, так что после
+    // переключения и перехода на "Учителя"/"Расписание" эти страницы
+    // монтируются заново и просто забирают ещё не протухший кэш, то есть
+    // показывают состояние ДО переключения, пока не истечёт staleTime или
+    // пользователь не нажмёт F5 (что сбрасывает кэш целиком вместе со всем
+    // приложением). invalidateAllQueries() решает это так же, как и кнопка
+    // переключения версии в Sidebar.jsx: помечает весь кэш устаревшим, не
+    // трогая уже показанные данные — следующий заход на любую страницу (и
+    // любой уже смонтированный виджет, подписанный на инвалидацию) тихо
+    // подтянет актуальный список сам, без видимой перезагрузки.
+    invalidateAllQueries();
+    return data.user;
+  }, []);
+
   const value = useMemo(
-    () => ({ user, loading, isAuthenticated: !!user, login, registerParent, logout, updateUser }),
-    [user, loading, login, registerParent, logout, updateUser]
+    () => ({ user, loading, isAuthenticated: !!user, login, registerParent, logout, updateUser, setTutorMode }),
+    [user, loading, login, registerParent, logout, updateUser, setTutorMode]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

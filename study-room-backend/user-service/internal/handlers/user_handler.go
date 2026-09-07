@@ -27,6 +27,12 @@ type UserHandler struct {
 	tutorProfiles   *repository.TutorProfileRepository
 	studentProfiles *repository.StudentProfileRepository
 	events          events.Publisher
+	// tm/cookies — только для SetTutorMode ниже: переключение "версии
+	// учителя" меняет is_tutor в JWT-claims, поэтому нужно сразу
+	// перевыпустить пару токенов (как при логине), а не ждать, пока
+	// естественный /auth/refresh подтянет новое значение.
+	tm      *auth.TokenManager
+	cookies cookieSettings
 }
 
 func NewUserHandler(
@@ -37,6 +43,8 @@ func NewUserHandler(
 	tutorProfiles *repository.TutorProfileRepository,
 	studentProfiles *repository.StudentProfileRepository,
 	pub events.Publisher,
+	tm *auth.TokenManager,
+	cookieOpts CookieOptions,
 ) *UserHandler {
 	if pub == nil {
 		pub = events.NoopPublisher{}
@@ -44,6 +52,12 @@ func NewUserHandler(
 	return &UserHandler{
 		users: users, branches: branches, parentChild: pc,
 		authRepo: authRepo, tutorProfiles: tutorProfiles, studentProfiles: studentProfiles, events: pub,
+		tm: tm,
+		cookies: cookieSettings{
+			secure:   cookieOpts.Secure,
+			sameSite: parseSameSite(cookieOpts.SameSite),
+			domain:   cookieOpts.Domain,
+		},
 	}
 }
 
@@ -171,6 +185,110 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 	h.events.UserUpdated(updated)
 	writeJSON(w, http.StatusOK, updated)
+}
+
+// --- PATCH /users/me/tutor-mode ---
+// Включает/выключает "версию учителя" для владельца филиала (см. models.User.
+// IsTutor): тот же UI и функционал, что у обычного tutor (назначение себе
+// курсов через POST /courses/{id}/tutors в academic-service, создание
+// homework/tests, выставление оценок — см. RequireTutorCapable там), при
+// этом сама роль в токене остаётся branch_owner. Доступно только
+// branch_owner — ни owner, ни tutor, ни остальным ролям переключать
+// нечего (у tutor это право уже есть по самой роли).
+//
+// Выключение, наоборот, УДАЛЯЕТ всю информацию о пользователе как о
+// преподавателе:
+//   - tutor_profile (специализация/статус/рейтинг/стаж) — физически, см.
+//     h.tutorProfiles.Delete ниже;
+//   - назначения курсов (course_tutors) и личные подгруппы в Academic
+//     Service — асинхронно, через событие user.tutor_mode_disabled (см.
+//     TutorModeDisabled в events/publisher.go и detachTutor в
+//     academic-service/internal/events/subscriber.go).
+//
+// При этом уже стоящие в расписании занятия НЕ удаляются и не отменяются —
+// у них только обнуляется tutor_id (см. LessonRepository.
+// DetachTutorFromLessons), т.е. занятие остаётся на месте в расписании
+// филиала, но сам пользователь как преподаватель из него пропадает
+// (назначить занятие может заново любой tutor того же курса).
+//
+// Повторное включение — это, по сути, регистрация заново: профиль
+// преподавателя создаётся с нуля (см. SetStatus ниже), старые course_tutors
+// не восстанавливаются — их нужно назначить заново.
+type setTutorModeRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+func (h *UserHandler) SetTutorMode(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+	if claims.Role != models.RoleBranchOwner {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only a branch owner can toggle teacher mode")
+		return
+	}
+
+	var req setTutorModeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid body")
+		return
+	}
+
+	updated, err := h.users.Update(r.Context(), claims.UserID, map[string]any{"is_tutor": req.Enabled})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to update teacher mode")
+		return
+	}
+
+	if req.Enabled {
+		// Заводим профиль преподавателя с нуля — Upsert идемпотентен и не
+		// упадёт, даже если по каким-то причинам строка уже существует, но
+		// после выключения (см. ветку else) её физически не остаётся, так
+		// что для повторного включения это всегда фактически новая
+		// регистрация в роли преподавателя.
+		if err := h.tutorProfiles.SetStatus(r.Context(), claims.UserID, models.TutorStatusActive); err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to set up teacher profile")
+			return
+		}
+	} else {
+		// Выключение тумблера — полное удаление информации о пользователе
+		// как о преподавателе (см. комментарий над setTutorModeRequest):
+		// сам tutor_profile — здесь, синхронно; назначения курсов/подгруппы
+		// в Academic Service — асинхронно, событием ниже.
+		if err := h.tutorProfiles.Delete(r.Context(), claims.UserID); err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to remove teacher profile")
+			return
+		}
+		h.events.TutorModeDisabled(claims.UserID)
+	}
+
+	// is_tutor меняет содержимое JWT — перевыпускаем токены сразу (как при
+	// логине), иначе фронту пришлось бы ждать естественного /auth/refresh,
+	// чтобы получить доступ к учительским эндпоинтам сразу после переключения
+	// тумблера в настройках.
+	access, err := h.tm.GenerateAccessToken(updated)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "token generation failed")
+		return
+	}
+	refreshPlain, err := auth.GenerateOpaqueToken()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "token generation failed")
+		return
+	}
+	if err := h.authRepo.SaveRefreshToken(r.Context(), updated.ID, auth.HashToken(refreshPlain), h.tm.RefreshTokenExpiry()); err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "could not persist refresh token")
+		return
+	}
+	setRefreshCookie(w, h.cookies, refreshPlain, h.tm.RefreshTokenExpiry())
+
+	full, err := h.users.GetByID(r.Context(), claims.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load user")
+		return
+	}
+	h.events.UserUpdated(full)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"access_token": access,
+		"user":         full,
+	})
 }
 
 // --- 1.8. POST /users/me/change-password ---
@@ -323,6 +441,27 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 		if students != nil {
 			out.Students = students
 		}
+
+		// Если branch_owner включил себе "версию учителя" (см. PATCH
+		// /users/me/tutor-mode), он должен появляться в разделе "Преподаватели"
+		// своего же филиала — иначе ни TeachersDirectory (карточка), ни
+		// TeacherDetail (назначение курсов через course_tutors) его не найдут,
+		// хотя POST /courses/{id}/tutors для его собственного user_id уже
+		// прекрасно работает (см. course_handler.go — там роль tutor_id не
+		// проверяется). Загружаем актуальный флаг из БД, а не из claims.IsTutor:
+		// на другой вкладке/устройстве токен мог ещё не перевыпуститься после
+		// переключения тумблера, а список преподавателей должен быть верным
+		// в любом случае.
+		self, err := h.users.GetByID(ctx, claims.UserID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
+			return
+		}
+		if self.IsTutor && matchesSearch(self, search) {
+			// В начало списка — это тот самый преподаватель, ради которого
+			// он и открыл раздел ("сам себе назначить курс").
+			tutors = append([]*models.User{self}, tutors...)
+		}
 		if tutors != nil {
 			out.Tutors = tutors
 		}
@@ -373,6 +512,21 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
 			return
 		}
+
+		// Владельцы филиалов, включившие себе "версию учителя" (см. PATCH
+		// /users/me/tutor-mode), должны попадать в раздел "Преподаватели" не
+		// только у себя самих (см. ветку RoleBranchOwner выше — там self
+		// добавляется вручную), но и у owner'а — иначе список тьюторов у
+		// владельца сети не совпадает с тем, что видит branch_owner про
+		// самого себя, и owner не может назначить его на курс/увидеть в
+		// TeachersDirectory. Owner видит сразу все филиалы, поэтому просто
+		// проверяем флаг у уже загруженных branchOwners, без похода в БД.
+		for _, bo := range branchOwners {
+			if bo.IsTutor && matchesSearch(bo, search) {
+				tutors = append(tutors, bo)
+			}
+		}
+
 		if students != nil {
 			out.Students = students
 		}
@@ -1226,3 +1380,17 @@ func (h *UserHandler) ResetStudentCredentials(w http.ResponseWriter, r *http.Req
 }
 
 func rolePtr(r models.Role) *models.Role { return &r }
+
+// matchesSearch — то же самое условие, что ILIKE last_name/first_name в
+// user_repository.go (buildListQuery), но применённое к одному, уже
+// загруженному пользователю — см. добавление branch_owner-а самого себя в
+// список преподавателей выше (UserHandler.List, ветка RoleBranchOwner):
+// его нельзя прогнать через тот же SQL-фильтр, т.к. он выбирается не из
+// БД по роли tutor, а подставляется вручную.
+func matchesSearch(u *models.User, search string) bool {
+	if search == "" {
+		return true
+	}
+	q := strings.ToLower(search)
+	return strings.Contains(strings.ToLower(u.LastName), q) || strings.Contains(strings.ToLower(u.FirstName), q)
+}

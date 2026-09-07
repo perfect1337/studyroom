@@ -23,6 +23,16 @@ func (r *TutorProfileRepository) SetStatus(ctx context.Context, userID int64, st
 	return err
 }
 
+// Delete полностью удаляет профиль репетитора (специализация, статус,
+// рейтинг, стаж) — используется при выключении "версии учителя" у
+// branch_owner (см. UserHandler.SetTutorMode), когда по требованию должна
+// удаляться ВСЯ информация о пользователе как о преподавателе, а не только
+// прятаться флагом. Идемпотентно: если строки и не было, ничего не падает.
+func (r *TutorProfileRepository) Delete(ctx context.Context, userID int64) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM tutor_profiles WHERE user_id = $1`, userID)
+	return err
+}
+
 // Upsert создаёт/обновляет профиль репетитора (specialization + status).
 func (r *TutorProfileRepository) Upsert(ctx context.Context, userID int64, specialization string, status models.TutorStatus) error {
 	var spec *string

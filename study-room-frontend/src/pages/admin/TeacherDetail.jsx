@@ -391,6 +391,13 @@ export default function TeacherDetail({ role = "owner" }) {
   const statusOptions = STATUS_OPTIONS_BY_ROLE[role] ?? STATUS_OPTIONS_BY_ROLE.branch_owner;
   const tutorStatus = teacher?.tutor_status ?? "active";
   const isFired = teacher && teacher.is_active === false;
+  // Владелец филиала, открывший себя же (в "версии учителя", см. настройки ->
+  // "Зарегистрироваться как учитель") через этот же раздел "Преподаватели" —
+  // увольнять/деактивировать самого себя отсюда бессмысленно и небезопасно
+  // (сервер это и так отклонит, см. user-service UserHandler.SetStatus:
+  // target.Role должен быть строго tutor), поэтому прячем кнопку "Уволить"
+  // на клиенте, чтобы не показывать действие, которое всё равно вернёт ошибку.
+  const isViewingSelf = !!(user && teacher && String(user.id) === String(teacher.id));
 
   async function handleStatusChange(newStatus) {
     setStatusUpdating(true);
@@ -484,7 +491,7 @@ export default function TeacherDetail({ role = "owner" }) {
             <span className="text-on-surface font-bold truncate">{teacher ? fullName(teacher) : "—"}</span>
           </div>
 
-          {config.canFire && teacher && (
+          {config.canFire && teacher && !isViewingSelf && (
             isFired ? (
               <button
                 onClick={handleReinstate}

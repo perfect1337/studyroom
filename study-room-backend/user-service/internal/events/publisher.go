@@ -17,6 +17,14 @@ const (
 	SubjectUserDeleted            = "user.deleted"
 	SubjectPasswordResetRequested = "password_reset_requested"
 	SubjectUserCredentialsReset   = "user.credentials_reset"
+	// SubjectUserTutorModeDisabled — branch_owner выключил тумблер "версия
+	// учителя" в настройках (см. UserHandler.SetTutorMode). Отдельный subject,
+	// а не переиспользование user.updated: нужно доносить только сам факт
+	// выключения (и чей это user_id), не завязываясь на то, что Academic
+	// Service умеет сравнивать "было/стало" по is_tutor локально (в отличие
+	// от branch_id репетитора, is_tutor нигде в user_refs не хранится и
+	// хранить его там ради одного этого события не нужно).
+	SubjectUserTutorModeDisabled = "user.tutor_mode_disabled"
 )
 
 // Publisher — best-effort: ошибка публикации логируется, HTTP-запрос не валится.
@@ -38,6 +46,13 @@ type Publisher interface {
 	// (например, родитель или owner сбросил доступ ребёнку — см. ResetStudentCredentials).
 	// В отличие от UserCreated, письмо должно говорить "обновлены", а не "созданы".
 	CredentialsReset(u *models.User, tempPassword, notifyEmail string, parentID *int64)
+	// TutorModeDisabled — branch_owner выключил "версию учителя" (is_tutor
+	// true → false). Academic Service подписан на это, чтобы каскадно
+	// отвязать его от course_tutors/enrollments и очистить tutor_id на его
+	// занятиях (сами занятия остаются в расписании — см. detachTutor в
+	// academic-service/internal/events/subscriber.go), не дожидаясь, пока
+	// это как-то выведется из общего user.updated.
+	TutorModeDisabled(userID int64)
 	Close()
 }
 
@@ -92,6 +107,13 @@ type PasswordResetEvent struct {
 	ResetToken string `json:"reset_token"`
 	ResetURL   string `json:"reset_url"`
 	ExpiresAt  string `json:"expires_at"`
+}
+
+// TutorModeDisabledEvent — минимальная полезная нагрузка: подписчику
+// (Academic Service) достаточно числового id, всё остальное (курсы,
+// занятия, подгруппы) он находит по нему сам в своей БД.
+type TutorModeDisabledEvent struct {
+	UserID int64 `json:"user_id"`
 }
 
 type UserDeletedEvent struct {
@@ -172,6 +194,10 @@ func (p *NATSPublisher) UserDeleted(u DeletedUserInfo) {
 	})
 }
 
+func (p *NATSPublisher) TutorModeDisabled(userID int64) {
+	p.publish(SubjectUserTutorModeDisabled, TutorModeDisabledEvent{UserID: userID})
+}
+
 func (p *NATSPublisher) PasswordResetRequested(userID int64, email, resetToken, resetURL string, expiresAt time.Time) {
 	p.publish(SubjectPasswordResetRequested, PasswordResetEvent{
 		UserID: userID, Email: email, ResetToken: resetToken,
@@ -192,6 +218,7 @@ type NoopPublisher struct{}
 func (NoopPublisher) UserCreated(*models.User, string, string, *int64)                {}
 func (NoopPublisher) UserUpdated(*models.User)                                        {}
 func (NoopPublisher) UserDeleted(DeletedUserInfo)                                     {}
+func (NoopPublisher) TutorModeDisabled(int64)                                         {}
 func (NoopPublisher) PasswordResetRequested(int64, string, string, string, time.Time) {}
 func (NoopPublisher) CredentialsReset(*models.User, string, string, *int64)           {}
 func (NoopPublisher) Close()                                                          {}

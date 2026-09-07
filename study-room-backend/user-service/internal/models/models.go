@@ -64,6 +64,16 @@ type User struct {
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 
+	// IsTutor — включает "версию учителя" для владельца филиала
+	// (role=branch_owner): тот же интерфейс и права, что у обычного tutor
+	// (назначение себе курсов через course_tutors, создание homework/tests,
+	// выставление оценок), при этом сама роль в JWT остаётся branch_owner —
+	// см. PATCH /users/me/tutor-mode (UserHandler.SetTutorMode) и
+	// auth.Claims.IsTutor, которым это поле прокидывается в токен.
+	// Для остальных ролей поле ни на что не влияет (для tutor право и так
+	// есть по роли, для прочих ролей эндпоинт переключения недоступен).
+	IsTutor bool `json:"is_tutor"`
+
 	// Заполняются только для role=tutor через LEFT JOIN tutor_profiles в List/ListAll
 	// (см. user_repository.go). Для остальных ролей всегда nil.
 	Specialization *string      `json:"specialization,omitempty"`

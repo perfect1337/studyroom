@@ -105,16 +105,30 @@ func NewRouter(d *Deps) http.Handler {
 				r.Post("/enrollments", enrollHandler.Create)
 			})
 
-			// Курсы: owner управляет курсами всей сети (может создавать курс
-			// сразу на все филиалы), branch_owner — только курсами своего
-			// филиала (руководитель филиала имеет весь тот же функционал, что
-			// и owner, кроме управления сетью филиалов как таковой). Хендлеры
-			// сами принудительно подставляют/проверяют branch_id для
-			// branch_owner — см. CourseHandler.Create/Update/Delete.
+			// Курсы: управление (создание/редактирование/удаление) — только
+			// owner. branch_owner может только просматривать курсы (общий
+			// GET /courses выше, доступный любой роли) — менять или удалять
+			// не может ничего. Раньше branch_owner мог ещё и
+			// создавать/редактировать курсы, но это осознанно убрано: курс
+			// общий на всю сеть, а не привязан к филиалу, поэтому
+			// изменение чужого (в смысле — не только своего филиала) курса
+			// оставлено полностью на владельце сети.
 			r.Group(func(r chi.Router) {
-				r.Use(middleware.RequireRoles(models.RoleOwner, models.RoleBranchOwner))
+				r.Use(middleware.RequireRoles(models.RoleOwner))
 				r.Post("/courses", courseHandler.Create)
 				r.Patch("/courses/{id}", courseHandler.Update)
+			})
+
+			// Удаление курса — тоже только owner. branch_owner не
+			// допускается сюда: удаление курса затрагивает всю сеть
+			// (записи учеников, договоры, историю занятий во всех
+			// филиалах), а не только его собственный филиал, поэтому это
+			// решение оставлено на уровне владельца сети. См. также
+			// дублирующую проверку роли внутри CourseHandler.Delete —
+			// защита от того, что этот роут случайно попадёт не в ту
+			// группу при будущих правках.
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireRoles(models.RoleOwner))
 				r.Delete("/courses/{id}", courseHandler.Delete)
 			})
 
@@ -150,7 +164,12 @@ func NewRouter(d *Deps) http.Handler {
 			})
 
 			r.Group(func(r chi.Router) {
-				r.Use(middleware.RequireRoles(models.RoleTutor))
+				// RequireTutorCapable вместо RequireRoles(RoleTutor): пропускает
+				// ещё и branch_owner, включившего себе "версию учителя" (см.
+				// auth.Claims.CanActAsTutor и users-service PATCH
+				// /users/me/tutor-mode) — единственные три tutor-only действия,
+				// которые иначе оставались бы недоступны такому branch_owner.
+				r.Use(middleware.RequireTutorCapable())
 				r.Post("/homework", homeworkHandler.Create)
 				r.Post("/tests", testHandler.Create)
 				r.Patch("/tests/{id}/grade", testHandler.Grade)

@@ -125,6 +125,25 @@ export function invalidateQuery(keyOrPrefix) {
   staleAndNotify(normalizeKey(keyOrPrefix));
 }
 
+// invalidateAllQueries() — то же самое, что invalidateQuery(...), но сразу
+// для ВСЕХ ключей кэша. Нужно для кнопки-переключателя "версия учителя" /
+// "панель филиала" у branch_owner (см. Sidebar.jsx, FooterLinks): роль в
+// токене при этом не меняется (см. AuthContext.setTutorMode — это отдельный
+// сценарий), переключение происходит чисто на фронте сменой маршрута, а
+// значит без явной инвалидации часть виджетов могла бы молча показать
+// данные, оставшиеся в кэше со времени просмотра "той" версии (staleTime по
+// умолчанию 30с — вполне реальное окно для пары кликов туда-обратно).
+// Как и staleAndNotify — не трогает entry.data, поэтому уже показанные
+// данные остаются на экране, пока каждый ключ тихо не перезапросится в
+// фоне (см. reason "invalidate" в useQuery.js) — ровно то самое "неявное"
+// автообновление, без белого экрана/спиннера на весь layout и без жёсткой
+// перезагрузки страницы браузером.
+export function invalidateAllQueries() {
+  for (const k of cache.keys()) {
+    staleAndNotify(k);
+  }
+}
+
 /** Подписка на изменения конкретного ключа — для useQuery (см. src/hooks/useQuery.js). */
 export function subscribeQuery(key, listener) {
   const entry = getEntry(normalizeKey(key));

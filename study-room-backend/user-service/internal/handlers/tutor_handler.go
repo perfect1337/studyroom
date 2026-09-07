@@ -49,7 +49,7 @@ func (h *TutorHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "tutor not found")
 		return
 	}
-	if target.Role != models.RoleTutor {
+	if target.Role != models.RoleTutor && !(target.Role == models.RoleBranchOwner && target.IsTutor) {
 		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "user is not a tutor")
 		return
 	}

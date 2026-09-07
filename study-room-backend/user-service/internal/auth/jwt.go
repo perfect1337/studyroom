@@ -14,6 +14,14 @@ type Claims struct {
 	UserID   int64       `json:"user_id"`
 	Role     models.Role `json:"role"`
 	BranchID *int64      `json:"branch_id"`
+	// IsTutor — прокидывает models.User.IsTutor в токен, чтобы остальные
+	// сервисы (academic-service и т.п.), проверяющие права ЛОКАЛЬНО по
+	// claims (без похода в User Service), могли считать branch_owner с
+	// этим флагом "способным действовать как tutor" — см. там же
+	// CanActAsTutor()/RequireTutorCapable(). Для role=tutor это поле
+	// избыточно (право и так есть по самой роли), для остальных ролей
+	// игнорируется.
+	IsTutor bool `json:"is_tutor"`
 	jwt.RegisteredClaims
 }
 
@@ -36,6 +44,7 @@ func (tm *TokenManager) GenerateAccessToken(u *models.User) (string, error) {
 		UserID:   u.ID,
 		Role:     u.Role,
 		BranchID: u.BranchID,
+		IsTutor:  u.IsTutor,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(tm.accessTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

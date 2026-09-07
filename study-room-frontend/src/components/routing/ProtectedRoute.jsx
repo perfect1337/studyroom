@@ -24,7 +24,16 @@ export default function ProtectedRoute({ roles, children }) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  if (roles && roles.length && !roles.includes(user.role)) {
+  // Владелец филиала (branch_owner), включивший себе "версию учителя"
+  // (см. настройки -> тумблер "Зарегистрироваться как учитель", user.is_tutor),
+  // пускается на все маршруты роли tutor — так реализовано переключение на
+  // "визуальную картину и функционал учителя" без создания отдельного логина
+  // или дублирования страниц /tutor/*. Роль в токене/user.role при этом
+  // остаётся branch_owner — это временный доступ, а не смена роли.
+  const allowedByTutorMode =
+    roles?.includes("tutor") && user.role === "branch_owner" && !!user.is_tutor;
+
+  if (roles && roles.length && !roles.includes(user.role) && !allowedByTutorMode) {
     return <Navigate to={ROLE_HOME_ROUTE[user.role] ?? "/login"} replace />;
   }
 

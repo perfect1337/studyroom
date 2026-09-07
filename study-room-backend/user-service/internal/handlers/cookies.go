@@ -37,17 +37,25 @@ func parseSameSite(v string) http.SameSite {
 	}
 }
 
-func (h *AuthHandler) setRefreshCookie(w http.ResponseWriter, token string, expires time.Time) {
+// setRefreshCookie — свободная функция поверх cookieSettings (а не только
+// метод AuthHandler), чтобы UserHandler.SetTutorMode тоже мог перевыпустить
+// refresh-cookie при переключении "версии учителя" (см. user_handler.go),
+// не дублируя эти же 8 строк и не завися от приватного поля AuthHandler.
+func setRefreshCookie(w http.ResponseWriter, cookies cookieSettings, token string, expires time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshCookieName,
 		Value:    token,
 		Path:     refreshCookiePath,
-		Domain:   h.cookies.domain,
+		Domain:   cookies.domain,
 		Expires:  expires,
 		HttpOnly: true, // недоступно из JS (document.cookie) — защита от XSS
-		Secure:   h.cookies.secure,
-		SameSite: h.cookies.sameSite,
+		Secure:   cookies.secure,
+		SameSite: cookies.sameSite,
 	})
+}
+
+func (h *AuthHandler) setRefreshCookie(w http.ResponseWriter, token string, expires time.Time) {
+	setRefreshCookie(w, h.cookies, token, expires)
 }
 
 // clearRefreshCookie удаляет cookie на клиенте (logout / компрометация).

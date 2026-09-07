@@ -106,6 +106,14 @@ func (h *TestHandler) List(w http.ResponseWriter, r *http.Request) {
 	case models.RoleBranchOwner:
 		// область branch_owner фильтруется ниже, после загрузки списка —
 		// как в homeworkHandler.List.
+		//
+		// ?tutor_id= — см. тот же параметр в HomeworkHandler.List: сужает
+		// список до "только своих" тестов, когда branch_owner работает в
+		// "версии учителя" (TutorTests.jsx).
+		if v, ok := parseIntQuery(r, "tutor_id"); ok && v != nil {
+			createdBy := *v
+			filter.CreatedBy = &createdBy
+		}
 	default:
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "role not permitted")
 		return

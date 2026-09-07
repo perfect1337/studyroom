@@ -166,6 +166,28 @@ func (h *EnrollmentHandler) List(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
 			return
 		}
+		// Если владелец филиала включил себе "версию учителя" (см. PATCH
+		// /users/me/tutor-mode) и запрашивает СВОИХ учеников как
+		// преподаватель (?tutor_id=<свой id>, так делает фронт в
+		// TutorStudents.jsx/PeopleDirectory для role="tutor"), нужно то же
+		// обогащение через course_tutors, что и у обычного tutor ниже
+		// (см. ListForTutor) — иначе видны только записи, где кому-то
+		// вручную проставили enrollments.tutor_id на него, а ученики,
+		// записанные на его курс(ы) через course_tutors без этой ручной
+		// проставки, из "Моих учеников" пропадают.
+		if v, ok := parseIntQuery(r, "tutor_id"); ok && v != nil && claims.IsTutor && *v == claims.UserID {
+			var courseID *int64
+			if cv, ok := parseIntQuery(r, "course_id"); ok {
+				courseID = cv
+			}
+			enrollments, err := h.repo.ListForTutor(r.Context(), claims.UserID, claims.BranchID, courseID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list enrollments")
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"items": nonNilEnrollments(enrollments)})
+			return
+		}
 		filter.BranchID = claims.BranchID
 		if v, ok := parseIntQuery(r, "tutor_id"); ok {
 			filter.TutorID = v

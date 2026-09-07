@@ -17,7 +17,7 @@ export function fetchCourses({ branch_id, subject, tutor_id } = {}) {
   );
 }
 
-// 2.2 Создать курс (owner)
+// 2.2 Создать курс (owner, branch_owner)
 export function createCourse(payload) {
   return academicApi("/courses", { method: "POST", body: payload }).then((res) => {
     invalidateQuery(["courses"]);
@@ -25,7 +25,17 @@ export function createCourse(payload) {
   });
 }
 
-// 2.2b Удалить курс (owner). Внимание: у enrollments/lessons на courses стоит
+// 2.3 Обновить курс (owner, branch_owner) — можно передать любое подмножество
+// полей (title/subject/format/description), в том числе все сразу.
+export function updateCourse(id, patch) {
+  return academicApi(`/courses/${id}`, { method: "PATCH", body: patch }).then((res) => {
+    invalidateQuery(["courses"]);
+    return res;
+  });
+}
+
+// 2.2b Удалить курс (owner ТОЛЬКО — branch_owner не может, см. api-contracts.md 2.3).
+// Внимание: у enrollments/lessons на courses стоит
 // ON DELETE CASCADE — удаление курса удалит и связанные записи/занятия.
 export function deleteCourse(id) {
   return academicApi(`/courses/${id}`, { method: "DELETE" }).then((res) => {

@@ -75,9 +75,16 @@ type createCourseRequest struct {
 	Description *string             `json:"description"`
 }
 
-// Create — POST /courses, roles: owner, branch_owner. Курс общий для всей
-// сети — филиал не указывается и не сохраняется.
+// Create — POST /courses, roles: owner ТОЛЬКО. branch_owner курсы не
+// создаёт (может только просматривать общий список — см. List). Курс общий
+// для всей сети — филиал не указывается и не сохраняется.
 func (h *CourseHandler) Create(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+	if claims.Role != models.RoleOwner {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only owner can create courses")
+		return
+	}
+
 	var req createCourseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body")
@@ -110,9 +117,18 @@ type updateCourseRequest struct {
 	Description *string              `json:"description"`
 }
 
-// Update — PATCH /courses/{id}, roles: owner, branch_owner. Курс общий для
-// всей сети, поэтому доступен для редактирования из любого филиала.
+// Update — PATCH /courses/{id}, roles: owner ТОЛЬКО. branch_owner курсы не
+// редактирует (может только просматривать — см. List), даже курсы своего
+// же филиала, потому что курс общий для всей сети и не привязан к
+// филиалу. Разрешено менять любое из полей курса (title, subject, format,
+// description) — как по отдельности, так и все сразу.
 func (h *CourseHandler) Update(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+	if claims.Role != models.RoleOwner {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only owner can update courses")
+		return
+	}
+
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid course id")
@@ -151,9 +167,21 @@ func (h *CourseHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, course)
 }
 
-// Delete — DELETE /courses/{id}, roles: owner, branch_owner. Курс общий для
-// всей сети, поэтому доступен для удаления из любого филиала.
+// Delete — DELETE /courses/{id}, roles: owner ТОЛЬКО. branch_owner удалять
+// курсы не может (даже несмотря на то, что может их создавать и
+// редактировать) — удаление курса общей сети затрагивает все филиалы сразу
+// (enrollments, договоры, история занятий), поэтому оставлено только
+// владельцу сети. Ограничение задаётся на уровне роута (см. app.go —
+// отдельная r.Group только с RoleOwner), но проверяем роль ещё раз и здесь,
+// чтобы хендлер был защищён сам по себе, даже если роут когда-нибудь
+// случайно окажется не в той группе.
 func (h *CourseHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+	if claims.Role != models.RoleOwner {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only owner can delete courses")
+		return
+	}
+
 	id, err := parseIntPath(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid course id")

@@ -355,6 +355,28 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Гарантируем строку в course_tutors для (course_id, tutor_id) занятия —
+	// точно так же, как это уже делает EnrollmentRepository.CreateFromContract
+	// для записи по договору (см. комментарий там). Раньше эта гарантия
+	// проверялась только при оформлении договора/записи, а не при создании
+	// самого занятия: branch_owner/owner в этой ручке может назначить на
+	// занятие ЛЮБОГО преподавателя своего филиала — форма никак не ограничивает
+	// выбор курсами, которые он реально ведёт (см. CreateLessonModal.jsx,
+	// там список курсов и преподавателей независимы друг от друга). Ученик
+	// исправно появлялся в расписании тьютора (лист занятий отфильтрован по
+	// tutor_id), но не в разделе "Ученики" — тот берёт активные enrollments
+	// строго через JOIN course_tutors (см. EnrollmentRepository.ListForTutor),
+	// и без этой связи ученик выпадал из списка, хотя занятие с ним у
+	// преподавателя уже стояло в расписании. Идемпотентно (ON CONFLICT DO
+	// NOTHING) — best-effort, чтобы сбой этой вспомогательной операции не
+	// откатывал уже подтверждённое создание занятия.
+	if req.TutorID != 0 {
+		if err := h.courses.AssignTutor(r.Context(), req.CourseID, req.TutorID); err != nil && !errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to link tutor to course")
+			return
+		}
+	}
+
 	lesson, err := h.lessons.Create(r.Context(), repository.LessonInput{
 		CourseID: req.CourseID, TutorID: &req.TutorID, BranchID: claims.BranchID, CreatedBy: claims.UserID,
 		Topic: req.Topic, LessonDate: req.LessonDate, StartTime: req.StartTime, EndTime: req.EndTime,
@@ -592,6 +614,23 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if courseChanged {
 		fields["course_id"] = targetCourseID
+	}
+
+	// Та же гарантия course_tutors, что и в Create (см. комментарий там):
+	// если это обновление меняет преподавателя занятия и/или его курс,
+	// убеждаемся, что итоговая пара (курс, преподаватель) есть в
+	// course_tutors — иначе ученик, которого branch_owner переставил на
+	// другого тьютора прямо в расписании, останется невидим для этого
+	// тьютора в разделе "Ученики" (тот полагается на JOIN course_tutors).
+	effectiveTutorID := lesson.TutorID
+	if req.TutorID != nil {
+		effectiveTutorID = req.TutorID
+	}
+	if (req.TutorID != nil || courseChanged) && effectiveTutorID != nil {
+		if err := h.courses.AssignTutor(r.Context(), targetCourseID, *effectiveTutorID); err != nil && !errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to link tutor to course")
+			return
+		}
 	}
 
 	lesson, err = h.lessons.Update(r.Context(), id, fields)

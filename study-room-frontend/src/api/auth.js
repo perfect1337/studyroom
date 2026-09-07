@@ -45,3 +45,13 @@ export function updateMe(patch) {
 export function changePassword({ current_password, new_password }) {
   return usersApi("/users/me/change-password", { method: "POST", body: { current_password, new_password } });
 }
+
+// Переключить "версию учителя" — только для branch_owner (см. models.User.
+// IsTutor на бэкенде и SettingsPage.jsx). Меняет is_tutor и роль остаётся
+// branch_owner, но сервер тут же перевыпускает access_token (и обновляет
+// refresh-cookie), поэтому дальше AuthContext.setTutorMode должен сохранить
+// новый access_token через setTokens(), иначе новые права появятся только
+// после следующего /auth/refresh.
+export function setTutorMode(enabled) {
+  return usersApi("/users/me/tutor-mode", { method: "PATCH", body: { enabled } });
+}
