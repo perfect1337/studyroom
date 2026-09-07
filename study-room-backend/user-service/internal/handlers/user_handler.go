@@ -1124,7 +1124,7 @@ func (h *UserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	for _, u := range deleted {
 		h.events.UserDeleted(events.DeletedUserInfo{
 			ID: u.ID, Email: u.Email, FirstName: u.FirstName, LastName: u.LastName,
-			Role: u.Role, BranchID: u.BranchID,
+			Role: u.Role, BranchID: u.BranchID, BranchIDs: u.BranchIDs,
 		})
 	}
 	w.WriteHeader(http.StatusNoContent)
