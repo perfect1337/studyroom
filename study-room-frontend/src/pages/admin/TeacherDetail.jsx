@@ -5,7 +5,7 @@ import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import TutorStatusSelect from "../../components/ui/TutorStatusSelect.jsx";
 import Pagination from "../../components/ui/Pagination.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchMyPeople, fetchBranches, setTutorStatus, setUserActive, setUserBranches } from "../../api/users.js";
+import { fetchMyPeople, fetchBranches, setTutorStatus, setUserActive } from "../../api/users.js";
 import { fetchEnrollments, fetchCourses, fetchLessons, fetchTests, fetchSubgroups, assignCourseTutor, removeCourseTutor } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import TutorSubgroupsCard from "../../components/tutor/TutorSubgroupsCard.jsx";
@@ -107,8 +107,6 @@ export default function TeacherDetail({ role = "owner" }) {
   const [error, setError] = useState("");
 
   const [statusUpdating, setStatusUpdating] = useState(false);
-  const [branchUpdating, setBranchUpdating] = useState(false);
-  const [selectedBranchIds, setSelectedBranchIds] = useState([]);
   const [showFireModal, setShowFireModal] = useState(false);
   const [fireStatus, setFireStatus] = useState("");
   const [courseTutorBusyId, setCourseTutorBusyId] = useState(null);
@@ -168,7 +166,6 @@ export default function TeacherDetail({ role = "owner" }) {
       setAllTeacherLessons(allLessonsRes?.items ?? []);
       setSubgroups(subgroupsRes?.items ?? []);
       setBranches(branchesRes?.items ?? []);
-      setSelectedBranchIds((foundTeacher?.branch_ids?.length ? foundTeacher.branch_ids : (foundTeacher?.branch_id ? [foundTeacher.branch_id] : [])).map(Number));
       setTests(testsRes?.items ?? []);
 
       if (!foundTeacher) {
@@ -415,21 +412,6 @@ export default function TeacherDetail({ role = "owner" }) {
     }
   }
 
-  async function handleBranchesSave(nextIds) {
-    const unique = [...new Set(nextIds.map(Number))];
-    if (!unique.length) return;
-    setBranchUpdating(true);
-    setError("");
-    try {
-      const updated = await setUserBranches(teacherId, unique);
-      setTeacher(updated);
-      setSelectedBranchIds((updated?.branch_ids?.length ? updated.branch_ids : [updated.branch_id]).map(Number));
-    } catch (e) {
-      setError(e.message || "Не удалось изменить филиалы преподавателя");
-    } finally {
-      setBranchUpdating(false);
-    }
-  }
 
   async function handleFireConfirm() {
     setFireStatus("saving");
@@ -533,34 +515,7 @@ export default function TeacherDetail({ role = "owner" }) {
                   <div className="text-on-surface-variant font-body-md mb-1 flex flex-wrap items-center justify-center md:justify-start gap-x-1 gap-y-1">
                     <span>{teacher.specialization || "Специализация не указана"}</span>
                     <span>·</span>
-                    {isOwner && !isFired ? (
-                      <div className="flex flex-wrap items-center gap-2">
-                        {branches.map((b) => {
-                          const id = Number(b.id);
-                          const checked = selectedBranchIds.includes(id);
-                          return (
-                            <label key={b.id} className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md border cursor-pointer transition-colors ${checked ? "border-primary/40 bg-primary/10 text-primary" : "border-outline-variant bg-surface-container-lowest text-on-surface-variant"}`}>
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                disabled={branchUpdating}
-                                onChange={() => {
-                                  const next = checked ? selectedBranchIds.filter((x) => x !== id) : [...selectedBranchIds, id];
-                                  setSelectedBranchIds(next);
-                                  if (next.length) handleBranchesSave(next);
-                                }}
-                                className="sr-only"
-                              />
-                              <span className="material-symbols-outlined text-[15px]">{checked ? "check_circle" : "radio_button_unchecked"}</span>
-                              <span>{b.name || b.city || `Филиал #${b.id}`}</span>
-                            </label>
-                          );
-                        })}
-                        <span className="text-[11px] text-on-surface-variant">Первый выбранный — основной</span>
-                      </div>
-                    ) : (
-                      <span>{(teacher?.branch_ids?.length ? teacher.branch_ids : (teacher?.branch_id ? [teacher.branch_id] : [])).map((id) => branchNameById[id] || `Филиал #${id}`).join(", ") || "Филиал не указан"}</span>
-                    )}
+                    <span>{teacher?.branch_id ? (branchNameById[teacher.branch_id] || `Филиал #${teacher.branch_id}`) : "Филиал не указан"}</span>
                   </div>
                   <p className="text-on-surface-variant font-body-md mb-4 text-[13px]">
                     {teacher.email && <span className="mr-4">{teacher.email}</span>}

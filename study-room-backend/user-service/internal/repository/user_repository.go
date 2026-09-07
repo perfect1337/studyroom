@@ -336,11 +336,13 @@ func (r *UserRepository) CreateStudentWithParent(
 }
 
 func (r *UserRepository) SetBranches(ctx context.Context, userID int64, role models.Role, branchIDs []int64) (*models.User, error) {
-	if role != models.RoleTutor && role != models.RoleStudent {
-		return nil, ErrNotFound
+	// Преподаватель всегда находится ровно в одном филиале.
+	// Филиалы ученика являются производными от активных договоров.
+	if role != models.RoleTutor {
+		return nil, errors.New("student branches are assigned automatically from active contracts")
 	}
-	if len(branchIDs) == 0 {
-		return nil, errors.New("at least one branch is required")
+	if len(branchIDs) != 1 {
+		return nil, errors.New("a tutor must belong to exactly one branch")
 	}
 	seen := map[int64]struct{}{}
 	unique := make([]int64, 0, len(branchIDs))
@@ -407,6 +409,79 @@ func (r *UserRepository) SetBranches(ctx context.Context, userID int64, role mod
 		return nil, err
 	}
 	return r.GetByID(ctx, userID)
+}
+
+// AddStudentContractBranch adds an active-contract source for a student branch.
+// The source is kept separately so two contracts in the same branch do not
+// cancel each other when only one contract ends.
+func (r *UserRepository) AddStudentContractBranch(ctx context.Context, contractID, studentID, branchID int64) error {
+	if contractID <= 0 || studentID <= 0 || branchID <= 0 {
+		return errors.New("contract_id, student_id and branch_id are required")
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var role models.Role
+	if err := tx.QueryRow(ctx, `SELECT role FROM users WHERE id=$1 FOR UPDATE`, studentID).Scan(&role); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if role != models.RoleStudent {
+		return errors.New("user is not a student")
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO student_contract_branches (contract_id, student_id, branch_id) VALUES ($1,$2,$3) ON CONFLICT (contract_id) DO UPDATE SET student_id=EXCLUDED.student_id, branch_id=EXCLUDED.branch_id`, contractID, studentID, branchID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO user_branch_memberships (user_id, branch_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, studentID, branchID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE users SET branch_id=$1, updated_at=now() WHERE id=$2 AND branch_id IS NULL`, branchID, studentID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// RemoveStudentContractBranch removes one contract's branch source. The
+// derived student membership disappears only when no other active contract
+// still uses that branch.
+func (r *UserRepository) RemoveStudentContractBranch(ctx context.Context, contractID, studentID int64) error {
+	if contractID <= 0 || studentID <= 0 {
+		return errors.New("contract_id and student_id are required")
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var branchID int64
+	err = tx.QueryRow(ctx, `SELECT branch_id FROM student_contract_branches WHERE contract_id=$1 AND student_id=$2`, contractID, studentID).Scan(&branchID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM student_contract_branches WHERE contract_id=$1 AND student_id=$2`, contractID, studentID); err != nil {
+		return err
+	}
+	if branchID > 0 {
+		var keep int
+		if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM student_contract_branches WHERE student_id=$1 AND branch_id=$2`, studentID, branchID).Scan(&keep); err != nil {
+			return err
+		}
+		if keep == 0 {
+			if _, err := tx.Exec(ctx, `DELETE FROM user_branch_memberships WHERE user_id=$1 AND branch_id=$2`, studentID, branchID); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := tx.Exec(ctx, `UPDATE users SET branch_id=(SELECT ubm.branch_id FROM user_branch_memberships ubm WHERE ubm.user_id=users.id ORDER BY ubm.branch_id LIMIT 1), updated_at=now() WHERE id=$1 AND role='student'`, studentID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 type ListFilter struct {
