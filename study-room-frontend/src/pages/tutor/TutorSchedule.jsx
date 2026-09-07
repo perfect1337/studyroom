@@ -88,6 +88,23 @@ export default function TutorSchedule() {
   // выборку по tutor_id = свой, student_id лишь дополнительно сужает её
   // (см. academic-service LessonHandler.List, case RoleTutor).
   const [studentFilter, setStudentFilter] = useState("");
+  // Панель подробностей выбранного дня (справа на десктопе, снизу — на
+  // телефонах и планшетах). detailPanelRef + scrollToDetailsOnMobile — тот же
+  // приём, что и в расписании управляющего филиалом/владельца сети (см.
+  // ScheduleDirectory.jsx): по клику на день/занятие в мобильной раскладке
+  // (когда панель уходит под календарь) страницу нужно явно проскроллить
+  // вниз, к якорю панели, иначе пользователь не заметит появившиеся детали.
+  const detailPanelRef = useRef(null);
+  function scrollToDetailsOnMobile() {
+    if (typeof window === "undefined" || !window.matchMedia("(max-width: 1023px)").matches) return;
+    requestAnimationFrame(() => {
+      detailPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+  function selectDay(day) {
+    setSelectedDay(day);
+    scrollToDetailsOnMobile();
+  }
 
   // Занятие, которое сейчас редактируется. Список lessons уже отфильтрован
   // сервером по tutor_id = свой (см. fetchLessons({ tutor_id: user.id, ... })
@@ -467,11 +484,13 @@ export default function TutorSchedule() {
               </div>
             )}
 
-            {/* Мобильный вид: список дней в одну колонку (как у управляющего
+            {/* Мобильный/планшетный вид: карточки дней (как у управляющего
                 филиалом, см. ScheduleDirectory.jsx) — тесная сетка 7 колонок
-                на маленьких экранах читать неудобно, поэтому на sm и уже
-                показываем расписание в виде развёрнутых карточек по дням. */}
-            <div className="sm:hidden space-y-2">
+                неудобна не только на телефонах, но и на планшетах (с учётом
+                постоянной боковой панели DashboardShell реальной ширины для
+                неё не хватает вплоть до lg), поэтому показываем расписание
+                карточками по дням: одна колонка на телефоне, две — на планшете. */}
+            <div className="lg:hidden grid grid-cols-1 md:grid-cols-2 gap-2">
               {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day = i + 1;
                 const dayLessons = lessonsByDay[day] ?? [];
@@ -485,7 +504,7 @@ export default function TutorSchedule() {
                 return (
                   <button
                     key={`mobile-day-${day}`}
-                    onClick={() => setSelectedDay(day)}
+                    onClick={() => selectDay(day)}
                     className={`w-full text-left p-3 rounded-xl border ${dayStateClass} ${isSelected ? "ring-2 ring-primary ring-offset-1" : ""}`}
                   >
                     <div className="flex items-center justify-between gap-3 mb-2">
@@ -562,7 +581,7 @@ export default function TutorSchedule() {
               })}
             </div>
 
-            <div className="hidden sm:grid sm:grid-cols-7 text-center mb-4 border-b border-outline-variant/30 pb-2">
+            <div className="hidden lg:grid lg:grid-cols-7 text-center mb-4 border-b border-outline-variant/30 pb-2">
               {WEEKDAYS.map((d) => (
                 <div key={d} className="font-label-md text-label-md text-outline">
                   {d}
@@ -570,7 +589,7 @@ export default function TutorSchedule() {
               ))}
             </div>
 
-            <div className="hidden sm:grid sm:grid-cols-7 gap-1.5">
+            <div className="hidden lg:grid lg:grid-cols-7 gap-1.5">
               {Array.from({ length: firstWeekday }).map((_, i) => (
                 <div key={`pad-${i}`} className="h-24" />
               ))}
@@ -592,8 +611,8 @@ export default function TutorSchedule() {
                 return (
                   <button
                     key={day}
-                    onClick={() => setSelectedDay(day)}
-                    className={`text-left min-h-24 p-2 rounded-xl font-label-md transition-all duration-150 relative border flex flex-col ${dayStateClass} ${isSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-surface-container-lowest scale-[1.03] z-10 shadow-lg" : hasLessons ? "shadow-sm hover:shadow-md hover:brightness-[1.03]" : ""} ${isToday ? "ring-2 ring-primary/50 ring-inset" : ""}`}
+                    onClick={() => selectDay(day)}
+                    className={`text-left min-h-28 p-2 rounded-xl font-label-md transition-all duration-150 relative border flex flex-col ${dayStateClass} ${isSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-surface-container-lowest scale-[1.03] z-10 shadow-lg" : hasLessons ? "shadow-sm hover:shadow-md hover:brightness-[1.03]" : ""} ${isToday ? "ring-2 ring-primary/50 ring-inset" : ""}`}
                   >
                     {isToday && (
                       <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-primary text-on-primary text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tighter z-20 shadow-sm">
@@ -664,7 +683,7 @@ export default function TutorSchedule() {
         </div>
 
         {/* Detail panel */}
-        <div className="lg:col-span-3">
+        <div ref={detailPanelRef} className="lg:col-span-3 scroll-mt-24">
           <div className="sticky top-24 space-y-stack-lg">
             {!selectedDay || selectedLessons.length === 0 ? (
               <div className="bg-surface-container-lowest rounded-xl shadow-xl overflow-hidden border border-outline-variant border-t-8 border-primary">

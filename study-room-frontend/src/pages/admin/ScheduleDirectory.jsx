@@ -216,8 +216,11 @@ function WeekGrid({ weekDays, weekTimes, lessonsByDay, todayDay, lessonShortInfo
 
   return (
     <div>
-      {/* Мобильный вид */}
-      <div className="sm:hidden">
+      {/* Мобильный вид (включая планшеты — см. lessonsByDay ниже: с учётом
+          постоянной боковой панели (256px, DashboardShell) реальной ширины
+          на sm/md-планшетах недостаточно для таблицы "время x день", поэтому
+          компактный вид дней недели используется вплоть до lg). */}
+      <div className="lg:hidden">
         <div className="grid grid-cols-7 gap-1 mb-3">
           {weekDays.map((day, idx) => (
             <button
@@ -286,8 +289,10 @@ function WeekGrid({ weekDays, weekTimes, lessonsByDay, todayDay, lessonShortInfo
         )}
       </div>
 
-      {/* Десктопный вид: время x день, как в исходной таблице */}
-      <div className="hidden sm:block overflow-x-auto">
+      {/* Десктопный вид: время x день, как в исходной таблице. Начинается с lg —
+          на sm/md (телефоны и планшеты, включая планшеты с учётом бокового
+          меню DashboardShell) реальной ширины для таблицы недостаточно. */}
+      <div className="hidden lg:block overflow-x-auto">
         <table className="w-full border-collapse min-w-[640px] table-fixed">
           <colgroup>
             <col className="w-16" />
@@ -1082,7 +1087,10 @@ export default function ScheduleDirectory({ role }) {
 
             {!isWeekMode && (
             <div className="pb-1">
-            <div className="sm:hidden space-y-2">
+            {/* Мобильный/планшетный вид: карточки дней. На телефонах — одна
+                колонка, на планшетах (md, с учётом боковой панели см. lg:hidden
+                выше) — две колонки, чтобы не пропадал впустую доступный экран. */}
+            <div className="lg:hidden grid grid-cols-1 md:grid-cols-2 gap-2">
               {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day = i + 1;
                 const dayLessons = lessonsByDay[day] ?? [];
@@ -1175,7 +1183,7 @@ export default function ScheduleDirectory({ role }) {
               })}
             </div>
 
-            <div className="hidden sm:grid sm:grid-cols-7 text-center mb-4 border-b border-outline-variant/30 pb-2">
+            <div className="hidden lg:grid lg:grid-cols-7 text-center mb-4 border-b border-outline-variant/30 pb-2">
               {WEEKDAYS.map((d) => (
                 <div key={d} className="font-label-md text-label-md text-outline">
                   {d}
@@ -1183,9 +1191,9 @@ export default function ScheduleDirectory({ role }) {
               ))}
             </div>
 
-            <div className="hidden sm:grid sm:grid-cols-7 gap-1.5">
+            <div className="hidden lg:grid lg:grid-cols-7 gap-1.5">
               {Array.from({ length: firstWeekday }).map((_, i) => (
-                <div key={`pad-${i}`} className="h-20 sm:h-24" />
+                <div key={`pad-${i}`} className="h-24" />
               ))}
               {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day = i + 1;
@@ -1214,7 +1222,7 @@ export default function ScheduleDirectory({ role }) {
                   <button
                     key={day}
                     onClick={() => { setSelectedDay(day); setSelectedLesson(null); setDetailPage(0); }}
-                    className={`text-left min-h-24 sm:min-h-28 p-2 rounded-xl font-label-md transition-all duration-150 relative border flex flex-col ${dayStateClass} ${isSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-surface-container-lowest scale-[1.03] z-10 shadow-lg" : hasLessons ? "shadow-sm hover:shadow-md hover:brightness-[1.03]" : ""} ${isToday ? "ring-2 ring-primary/50 ring-inset" : ""}`}
+                    className={`text-left min-h-28 p-2 rounded-xl font-label-md transition-all duration-150 relative border flex flex-col ${dayStateClass} ${isSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-surface-container-lowest scale-[1.03] z-10 shadow-lg" : hasLessons ? "shadow-sm hover:shadow-md hover:brightness-[1.03]" : ""} ${isToday ? "ring-2 ring-primary/50 ring-inset" : ""}`}
                   >
                     {isToday && (
                       <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-primary text-on-primary text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tighter z-20 shadow-sm">
@@ -1228,8 +1236,8 @@ export default function ScheduleDirectory({ role }) {
                       {(isExpanded ? dayLessons : dayLessons.slice(0, 3)).map((l) => {
                         const info = lessonShortInfo(l);
                         return (
-                          <div key={l.id} className="rounded-md bg-white/80 text-on-surface px-1.5 py-1 text-[9px] sm:text-[10px] leading-tight shadow-[0_1px_1px_rgba(0,0,0,0.04)] flex items-start gap-1">
-                            <span className="shrink-0 text-[8px] sm:text-[9px] font-semibold opacity-70 pt-px">
+                          <div key={l.id} className="rounded-md bg-white/80 text-on-surface px-1.5 py-1 text-[10px] leading-tight shadow-[0_1px_1px_rgba(0,0,0,0.04)] flex items-start gap-1">
+                            <span className="shrink-0 text-[9px] font-semibold opacity-70 pt-px">
                               {l.start_time?.slice(0, 5) || "—"}
                             </span>
                             <div className="min-w-0 flex-1">
