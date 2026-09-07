@@ -598,6 +598,15 @@ export default function ScheduleDirectory({ role }) {
                         Сегодня
                       </span>
                     )}
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[13px]">{day}</span>
+                      {onsiteCount > 0 && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-white/70 text-on-surface text-[8px] sm:text-[9px] font-bold leading-none">
+                          <span className="material-symbols-outlined text-[10px] sm:text-[11px]">meeting_room</span>
+                          Занято {onsiteCount}
+                        </span>
+                      )}
+                    </div>
                     <div className="mt-1 space-y-1 overflow-hidden flex-1">
                       {dayLessons.slice(0, 3).map((l) => {
                         const info = lessonShortInfo(l);
