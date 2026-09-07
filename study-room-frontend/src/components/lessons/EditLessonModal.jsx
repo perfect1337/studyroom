@@ -104,6 +104,9 @@ export default function EditLessonModal({
       setError("");
       setConfirmingCancel(false);
       setConfirmingDelete(false);
+      setSaving(false);
+      setCancelling(false);
+      setDeleting(false);
       setCourseSubgroups([]);
       setCourseRoster([]);
       setRosterError("");
@@ -335,11 +338,13 @@ export default function EditLessonModal({
     try {
       await deleteLesson(lesson.id);
       onDeleted?.(lesson.id);
-      onClose?.();
     } catch (err) {
       setError(err.message || "Не удалось удалить занятие");
       setDeleting(false);
+      return;
     }
+    onClose?.();
+    setDeleting(false);
   }
 
   async function handleCancelLesson() {
