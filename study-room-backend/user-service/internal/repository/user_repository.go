@@ -327,6 +327,12 @@ type ListFilter struct {
 	Role     *models.Role
 	Roles    []models.Role // если задан — OR по нескольким ролям (Role игнорируется)
 	BranchID *int64
+	// ChildBranchID — фильтр для Role=RoleParent: оставить только тех
+	// родителей, у которых есть хотя бы один ребёнок (parent_student) в
+	// указанном филиале. Используется branch_owner'ом, которому нужны
+	// только семьи своего филиала (см. UserHandler.List, ветка
+	// RoleBranchOwner).
+	ChildBranchID *int64
 	// IsActive — optional filter by users.is_active.
 	IsActive *bool
 	Search   string
@@ -368,6 +374,11 @@ func (r *UserRepository) List(ctx context.Context, f ListFilter) ([]*models.User
 		args = append(args, *f.IsActive)
 		i++
 	}
+	if f.ChildBranchID != nil {
+		where += " AND EXISTS (SELECT 1 FROM parent_student ps JOIN users su ON su.id = ps.student_id WHERE ps.parent_id = users.id AND su.branch_id = $" + strconv.Itoa(i) + ")"
+		args = append(args, *f.ChildBranchID)
+		i++
+	}
 	if f.Search != "" {
 		where += " AND (users.last_name ILIKE $" + strconv.Itoa(i) + " OR users.first_name ILIKE $" + strconv.Itoa(i) + ")"
 		args = append(args, "%"+f.Search+"%")
@@ -407,6 +418,22 @@ func (r *UserRepository) ListAll(ctx context.Context, f ListFilter) ([]*models.U
 	f.PerPage = 500
 	users, _, err := r.List(ctx, f)
 	return users, err
+}
+
+// HasChildInBranch — есть ли у родителя parentID хотя бы один ребёнок,
+// числящийся в филиале branchID. Используется, чтобы разрешить
+// branch_owner banить/удалять только те семьи, у которых ребёнок учится в
+// его собственном филиале (см. UserHandler.SetStatus / Delete).
+func (r *UserRepository) HasChildInBranch(ctx context.Context, parentID int64, branchID int64) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM parent_student ps
+			JOIN users su ON su.id = ps.student_id
+			WHERE ps.parent_id = $1 AND su.branch_id = $2
+		)
+	`, parentID, branchID).Scan(&exists)
+	return exists, err
 }
 
 func isPgUniqueViolation(err error) bool {

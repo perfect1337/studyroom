@@ -58,6 +58,7 @@ import {
   BranchSchedule,
   BranchCourses,
   BranchFinance,
+  BranchParents,
   AdminBranches,
   AdminCourses,
   SettingsPage,
@@ -158,6 +159,7 @@ function AppRoutes() {
             {/* Управляющий филиалом (role: branch_owner) — отдельный раздел /branch */}
             <Route path="/branch" element={<ProtectedRoute roles={["branch_owner"]}><BranchOverview /></ProtectedRoute>} />
             <Route path="/branch/students" element={<ProtectedRoute roles={["branch_owner"]}><BranchStudents /></ProtectedRoute>} />
+            <Route path="/branch/parents" element={<ProtectedRoute roles={["branch_owner"]}><BranchParents /></ProtectedRoute>} />
             <Route path="/branch/students/:studentId" element={<ProtectedRoute roles={["branch_owner"]}><BranchStudentDetail /></ProtectedRoute>} />
             <Route path="/branch/teachers" element={<ProtectedRoute roles={["branch_owner"]}><BranchTeachers /></ProtectedRoute>} />
             <Route path="/branch/teachers/:teacherId" element={<ProtectedRoute roles={["branch_owner"]}><BranchTeacherDetail /></ProtectedRoute>} />

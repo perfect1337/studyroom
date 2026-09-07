@@ -466,14 +466,14 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 			out.Tutors = tutors
 		}
 
-		// Родители не привязаны к филиалу (у одного родителя могут быть дети
-		// в разных филиалах), поэтому фильтровать их по branch_id нельзя —
-		// это ограничило бы branch_owner только семьями, у которых уже ЕСТЬ
-		// ребёнок в его филиале, и он не смог бы оформить договор для
-		// совершенно новой семьи (ровно так же, как это делает owner —
-		// см. ветку RoleOwner ниже, без фильтра по филиалу).
+		// Раздел «Родители» у branch_owner показывает только семьи, у
+		// которых есть ребёнок, обучающийся именно в его филиале — в
+		// отличие от owner (видит вообще всех родителей сети, см. ветку
+		// RoleOwner ниже). branchFilter здесь уже гарантированно не nil:
+		// выше, в самом начале функции, для RoleBranchOwner без
+		// claims.BranchID мы отдаём emptyDirectory() и не доходим сюда.
 		parents, err := h.users.ListAll(ctx, repository.ListFilter{
-			Role: rolePtr(models.RoleParent), Search: search,
+			Role: rolePtr(models.RoleParent), Search: search, ChildBranchID: branchFilter,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
@@ -957,8 +957,8 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 // committed so Academic/Contracts services can clean up their local data.
 func (h *UserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	claims, _ := middleware.FromContext(r.Context())
-	if claims.Role != models.RoleOwner {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "only owner can delete users")
+	if claims.Role != models.RoleOwner && claims.Role != models.RoleBranchOwner {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only owner or branch_owner can delete users")
 		return
 	}
 
@@ -976,6 +976,24 @@ func (h *UserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	if target.Role != models.RoleParent {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "only parent accounts can be deleted here")
 		return
+	}
+
+	// branch_owner может удалить только семью, у которой есть ребёнок в
+	// его собственном филиале — семьи других филиалов ему недоступны.
+	if claims.Role == models.RoleBranchOwner {
+		if claims.BranchID == nil {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "can only delete parents in your own branch")
+			return
+		}
+		ok, err := h.users.HasChildInBranch(r.Context(), target.ID, *claims.BranchID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "delete failed")
+			return
+		}
+		if !ok {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "can only delete parents in your own branch")
+			return
+		}
 	}
 
 	deleted, err := h.users.DeleteParentCascade(r.Context(), id)
@@ -1021,12 +1039,33 @@ func (h *UserHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// branch_owner может увольнять/восстанавливать только преподавателей
-	// своего собственного филиала — руководитель другого филиала, owner
-	// или сам branch_owner ему недоступны.
+	// branch_owner может увольнять/восстанавливать преподавателей своего
+	// собственного филиала, а также банить/разбанивать семьи (родитель +
+	// дети), у которых есть ребёнок именно в его филиале — руководитель
+	// другого филиала, owner, branch_owner или чужие семьи ему недоступны.
 	if claims.Role == models.RoleBranchOwner {
-		if target.Role != models.RoleTutor || target.BranchID == nil || claims.BranchID == nil || *target.BranchID != *claims.BranchID {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "can only change status of tutors in your own branch")
+		switch target.Role {
+		case models.RoleTutor:
+			if target.BranchID == nil || claims.BranchID == nil || *target.BranchID != *claims.BranchID {
+				writeError(w, http.StatusForbidden, "FORBIDDEN", "can only change status of tutors in your own branch")
+				return
+			}
+		case models.RoleParent:
+			if claims.BranchID == nil {
+				writeError(w, http.StatusForbidden, "FORBIDDEN", "can only change status of parents in your own branch")
+				return
+			}
+			ok, err := h.users.HasChildInBranch(r.Context(), target.ID, *claims.BranchID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
+				return
+			}
+			if !ok {
+				writeError(w, http.StatusForbidden, "FORBIDDEN", "can only change status of parents in your own branch")
+				return
+			}
+		default:
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "can only change status of tutors or parents in your own branch")
 			return
 		}
 	}

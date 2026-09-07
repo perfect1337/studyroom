@@ -49,6 +49,7 @@ export const NAV_ITEMS = {
   branch_owner: [
     { to: "/branch", icon: "dashboard", label: "Обзор", end: true },
     { to: "/branch/students", icon: "group", label: "Студенты" },
+    { to: "/branch/parents", icon: "family_restroom", label: "Родители" },
     { to: "/branch/teachers", icon: "school", label: "Учителя" },
     { to: "/branch/courses", icon: "menu_book", label: "Курсы" },
     { to: "/branch/schedule", icon: "calendar_month", label: "Расписание" },
