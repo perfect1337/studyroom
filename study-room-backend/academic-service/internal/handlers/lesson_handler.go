@@ -145,13 +145,7 @@ func (h *LessonHandler) List(w http.ResponseWriter, r *http.Request) {
 		for _, sid := range l.ParticipantIDs {
 			valid := false
 			for _, e := range enrs {
-				// Для расписания главным критерием является фактический срок
-				// договора на дату занятия. Статус enrollment может на короткое
-				// время отставать от Contracts Service при продлении/изменении
-				// договора (например, старый enrollment уже completed, а новый
-				// ещё синхронизируется). Не считаем такую запись ошибкой, если
-				// договор не расторгнут и его даты покрывают дату занятия.
-				if e.StudentID != sid || e.Status == models.EnrollmentTerminated || e.StartDate == nil || e.EndDate == nil {
+				if e.StudentID != sid || e.Status != models.EnrollmentActive || e.StartDate == nil || e.EndDate == nil {
 					continue
 				}
 				if lessonDate.Before(*e.StartDate) || lessonDate.After(*e.EndDate) {
@@ -265,15 +259,20 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 		req.GroupType = models.GroupIndividual
 	}
 
+	// У занятия должен быть branch_id, иначе занятие, созданное owner
+	// (у owner claims.BranchID обычно nil), не попадает в расписание
+	// branch_owner, которое фильтруется по lessons.branch_id. Определяем
+	// филиал по назначенному преподавателю для обеих ролей.
+	tutorBranch, err := h.userRefs.BranchOf(r.Context(), req.TutorID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check tutor branch")
+		return
+	}
+
 	switch claims.Role {
 	case models.RoleOwner:
-		// любой tutor_id
+		// owner может создавать занятие для преподавателя любого филиала.
 	case models.RoleBranchOwner:
-		tutorBranch, err := h.userRefs.BranchOf(r.Context(), req.TutorID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check tutor branch")
-			return
-		}
 		if claims.BranchID == nil || tutorBranch == nil || *claims.BranchID != *tutorBranch {
 			writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor_id must belong to your branch")
 			return
@@ -383,8 +382,12 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Сохраняем филиал преподавателя, а не claims.BranchID: owner не
+	// принадлежит конкретному филиалу, но созданное им занятие должно быть
+	// видимо branch_owner соответствующего филиала.
+	lessonBranchID := tutorBranch
 	lesson, err := h.lessons.Create(r.Context(), repository.LessonInput{
-		CourseID: req.CourseID, TutorID: &req.TutorID, BranchID: claims.BranchID, CreatedBy: claims.UserID,
+		CourseID: req.CourseID, TutorID: &req.TutorID, BranchID: lessonBranchID, CreatedBy: claims.UserID,
 		Topic: req.Topic, LessonDate: req.LessonDate, StartTime: req.StartTime, EndTime: req.EndTime,
 		LocationType: req.LocationType, GroupType: req.GroupType, Comment: req.Comment,
 		ParticipantIDs: participantIDs,
