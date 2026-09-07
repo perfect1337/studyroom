@@ -258,6 +258,7 @@ export default function ParentSchedule() {
 
   return (
     <DashboardShell
+      fullWidth
       role="parent"
       user={toSidebarUser(user, { childrenCount: children.length })}
       searchPlaceholder="Поиск по расписанию..."
@@ -303,7 +304,7 @@ export default function ParentSchedule() {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-stack-lg">
         {/* Calendar */}
-        <div className="lg:col-span-8 space-y-stack-lg">
+        <div className="lg:col-span-9 space-y-stack-lg">
           <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant">
             <div className="flex items-center justify-between mb-8">
               <div>
@@ -340,7 +341,102 @@ export default function ParentSchedule() {
               </div>
             )}
 
-            <div className="grid grid-cols-7 text-center mb-4 border-b border-outline-variant/30 pb-2">
+            {/* Мобильный вид: список дней в одну колонку (как у управляющего
+                филиалом, см. ScheduleDirectory.jsx) — тесная сетка 7 колонок
+                на маленьких экранах читать неудобно, поэтому на sm и уже
+                показываем расписание в виде развёрнутых карточек по дням. */}
+            <div className="sm:hidden space-y-2">
+              {Array.from({ length: daysInMonth }).map((_, i) => {
+                const day = i + 1;
+                const dayLessons = lessonsByDay[day] ?? [];
+                const isToday = day === todayDay;
+                const isSelected = day === selectedDay;
+                const isExpanded = expandedDays.has(day);
+                const dayStateClass = dayLessons.length
+                  ? "bg-primary-container/60 border-primary/40"
+                  : "bg-surface-container border-outline-variant/40";
+
+                return (
+                  <button
+                    key={`mobile-day-${day}`}
+                    onClick={() => setSelectedDay(day)}
+                    className={`w-full text-left p-3 rounded-xl border ${dayStateClass} ${isSelected ? "ring-2 ring-primary ring-offset-1" : ""}`}
+                  >
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-base font-bold text-on-surface shrink-0">{day}</span>
+                        <span className="text-sm font-semibold text-on-surface-variant shrink-0">
+                          {WEEKDAYS[(firstWeekday + day - 1) % 7]}
+                        </span>
+                        {isToday && (
+                          <span className="bg-primary text-on-primary text-[10px] px-2 py-0.5 rounded-full font-bold uppercase shrink-0">
+                            Сегодня
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {dayLessons.length === 0 ? (
+                      <div className="text-sm text-on-surface-variant">Занятий нет</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {(isExpanded ? dayLessons : dayLessons.slice(0, 6)).map((l) => {
+                          const info = lessonShortInfo(l);
+                          return (
+                            <div
+                              key={l.id}
+                              className="rounded-lg bg-white/80 text-on-surface px-3 py-2"
+                            >
+                              <div className="text-sm font-bold leading-snug break-words">{info.subject}</div>
+                              <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs font-semibold text-on-surface-variant">
+                                <span>
+                                  {l.start_time?.slice(0, 5) || "—"}
+                                  {l.end_time ? `–${l.end_time.slice(0, 5)}` : ""}
+                                </span>
+                                {info.classes.length > 0 && <span>{info.classes.join(", ")}</span>}
+                                <span>{info.format}</span>
+                                <span>{info.location}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {dayLessons.length > 6 && (
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setExpandedDays((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(day)) next.delete(day);
+                                else next.add(day);
+                                return next;
+                              });
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                setExpandedDays((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(day)) next.delete(day);
+                                  else next.add(day);
+                                  return next;
+                                });
+                              }
+                            }}
+                            className="text-sm font-bold text-primary cursor-pointer hover:underline"
+                          >
+                            {isExpanded ? "Свернуть" : `+ ещё ${dayLessons.length - 6}`}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="hidden sm:grid sm:grid-cols-7 text-center mb-4 border-b border-outline-variant/30 pb-2">
               {WEEKDAYS.map((d) => (
                 <div key={d} className="font-label-md text-label-md text-outline">
                   {d}
@@ -348,9 +444,9 @@ export default function ParentSchedule() {
               ))}
             </div>
 
-            <div className="grid grid-cols-7 gap-1.5">
+            <div className="hidden sm:grid sm:grid-cols-7 gap-1.5">
               {Array.from({ length: firstWeekday }).map((_, i) => (
-                <div key={`pad-${i}`} className="h-20 sm:h-24" />
+                <div key={`pad-${i}`} className="h-24" />
               ))}
               {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day = i + 1;
@@ -371,7 +467,7 @@ export default function ParentSchedule() {
                   <button
                     key={day}
                     onClick={() => setSelectedDay(day)}
-                    className={`text-left min-h-20 sm:min-h-24 p-2 rounded-xl font-label-md transition-all duration-150 relative border flex flex-col ${dayStateClass} ${isSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-surface-container-lowest scale-[1.03] z-10 shadow-lg" : hasLessons ? "shadow-sm hover:shadow-md hover:brightness-[1.03]" : ""} ${isToday ? "ring-2 ring-primary/50 ring-inset" : ""}`}
+                    className={`text-left min-h-24 p-2 rounded-xl font-label-md transition-all duration-150 relative border flex flex-col ${dayStateClass} ${isSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-surface-container-lowest scale-[1.03] z-10 shadow-lg" : hasLessons ? "shadow-sm hover:shadow-md hover:brightness-[1.03]" : ""} ${isToday ? "ring-2 ring-primary/50 ring-inset" : ""}`}
                   >
                     {isToday && (
                       <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-primary text-on-primary text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tighter z-20 shadow-sm">
@@ -387,9 +483,9 @@ export default function ParentSchedule() {
                         return (
                           <div
                             key={l.id}
-                            className="rounded-md bg-white/80 text-on-surface px-1.5 py-1 text-[9px] sm:text-[10px] leading-tight shadow-[0_1px_1px_rgba(0,0,0,0.04)] flex items-start gap-1"
+                            className="rounded-md bg-white/80 text-on-surface px-1.5 py-1 text-[10px] leading-tight shadow-[0_1px_1px_rgba(0,0,0,0.04)] flex items-start gap-1"
                           >
-                            <span className="shrink-0 text-[8px] sm:text-[9px] font-semibold opacity-70 pt-px">
+                            <span className="shrink-0 text-[9px] font-semibold opacity-70 pt-px">
                               {l.start_time?.slice(0, 5) || "—"}
                             </span>
                             <div className="min-w-0 flex-1">
@@ -461,7 +557,7 @@ export default function ParentSchedule() {
         </div>
 
         {/* Detail panel */}
-        <div className="lg:col-span-4">
+        <div className="lg:col-span-3">
           <div className="sticky top-24 space-y-stack-lg">
             {!selectedDay || selectedLessons.length === 0 ? (
               <div className="bg-surface-container-lowest rounded-xl shadow-xl overflow-hidden border border-outline-variant border-t-8 border-primary">
