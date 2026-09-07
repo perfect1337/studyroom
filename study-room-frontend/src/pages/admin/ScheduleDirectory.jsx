@@ -412,6 +412,15 @@ export default function ScheduleDirectory({ role }) {
   // оно появляется только в этой подробной карточке после клика.
   const [selectedLesson, setSelectedLesson] = useState(null);
   const detailPanelRef = useRef(null);
+  // Обратный якорь к scrollToDetailsOnMobile (см. ниже): кнопка "Назад к
+  // расписанию" в панели деталей на телефонах/планшетах возвращает
+  // пользователя вверх, к календарю.
+  const calendarTopRef = useRef(null);
+  function scrollToScheduleOnMobile() {
+    requestAnimationFrame(() => {
+      calendarTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
   const [expandedMonthDays, setExpandedMonthDays] = useState(() => new Set());
   // Флаг для goToWeek(-1): при переходе на предыдущий месяц нужно встать
   // на его ПОСЛЕДНЮЮ неделю, а эффект ниже по умолчанию поставил бы первую
@@ -1001,7 +1010,7 @@ export default function ScheduleDirectory({ role }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-stack-lg">
         {/* Calendar */}
-        <div className="lg:col-span-9 space-y-stack-lg">
+        <div ref={calendarTopRef} className="lg:col-span-9 space-y-stack-lg scroll-mt-24">
           <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant">
             <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
               <div>
@@ -1303,6 +1312,16 @@ export default function ScheduleDirectory({ role }) {
         {/* Detail panel */}
         <div ref={detailPanelRef} className="lg:col-span-3 scroll-mt-24">
           <div className="sticky top-24 space-y-stack-lg">
+            {(selectedDay || selectedLesson) && (
+              <button
+                type="button"
+                onClick={scrollToScheduleOnMobile}
+                className="lg:hidden w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-full border border-outline-variant bg-surface-container-lowest text-on-surface-variant font-label-md text-label-md hover:bg-surface-container transition-colors"
+              >
+                <span className="material-symbols-outlined text-[18px]">arrow_upward</span>
+                Назад к расписанию
+              </button>
+            )}
             {detailLessons.length === 0 ? (
               <div className="bg-surface-container-lowest rounded-xl shadow-xl overflow-hidden border border-outline-variant border-t-8 border-primary">
                 <div className="p-6 flex flex-col items-center text-center">

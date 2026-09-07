@@ -105,6 +105,16 @@ export default function TutorSchedule() {
     setSelectedDay(day);
     scrollToDetailsOnMobile();
   }
+  // Кнопка "Назад к расписанию" в панели деталей (видна только на
+  // телефонах/планшетах, т.е. пока панель не стоит рядом с календарём, а
+  // выводится под ним) — обратный якорь к scrollToDetailsOnMobile: возвращает
+  // пользователя вверх к календарю, к которому он прокрутил вниз после клика.
+  const calendarTopRef = useRef(null);
+  function scrollToScheduleOnMobile() {
+    requestAnimationFrame(() => {
+      calendarTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
 
   // Занятие, которое сейчас редактируется. Список lessons уже отфильтрован
   // сервером по tutor_id = свой (см. fetchLessons({ tutor_id: user.id, ... })
@@ -449,7 +459,7 @@ export default function TutorSchedule() {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-stack-lg mt-4">
         {/* Calendar */}
-        <div className="lg:col-span-9 space-y-stack-lg">
+        <div ref={calendarTopRef} className="lg:col-span-9 space-y-stack-lg scroll-mt-24">
           <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant">
             <div className="flex items-center justify-between mb-8">
               <div>
@@ -685,6 +695,16 @@ export default function TutorSchedule() {
         {/* Detail panel */}
         <div ref={detailPanelRef} className="lg:col-span-3 scroll-mt-24">
           <div className="sticky top-24 space-y-stack-lg">
+            {selectedDay && (
+              <button
+                type="button"
+                onClick={scrollToScheduleOnMobile}
+                className="lg:hidden w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-full border border-outline-variant bg-surface-container-lowest text-on-surface-variant font-label-md text-label-md hover:bg-surface-container transition-colors"
+              >
+                <span className="material-symbols-outlined text-[18px]">arrow_upward</span>
+                Назад к расписанию
+              </button>
+            )}
             {!selectedDay || selectedLessons.length === 0 ? (
               <div className="bg-surface-container-lowest rounded-xl shadow-xl overflow-hidden border border-outline-variant border-t-8 border-primary">
                 <div className="p-6 flex flex-col items-center text-center">
