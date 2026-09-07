@@ -128,7 +128,10 @@ func (h *LessonHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Помечаем день/занятие проблемным, если хотя бы у одного участника
-	// на дату занятия нет действующего договора. Само занятие при этом
+	// на дату занятия нет договора, чей срок покрывает дату занятия.
+	// Статус enrollment не используем как источник истины: это локальная
+	// операционная проекция договора, которая может быть paused/completed.
+	// Само занятие при этом
 	// остаётся допустимым и может быть создано/перенесено руководителем.
 	enrollmentCache := make(map[int64][]*models.Enrollment)
 	for _, l := range lessons {
@@ -145,9 +148,15 @@ func (h *LessonHandler) List(w http.ResponseWriter, r *http.Request) {
 		for _, sid := range l.ParticipantIDs {
 			valid := false
 			for _, e := range enrs {
-				if e.StudentID != sid || e.Status != models.EnrollmentActive || e.StartDate == nil || e.EndDate == nil {
+				if e.StudentID != sid || e.StartDate == nil || e.EndDate == nil {
 					continue
 				}
+				// Contract validity for a concrete lesson is determined by the
+				// contract period. Enrollment status is only a local operational
+				// projection and may be paused/completed after an expiry event,
+				// while a historical lesson inside the contract period is still
+				// perfectly valid. Requiring status=active here caused valid
+				// lessons to be marked red in the calendar.
 				if lessonDate.Before(*e.StartDate) || lessonDate.After(*e.EndDate) {
 					continue
 				}

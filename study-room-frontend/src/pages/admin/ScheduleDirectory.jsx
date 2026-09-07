@@ -406,6 +406,8 @@ export default function ScheduleDirectory({ role }) {
   // имя ученика в самой ячейке не показывается (см. WeekLessonChip ниже),
   // оно появляется только в этой подробной карточке после клика.
   const [selectedLesson, setSelectedLesson] = useState(null);
+  const detailPanelRef = useRef(null);
+  const [expandedMonthDays, setExpandedMonthDays] = useState(() => new Set());
   // Флаг для goToWeek(-1): при переходе на предыдущий месяц нужно встать
   // на его ПОСЛЕДНЮЮ неделю, а эффект ниже по умолчанию поставил бы первую
   // (или неделю с сегодняшним днём) — флаг просит эффект пропустить один раз
@@ -447,6 +449,25 @@ export default function ScheduleDirectory({ role }) {
     setLessons((prev) => prev.map((l) => (l.id === lessonId ? { ...l, status: "cancelled" } : l)));
     setSelectedLesson((prev) => (prev && prev.id === lessonId ? { ...prev, status: "cancelled" } : prev));
   }
+  function selectLesson(lesson) {
+    setSelectedLesson(lesson);
+    setDetailPage(0);
+  }
+
+  function scrollToDetailsOnMobile() {
+    if (typeof window === "undefined" || !window.matchMedia("(max-width: 1023px)").matches) return;
+    requestAnimationFrame(() => {
+      detailPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  function handleMobileLessonClick(lesson, event) {
+    event?.stopPropagation();
+    setSelectedDay(Number(String(lesson.lesson_date ?? "").slice(8, 10)) || null);
+    selectLesson(lesson);
+    scrollToDetailsOnMobile();
+  }
+
   function handleLessonDeleted(lessonId) {
     setLessons((prev) => prev.filter((l) => l.id !== lessonId));
     setEditingLesson(null);
@@ -742,6 +763,7 @@ export default function ScheduleDirectory({ role }) {
   function goToMonth(offset) {
     setSelectedDay(null);
     setSelectedLesson(null);
+    setExpandedMonthDays(new Set());
     let m = viewMonth + offset;
     let y = viewYear;
     if (m < 0) {
@@ -811,9 +833,11 @@ export default function ScheduleDirectory({ role }) {
     ? selectedLesson
       ? [selectedLesson]
       : []
-    : selectedDay
-      ? lessonsByDay[selectedDay] ?? []
-      : [];
+    : selectedLesson
+      ? [selectedLesson]
+      : selectedDay
+        ? lessonsByDay[selectedDay] ?? []
+        : [];
   const detailPageCount = Math.max(1, Math.ceil(detailLessons.length / LESSONS_PAGE_SIZE));
   const safeDetailPage = Math.min(detailPage, detailPageCount - 1);
   const paginatedLessons = detailLessons.slice(
@@ -1040,6 +1064,7 @@ export default function ScheduleDirectory({ role }) {
                 const dayLessons = lessonsByDay[day] ?? [];
                 const isToday = day === todayDay;
                 const isSelected = day === selectedDay;
+                const isExpanded = expandedMonthDays.has(day);
                 const hasProblem = dayLessons.some((l) => l.contract_issue || !l.tutor_id);
                 const roomOverlaps = computeRoomOverlaps(dayLessons);
                 const peakOverlap = roomOverlaps.reduce(
@@ -1055,7 +1080,7 @@ export default function ScheduleDirectory({ role }) {
                 return (
                   <button
                     key={`mobile-day-${day}`}
-                    onClick={() => { setSelectedDay(day); setDetailPage(0); }}
+                    onClick={() => { setSelectedDay(day); setSelectedLesson(null); setDetailPage(0); }}
                     className={`w-full text-left p-3 rounded-xl border ${dayStateClass} ${isSelected ? "ring-2 ring-primary ring-offset-1" : ""}`}
                   >
                     <div className="flex items-center justify-between gap-3 mb-2">
@@ -1085,10 +1110,19 @@ export default function ScheduleDirectory({ role }) {
                       <div className="text-sm text-on-surface-variant">Занятий нет</div>
                     ) : (
                       <div className="space-y-2">
-                        {dayLessons.slice(0, 6).map((l) => {
+                        {(isExpanded ? dayLessons : dayLessons.slice(0, 6)).map((l) => {
                           const info = lessonShortInfo(l);
                           return (
-                            <div key={l.id} className="rounded-lg bg-white/80 text-on-surface px-3 py-2">
+                            <div
+                              key={l.id}
+                              role="button"
+                              tabIndex={0}
+                              onClick={(event) => handleMobileLessonClick(l, event)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") handleMobileLessonClick(l, event);
+                              }}
+                              className={`rounded-lg bg-white/80 text-on-surface px-3 py-2 cursor-pointer hover:bg-white transition-colors ${selectedLesson?.id === l.id ? "ring-2 ring-primary" : ""}`}
+                            >
                               <div className="text-sm font-bold leading-snug break-words">{info.subject}</div>
                               <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs font-semibold text-on-surface-variant">
                                 <span>{l.start_time?.slice(0, 5) || "—"}{l.end_time ? `–${l.end_time.slice(0, 5)}` : ""}</span>
@@ -1100,7 +1134,34 @@ export default function ScheduleDirectory({ role }) {
                           );
                         })}
                         {dayLessons.length > 6 && (
-                          <div className="text-sm font-bold text-primary">+ ещё {dayLessons.length - 6}</div>
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setExpandedMonthDays((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(day)) next.delete(day);
+                                else next.add(day);
+                                return next;
+                              });
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                setExpandedMonthDays((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(day)) next.delete(day);
+                                  else next.add(day);
+                                  return next;
+                                });
+                              }
+                            }}
+                            className="text-sm font-bold text-primary cursor-pointer hover:underline"
+                          >
+                            {isExpanded ? "Свернуть" : `+ ещё ${dayLessons.length - 6}`}
+                          </div>
                         )}
                       </div>
                     )}
@@ -1126,6 +1187,7 @@ export default function ScheduleDirectory({ role }) {
                 const dayLessons = lessonsByDay[day] ?? [];
                 const isToday = day === todayDay;
                 const isSelected = day === selectedDay;
+                const isExpanded = expandedMonthDays.has(day);
                 const hasProblem = dayLessons.some((l) => l.contract_issue || !l.tutor_id);
                 const hasLessons = dayLessons.length > 0;
                 // Пересечения очных занятий этого дня по времени (см.
@@ -1146,7 +1208,7 @@ export default function ScheduleDirectory({ role }) {
                 return (
                   <button
                     key={day}
-                    onClick={() => { setSelectedDay(day); setDetailPage(0); }}
+                    onClick={() => { setSelectedDay(day); setSelectedLesson(null); setDetailPage(0); }}
                     className={`text-left min-h-24 sm:min-h-28 p-2 rounded-xl font-label-md transition-all duration-150 relative border flex flex-col ${dayStateClass} ${isSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-surface-container-lowest scale-[1.03] z-10 shadow-lg" : hasLessons ? "shadow-sm hover:shadow-md hover:brightness-[1.03]" : ""} ${isToday ? "ring-2 ring-primary/50 ring-inset" : ""}`}
                   >
                     {isToday && (
@@ -1156,9 +1218,19 @@ export default function ScheduleDirectory({ role }) {
                     )}
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-[13px]">{day}</span>
+                      {peakOverlap && (
+                        <span
+                          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-white/70 text-on-surface text-[8px] sm:text-[9px] font-bold leading-none"
+                          title={`Одновременно ${peakOverlap.count} очных занятия в филиале, в ${minutesToHHMM(peakOverlap.start)}${roomOverlaps.length > 1 ? " (и в другое время тоже есть пересечения)" : ""}`}
+                        >
+                          <span className="material-symbols-outlined text-[10px] sm:text-[11px]">meeting_room</span>
+                          {peakOverlap.count} в {minutesToHHMM(peakOverlap.start)}
+                          {roomOverlaps.length > 1 && ` +${roomOverlaps.length - 1}`}
+                        </span>
+                      )}
                     </div>
                     <div className="mt-1 space-y-1 overflow-hidden flex-1">
-                      {dayLessons.slice(0, 3).map((l) => {
+                      {(isExpanded ? dayLessons : dayLessons.slice(0, 3)).map((l) => {
                         const info = lessonShortInfo(l);
                         return (
                           <div key={l.id} className="rounded-md bg-white/80 text-on-surface px-1.5 py-1 text-[9px] sm:text-[10px] leading-tight shadow-[0_1px_1px_rgba(0,0,0,0.04)] flex items-start gap-1">
@@ -1176,8 +1248,33 @@ export default function ScheduleDirectory({ role }) {
                         );
                       })}
                       {dayLessons.length > 3 && (
-                        <div className="text-[9px] font-bold text-center rounded-md bg-white/50 py-0.5">
-                          +{dayLessons.length - 3} ещё
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setExpandedMonthDays((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(day)) next.delete(day);
+                              else next.add(day);
+                              return next;
+                            });
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setExpandedMonthDays((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(day)) next.delete(day);
+                                else next.add(day);
+                                return next;
+                              });
+                            }
+                          }}
+                          className="text-[9px] font-bold text-center rounded-md bg-white/50 py-0.5 cursor-pointer hover:bg-white/70"
+                        >
+                          {isExpanded ? "Свернуть" : `+${dayLessons.length - 3} ещё`}
                         </div>
                       )}
                     </div>
@@ -1197,8 +1294,8 @@ export default function ScheduleDirectory({ role }) {
                 lessonShortInfo={lessonShortInfo}
                 selectedLesson={selectedLesson}
                 onSelectLesson={(l) => {
-                  setSelectedLesson(l);
-                  setDetailPage(0);
+                  selectLesson(l);
+                  scrollToDetailsOnMobile();
                 }}
               />
             )}
@@ -1206,7 +1303,7 @@ export default function ScheduleDirectory({ role }) {
         </div>
 
         {/* Detail panel */}
-        <div className="lg:col-span-3">
+        <div ref={detailPanelRef} className="lg:col-span-3 scroll-mt-24">
           <div className="sticky top-24 space-y-stack-lg">
             {detailLessons.length === 0 ? (
               <div className="bg-surface-container-lowest rounded-xl shadow-xl overflow-hidden border border-outline-variant border-t-8 border-primary">

@@ -11,6 +11,7 @@ export function createContract(payload) {
   return contractsApi("", { method: "POST", body: payload }).then((res) => {
     invalidateQuery(["contracts"]);
     invalidateQuery(["myContracts"]);
+    invalidateQuery(["lessons"]);
     return res;
   });
 }
@@ -55,6 +56,7 @@ export function updateContract(id, patch) {
   return contractsApi(`/${id}`, { method: "PATCH", body: patch }).then((res) => {
     invalidateQuery(["contracts"]);
     invalidateQuery(["myContracts"]);
+    invalidateQuery(["lessons"]);
     return res;
   });
 }
@@ -64,6 +66,7 @@ export function setContractStatus(id, status) {
   return contractsApi(`/${id}/status`, { method: "PATCH", body: { status } }).then((res) => {
     invalidateQuery(["contracts"]);
     invalidateQuery(["myContracts"]);
+    invalidateQuery(["lessons"]);
     return res;
   });
 }
@@ -82,6 +85,7 @@ export function deleteContract(id) {
   return contractsApi(`/${id}`, { method: "DELETE" }).then((res) => {
     invalidateQuery(["contracts"]);
     invalidateQuery(["myContracts"]);
+    invalidateQuery(["lessons"]);
     return res;
   });
 }
