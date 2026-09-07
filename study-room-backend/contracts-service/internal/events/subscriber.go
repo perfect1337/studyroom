@@ -16,7 +16,6 @@ type UserEvent struct {
 	LastName  string      `json:"last_name"`
 	Role      models.Role `json:"role"`
 	BranchID  *int64      `json:"branch_id"`
-	BranchIDs []int64     `json:"branch_ids"`
 }
 
 type UserDeletedEvent struct {

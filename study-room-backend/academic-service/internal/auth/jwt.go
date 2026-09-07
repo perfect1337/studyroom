@@ -15,10 +15,9 @@ import (
 )
 
 type Claims struct {
-	UserID    int64       `json:"user_id"`
-	Role      models.Role `json:"role"`
-	BranchID  *int64      `json:"branch_id"`
-	BranchIDs []int64     `json:"branch_ids,omitempty"`
+	UserID   int64       `json:"user_id"`
+	Role     models.Role `json:"role"`
+	BranchID *int64      `json:"branch_id"`
 	// IsTutor — приходит из User Service (см. его internal/auth/jwt.go и
 	// PATCH /users/me/tutor-mode): владелец филиала (role=branch_owner)
 	// включил себе "версию учителя". Используется только через

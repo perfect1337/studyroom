@@ -61,7 +61,6 @@ const EMPTY_CHILD_FORM = {
   first_name: "",
   patronymic: "",
   branch_id: "",
-  branch_ids: [],
   class_info: "",
 };
 
@@ -387,15 +386,14 @@ export default function PeopleDirectory({ role }) {
 
   async function handleAddChild(e) {
     e.preventDefault();
-    if (!addForm.last_name || !addForm.first_name || !(addForm.branch_ids?.length || addForm.branch_id) || !addForm.class_info) return;
+    if (!addForm.last_name || !addForm.first_name || !addForm.branch_id || !addForm.class_info) return;
     setAddStatus("saving");
     try {
       await createStudent({
         last_name: addForm.last_name,
         first_name: addForm.first_name,
         patronymic: addForm.patronymic || undefined,
-        branch_id: Number(addForm.branch_ids[0] || addForm.branch_id),
-        branch_ids: (addForm.branch_ids?.length ? addForm.branch_ids : [addForm.branch_id]).map(Number),
+        branch_id: Number(addForm.branch_id),
         class_info: String(addForm.class_info),
         parent_id: user.id,
       });
@@ -741,23 +739,23 @@ export default function PeopleDirectory({ role }) {
                     />
                   </div>
                   <div className="md:col-span-2">
-                    <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Филиалы *</label>
-                    <div className="border border-outline-variant rounded-lg divide-y divide-outline-variant max-h-40 overflow-y-auto">
-                      {branches.map((b) => {
-                        const id = String(b.id);
-                        const checked = (addForm.branch_ids ?? []).includes(id);
-                        return <label key={b.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-surface-container-high">
-                          <input type="checkbox" checked={checked} onChange={() => setAddForm((f) => {
-                            const current = new Set(f.branch_ids ?? (f.branch_id ? [String(f.branch_id)] : []));
-                            if (current.has(id)) current.delete(id); else current.add(id);
-                            const next=[...current];
-                            return { ...f, branch_ids: next, branch_id: next[0] || "" };
-                          })} className="w-4 h-4 accent-primary" />
-                          <span className="text-label-md text-on-surface">{b.name}</span>
-                        </label>;
-                      })}
-                    </div>
-                    <p className="mt-1 text-[11px] text-on-surface-variant">Ученик может одновременно состоять в нескольких филиалах. Первый выбранный считается основным.</p>
+                    <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Филиал *</label>
+                    <select
+                      required
+                      value={addForm.branch_id}
+                      onChange={(e) => setAddForm((f) => ({ ...f, branch_id: e.target.value }))}
+                      className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    >
+                      <option value="">Выберите филиал</option>
+                      {branches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-[11px] text-on-surface-variant">
+                      Ребёнок появится в списках только тех репетиторов и руководителей, которые относятся к этому филиалу.
+                    </p>
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Класс *</label>
@@ -783,7 +781,7 @@ export default function PeopleDirectory({ role }) {
 
                 <button
                   type="submit"
-                  disabled={addStatus === "saving" || !addForm.last_name || !addForm.first_name || !(addForm.branch_ids?.length || addForm.branch_id) || !addForm.class_info}
+                  disabled={addStatus === "saving" || !addForm.last_name || !addForm.first_name || !addForm.branch_id || !addForm.class_info}
                   className="w-full bg-primary text-on-primary py-3 rounded-lg font-bold hover:brightness-110 transition-all disabled:opacity-60"
                 >
                   {addStatus === "saving" ? "Сохранение…" : "Добавить ребёнка"}

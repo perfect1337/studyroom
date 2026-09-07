@@ -112,7 +112,6 @@ func NewRouter(d *Deps) http.Handler {
 			r.Get("/users", userHandler.List)
 			r.Get("/users/{id}", userHandler.GetByID)
 			r.Patch("/users/{id}", userHandler.Update)
-			r.Put("/users/{id}/branches", userHandler.SetUserBranches)
 			r.Get("/parents/{parentId}/children", userHandler.ListChildren)
 			r.Delete("/users/{id}", userHandler.Delete)
 			r.Post("/users/{id}/reset-credentials", userHandler.ResetStudentCredentials)

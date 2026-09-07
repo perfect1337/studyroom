@@ -20,11 +20,10 @@ const (
 // student/parent) при создании договора; авторизация по branch_owner/parent
 // идёт через claims/userclient, не через этот кэш.
 type UserRef struct {
-	UserID    int64   `json:"user_id"`
-	FullName  string  `json:"full_name"`
-	Role      Role    `json:"role"`
-	BranchID  *int64  `json:"branch_id"`
-	BranchIDs []int64 `json:"branch_ids,omitempty"`
+	UserID   int64  `json:"user_id"`
+	FullName string `json:"full_name"`
+	Role     Role   `json:"role"`
+	BranchID *int64 `json:"branch_id"`
 }
 
 type ContractStatus string

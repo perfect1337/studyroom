@@ -25,15 +25,14 @@ func NewUserRefRepository(pool *pgxpool.Pool) *UserRefRepository {
 
 func (r *UserRefRepository) Upsert(ctx context.Context, u *models.UserRef) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO user_refs (user_id, full_name, role, branch_id, branch_ids, synced_at)
-		VALUES ($1,$2,$3,$4,$5, now())
+		INSERT INTO user_refs (user_id, full_name, role, branch_id, synced_at)
+		VALUES ($1,$2,$3,$4, now())
 		ON CONFLICT (user_id) DO UPDATE SET
 			full_name = CASE WHEN EXCLUDED.full_name = '' THEN user_refs.full_name ELSE EXCLUDED.full_name END,
 			role = CASE WHEN EXCLUDED.role = '' THEN user_refs.role ELSE EXCLUDED.role END,
 			branch_id = EXCLUDED.branch_id,
-			branch_ids = EXCLUDED.branch_ids,
 			synced_at = now()`,
-		u.UserID, u.FullName, u.Role, u.BranchID, u.BranchIDs)
+		u.UserID, u.FullName, u.Role, u.BranchID)
 	return err
 }
 
@@ -48,10 +47,10 @@ func (r *UserRefRepository) Delete(ctx context.Context, userID int64) error {
 
 func (r *UserRefRepository) GetByID(ctx context.Context, id int64) (*models.UserRef, error) {
 	row := r.pool.QueryRow(ctx,
-		`SELECT user_id, full_name, role, branch_id, branch_ids FROM user_refs WHERE user_id = $1`, id)
+		`SELECT user_id, full_name, role, branch_id FROM user_refs WHERE user_id = $1`, id)
 
 	var u models.UserRef
-	err := row.Scan(&u.UserID, &u.FullName, &u.Role, &u.BranchID, &u.BranchIDs)
+	err := row.Scan(&u.UserID, &u.FullName, &u.Role, &u.BranchID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -88,8 +87,8 @@ func (r *UserRefRepository) BranchOf(ctx context.Context, userID int64) (*int64,
 // user_refs (событие user.created ещё не дошло), в map просто отсутствуют —
 // вызывающий код должен трактовать отсутствие ключа так же, как nil от
 // BranchOf (т.е. "филиал неизвестен").
-func (r *UserRefRepository) BranchesOf(ctx context.Context, userIDs []int64) (map[int64][]int64, error) {
-	result := make(map[int64][]int64, len(userIDs))
+func (r *UserRefRepository) BranchesOf(ctx context.Context, userIDs []int64) (map[int64]*int64, error) {
+	result := make(map[int64]*int64, len(userIDs))
 	if len(userIDs) == 0 {
 		return result, nil
 	}
@@ -108,7 +107,7 @@ func (r *UserRefRepository) BranchesOf(ctx context.Context, userIDs []int64) (ma
 	}
 
 	rows, err := r.pool.Query(ctx,
-		`SELECT user_id, branch_id, branch_ids FROM user_refs WHERE user_id = ANY($1)`, unique)
+		`SELECT user_id, branch_id FROM user_refs WHERE user_id = ANY($1)`, unique)
 	if err != nil {
 		return nil, err
 	}
@@ -117,14 +116,10 @@ func (r *UserRefRepository) BranchesOf(ctx context.Context, userIDs []int64) (ma
 	for rows.Next() {
 		var userID int64
 		var branchID *int64
-		var branchIDs []int64
-		if err := rows.Scan(&userID, &branchID, &branchIDs); err != nil {
+		if err := rows.Scan(&userID, &branchID); err != nil {
 			return nil, err
 		}
-		result[userID] = append([]int64(nil), branchIDs...)
-		if len(branchIDs) == 0 && branchID != nil {
-			result[userID] = []int64{*branchID}
-		}
+		result[userID] = branchID
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

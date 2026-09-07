@@ -74,15 +74,14 @@ type DeletedUserInfo struct {
 }
 
 type UserEvent struct {
-	ID           int64   `json:"id"`
-	Email        string  `json:"email"`
-	FirstName    string  `json:"first_name"`
-	LastName     string  `json:"last_name"`
-	Role         string  `json:"role"`
-	BranchID     *int64  `json:"branch_id,omitempty"`
-	BranchIDs    []int64 `json:"branch_ids,omitempty"`
-	TempPassword string  `json:"temp_password,omitempty"`
-	NotifyEmail  string  `json:"notify_email,omitempty"` // куда слать credentials (родитель ученика)
+	ID           int64  `json:"id"`
+	Email        string `json:"email"`
+	FirstName    string `json:"first_name"`
+	LastName     string `json:"last_name"`
+	Role         string `json:"role"`
+	BranchID     *int64 `json:"branch_id,omitempty"`
+	TempPassword string `json:"temp_password,omitempty"`
+	NotifyEmail  string `json:"notify_email,omitempty"` // куда слать credentials (родитель ученика)
 	// ParentID — только для role=student, id родителя (parent_student.parent_id).
 	// Добавлено, чтобы Notification Service мог резолвить
 	// student_id → parent_id локально при attendance.marked_absent,
@@ -160,7 +159,7 @@ func (p *NATSPublisher) UserCreated(u *models.User, tempPassword, notifyEmail st
 	}
 	p.publish(SubjectUserCreated, UserEvent{
 		ID: u.ID, Email: u.Email, FirstName: u.FirstName, LastName: u.LastName,
-		Role: string(u.Role), BranchID: u.BranchID, BranchIDs: u.BranchIDs,
+		Role: string(u.Role), BranchID: u.BranchID,
 		TempPassword: tempPassword, NotifyEmail: notifyEmail,
 		ParentID: parentID, IsActive: u.IsActive, ClassInfo: u.ClassInfo,
 	})
@@ -172,7 +171,7 @@ func (p *NATSPublisher) CredentialsReset(u *models.User, tempPassword, notifyEma
 	}
 	p.publish(SubjectUserCredentialsReset, UserEvent{
 		ID: u.ID, Email: u.Email, FirstName: u.FirstName, LastName: u.LastName,
-		Role: string(u.Role), BranchID: u.BranchID, BranchIDs: u.BranchIDs,
+		Role: string(u.Role), BranchID: u.BranchID,
 		TempPassword: tempPassword, NotifyEmail: notifyEmail,
 		ParentID: parentID, IsActive: u.IsActive, ClassInfo: u.ClassInfo,
 	})
@@ -184,14 +183,14 @@ func (p *NATSPublisher) UserUpdated(u *models.User) {
 	}
 	p.publish(SubjectUserUpdated, UserEvent{
 		ID: u.ID, Email: u.Email, FirstName: u.FirstName, LastName: u.LastName,
-		Role: string(u.Role), BranchID: u.BranchID, BranchIDs: u.BranchIDs, IsActive: u.IsActive, ClassInfo: u.ClassInfo,
+		Role: string(u.Role), BranchID: u.BranchID, IsActive: u.IsActive, ClassInfo: u.ClassInfo,
 	})
 }
 
 func (p *NATSPublisher) UserDeleted(u DeletedUserInfo) {
 	p.publish(SubjectUserDeleted, UserDeletedEvent{
 		ID: u.ID, Email: u.Email, FirstName: u.FirstName, LastName: u.LastName,
-		Role: string(u.Role), BranchID: u.BranchID, BranchIDs: u.BranchIDs, ParentIDs: u.ParentIDs,
+		Role: string(u.Role), BranchID: u.BranchID, ParentIDs: u.ParentIDs,
 	})
 }
 

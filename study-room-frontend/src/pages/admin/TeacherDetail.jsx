@@ -5,7 +5,7 @@ import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import TutorStatusSelect from "../../components/ui/TutorStatusSelect.jsx";
 import Pagination from "../../components/ui/Pagination.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchMyPeople, fetchBranches, setTutorStatus, setUserActive, setUserBranches } from "../../api/users.js";
+import { fetchMyPeople, fetchBranches, setTutorStatus, setUserActive, updateUser } from "../../api/users.js";
 import { fetchEnrollments, fetchCourses, fetchLessons, fetchTests, fetchSubgroups, assignCourseTutor, removeCourseTutor } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import TutorSubgroupsCard from "../../components/tutor/TutorSubgroupsCard.jsx";
@@ -108,7 +108,6 @@ export default function TeacherDetail({ role = "owner" }) {
 
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [branchUpdating, setBranchUpdating] = useState(false);
-  const [selectedBranchIds, setSelectedBranchIds] = useState([]);
   const [showFireModal, setShowFireModal] = useState(false);
   const [fireStatus, setFireStatus] = useState("");
   const [courseTutorBusyId, setCourseTutorBusyId] = useState(null);
@@ -168,7 +167,6 @@ export default function TeacherDetail({ role = "owner" }) {
       setAllTeacherLessons(allLessonsRes?.items ?? []);
       setSubgroups(subgroupsRes?.items ?? []);
       setBranches(branchesRes?.items ?? []);
-      setSelectedBranchIds((foundTeacher?.branch_ids?.length ? foundTeacher.branch_ids : (foundTeacher?.branch_id ? [foundTeacher.branch_id] : [])).map(Number));
       setTests(testsRes?.items ?? []);
 
       if (!foundTeacher) {
@@ -415,17 +413,28 @@ export default function TeacherDetail({ role = "owner" }) {
     }
   }
 
-  async function handleBranchesSave(nextIds) {
-    const unique = [...new Set(nextIds.map(Number))];
-    if (!unique.length) return;
+  // Смена филиала преподавателя — доступна только owner сети (не
+  // branch_owner, см. STATUS_OPTIONS_BY_ROLE / config.canFire выше — то же
+  // разделение прав, просто для другого действия). На бэкенде (см.
+  // user-service UserHandler.Update) это отдельно проверяется ещё раз —
+  // фронтовое ограничение здесь только для UI, не единственная защита.
+  //
+  // После смены филиала Academic Service (см. handleUserUpdated в
+  // events/subscriber.go) каскадно отвязывает преподавателя от прежнего
+  // филиала: снимает его со всех курсов и записей учеников (course_tutors,
+  // enrollments.tutor_id) и физически удаляет все его будущие и прошлые
+  // занятия — точно так же, как при увольнении. Поэтому после успешной
+  // смены филиала список "Учеников преподавателя" и его занятий в этой же
+  // карточке обнулится — это ожидаемо: в новом филиале он начинает "с нуля".
+  async function handleBranchChange(newBranchId) {
+    if (!newBranchId || Number(newBranchId) === Number(teacher?.branch_id)) return;
     setBranchUpdating(true);
     setError("");
     try {
-      const updated = await setUserBranches(teacherId, unique);
-      setTeacher(updated);
-      setSelectedBranchIds((updated?.branch_ids?.length ? updated.branch_ids : [updated.branch_id]).map(Number));
+      await updateUser(teacherId, { branch_id: Number(newBranchId) });
+      await load();
     } catch (e) {
-      setError(e.message || "Не удалось изменить филиалы преподавателя");
+      setError(e.message || "Не удалось изменить филиал преподавателя");
     } finally {
       setBranchUpdating(false);
     }
@@ -534,32 +543,21 @@ export default function TeacherDetail({ role = "owner" }) {
                     <span>{teacher.specialization || "Специализация не указана"}</span>
                     <span>·</span>
                     {isOwner && !isFired ? (
-                      <div className="flex flex-wrap items-center gap-2">
-                        {branches.map((b) => {
-                          const id = Number(b.id);
-                          const checked = selectedBranchIds.includes(id);
-                          return (
-                            <label key={b.id} className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md border cursor-pointer transition-colors ${checked ? "border-primary/40 bg-primary/10 text-primary" : "border-outline-variant bg-surface-container-lowest text-on-surface-variant"}`}>
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                disabled={branchUpdating}
-                                onChange={() => {
-                                  const next = checked ? selectedBranchIds.filter((x) => x !== id) : [...selectedBranchIds, id];
-                                  setSelectedBranchIds(next);
-                                  if (next.length) handleBranchesSave(next);
-                                }}
-                                className="sr-only"
-                              />
-                              <span className="material-symbols-outlined text-[15px]">{checked ? "check_circle" : "radio_button_unchecked"}</span>
-                              <span>{b.name || b.city || `Филиал #${b.id}`}</span>
-                            </label>
-                          );
-                        })}
-                        <span className="text-[11px] text-on-surface-variant">Первый выбранный — основной</span>
-                      </div>
+                      <select
+                        value={teacher.branch_id ?? ""}
+                        disabled={branchUpdating}
+                        onChange={(e) => handleBranchChange(e.target.value)}
+                        className="text-[13px] border border-outline-variant rounded-md px-2 py-0.5 bg-surface-container-lowest disabled:opacity-50"
+                      >
+                        {!teacher.branch_id && <option value="">Без филиала</option>}
+                        {branches.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name || b.city || `Филиал #${b.id}`}
+                          </option>
+                        ))}
+                      </select>
                     ) : (
-                      <span>{(teacher?.branch_ids?.length ? teacher.branch_ids : (teacher?.branch_id ? [teacher.branch_id] : [])).map((id) => branchNameById[id] || `Филиал #${id}`).join(", ") || "Филиал не указан"}</span>
+                      <span>{teacher.branch_id ? (branchNameById[teacher.branch_id] || `Филиал #${teacher.branch_id}`) : "Филиал не указан"}</span>
                     )}
                   </div>
                   <p className="text-on-surface-variant font-body-md mb-4 text-[13px]">

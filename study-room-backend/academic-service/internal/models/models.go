@@ -22,11 +22,10 @@ const (
 // проверять роль/филиал репетитора или ученика локально, без синхронного
 // похода в User Service на каждый запрос (см. microservices-plan.md, 2.4).
 type UserRef struct {
-	UserID    int64   `json:"user_id"`
-	FullName  string  `json:"full_name"`
-	Role      Role    `json:"role"`
-	BranchID  *int64  `json:"branch_id"`
-	BranchIDs []int64 `json:"branch_ids,omitempty"`
+	UserID   int64  `json:"user_id"`
+	FullName string `json:"full_name"`
+	Role     Role   `json:"role"`
+	BranchID *int64 `json:"branch_id"`
 }
 
 type CourseFormat string

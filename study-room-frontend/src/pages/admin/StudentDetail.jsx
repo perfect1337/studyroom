@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchUserById, resetStudentCredentials, fetchMyPeople, fetchBranches, setUserBranches } from "../../api/users.js";
+import { fetchUserById, resetStudentCredentials, fetchMyPeople } from "../../api/users.js";
 import { fetchEnrollments, fetchCourses, fetchHomework, fetchLessons, fetchTests } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import CourseTag from "../../components/ui/CourseTag.jsx";
@@ -88,10 +88,7 @@ export default function StudentDetail({ role = "parent" }) {
   const [homework, setHomework] = useState([]);
   const [tests, setTests] = useState([]);
   const [lessons, setLessons] = useState([]);
-  const [tutors, setTutors] = useState([]);
-  const [branches, setBranches] = useState([]);
-  const [selectedBranchIds, setSelectedBranchIds] = useState([]);
-  const [branchUpdating, setBranchUpdating] = useState(false); // для отображения имени преподавателя в мини-календаре
+  const [tutors, setTutors] = useState([]); // для отображения имени преподавателя в мини-календаре
   // extraTutors — тьюторы, которых не было в fetchMyPeople(), но которые
   // ведут занятия ребёнка (tutor_id из lessons). Нужно для роли parent:
   // GET /users (1.9) для parent отдаёт только children, tutors там всегда
@@ -116,22 +113,6 @@ export default function StudentDetail({ role = "parent" }) {
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetStatus, setResetStatus] = useState("");
   const [resetResult, setResetResult] = useState(null);
-
-  async function handleBranchesSave(nextIds) {
-    const unique = [...new Set(nextIds.map(Number))];
-    if (!unique.length) return;
-    setBranchUpdating(true);
-    setError("");
-    try {
-      const updated = await setUserBranches(childId, unique);
-      setChild(updated);
-      setSelectedBranchIds((updated?.branch_ids?.length ? updated.branch_ids : [updated.branch_id]).map(Number));
-    } catch (e) {
-      setError(e.message || "Не удалось изменить филиалы ученика");
-    } finally {
-      setBranchUpdating(false);
-    }
-  }
 
   async function handleResetCredentials() {
     setResetStatus("saving");
@@ -180,9 +161,8 @@ export default function StudentDetail({ role = "parent" }) {
       try {
         const date_from = toISODate(viewYear, viewMonth, 1);
         const date_to = toISODate(viewYear, viewMonth, daysInMonth);
-        const [childRes, branchesRes, enrollRes, coursesRes, homeworkRes, lessonsRes, peopleRes, testsRes] = await Promise.all([
+        const [childRes, enrollRes, coursesRes, homeworkRes, lessonsRes, peopleRes, testsRes] = await Promise.all([
           fetchUserById(childId),
-          role === "owner" ? fetchBranches().catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
           fetchEnrollments({ student_id: childId }),
           fetchCourses(),
           fetchHomework({ student_id: childId }),
@@ -192,8 +172,6 @@ export default function StudentDetail({ role = "parent" }) {
         ]);
         if (cancelled) return;
         setChild(childRes);
-        setBranches(branchesRes?.items ?? []);
-        setSelectedBranchIds((childRes?.branch_ids?.length ? childRes.branch_ids : (childRes?.branch_id ? [childRes.branch_id] : [])).map(Number));
         const childIdNum = Number(childId);
         const childEnrollments = (enrollRes?.items ?? [])
           .filter((e) => e.student_id === childIdNum)
@@ -421,41 +399,6 @@ export default function StudentDetail({ role = "parent" }) {
             </div>
           </div>
         </div>
-
-        {role === "owner" && child && (
-          <div className="bg-surface-container-lowest p-5 rounded-xl border border-outline-variant/40 shadow-[0px_6px_20px_rgba(0,0,0,0.03)]">
-            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-              <div>
-                <h3 className="font-headline-sm text-headline-sm text-on-surface">Филиалы</h3>
-                <p className="text-[13px] text-on-surface-variant mt-1">Ученик может одновременно учиться в нескольких филиалах.</p>
-              </div>
-              <div className="flex flex-wrap gap-2 md:justify-end">
-                {branches.map((b) => {
-                  const id = Number(b.id);
-                  const checked = selectedBranchIds.includes(id);
-                  return (
-                    <label key={b.id} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${checked ? "border-primary/40 bg-primary/10 text-primary" : "border-outline-variant bg-surface text-on-surface-variant"}`}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={branchUpdating}
-                        onChange={() => {
-                          const next = checked ? selectedBranchIds.filter((x) => x !== id) : [...selectedBranchIds, id];
-                          setSelectedBranchIds(next);
-                          if (next.length) handleBranchesSave(next);
-                        }}
-                        className="sr-only"
-                      />
-                      <span className="material-symbols-outlined text-[17px]">{checked ? "check_circle" : "radio_button_unchecked"}</span>
-                      <span className="text-label-md">{b.name || b.city || `Филиал #${b.id}`}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-            <p className="text-[11px] text-on-surface-variant mt-3">Первый выбранный филиал считается основным для текущего профиля.</p>
-          </div>
-        )}
 
         <div className="grid grid-cols-12 gap-gutter">
           <section className="col-span-12 lg:col-span-8 space-y-stack-md">

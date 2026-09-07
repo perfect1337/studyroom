@@ -189,20 +189,11 @@ func (h *HomeworkHandler) filterByOwnBranch(r *http.Request, branchID *int64, it
 
 	out := make([]*models.Homework, 0, len(items))
 	for _, hw := range items {
-		if containsBranch(branches[hw.StudentID], *branchID) {
+		if studentBranch := branches[hw.StudentID]; studentBranch != nil && *studentBranch == *branchID {
 			out = append(out, hw)
 		}
 	}
 	return out, nil
-}
-
-func containsBranch(branchIDs []int64, branchID int64) bool {
-	for _, id := range branchIDs {
-		if id == branchID {
-			return true
-		}
-	}
-	return false
 }
 
 func nonNilHomework(h []*models.Homework) []*models.Homework {
