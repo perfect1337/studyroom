@@ -381,6 +381,9 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 		// филиалов, в которых учатся дети этого родителя.
 		branchIDs := map[int64]struct{}{}
 		for _, c := range children {
+			for _, id := range c.BranchIDs {
+				branchIDs[id] = struct{}{}
+			}
 			if c.BranchID != nil {
 				branchIDs[*c.BranchID] = struct{}{}
 			}
@@ -566,6 +569,33 @@ func (h *UserHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, target)
 }
 
+func userHasBranch(u *models.User, branchID *int64) bool {
+	if u == nil || branchID == nil {
+		return false
+	}
+	for _, id := range u.BranchIDs {
+		if id == *branchID {
+			return true
+		}
+	}
+	return u.BranchID != nil && *u.BranchID == *branchID
+}
+
+func sharesAnyBranch(a, b *models.User) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	for _, id := range a.BranchIDs {
+		if userHasBranch(b, &id) {
+			return true
+		}
+	}
+	if a.BranchID != nil {
+		return userHasBranch(b, a.BranchID)
+	}
+	return false
+}
+
 func canViewUser(r *http.Request, h *UserHandler, claims *auth.Claims, target *models.User) bool {
 	if claims.Role == models.RoleOwner {
 		return true
@@ -574,26 +604,20 @@ func canViewUser(r *http.Request, h *UserHandler, claims *auth.Claims, target *m
 		return true
 	}
 	if claims.Role == models.RoleBranchOwner {
-		return target.BranchID != nil && claims.BranchID != nil && *target.BranchID == *claims.BranchID
+		return userHasBranch(target, claims.BranchID)
 	}
 	if claims.Role == models.RoleParent {
 		if target.Role == models.RoleStudent {
 			isParent, err := h.parentChild.IsParentOf(r.Context(), claims.UserID, target.ID)
 			return err == nil && isParent
 		}
-		// Родителю также нужно уметь посмотреть карточку репетитора своего
-		// ребёнка (см. GET /users/{id} из ParentSchedule.jsx — там подтягивают
-		// имя преподавателя по lesson.tutor_id). Прямой связи parent->tutor
-		// нет, поэтому разрешаем по тому же принципу, что и student/tutor
-		// ниже: репетитор виден, если он работает в одном филиале хотя бы с
-		// одним из детей этого родителя.
 		if target.Role == models.RoleTutor {
 			children, err := h.parentChild.ListChildren(r.Context(), claims.UserID, "")
 			if err != nil {
 				return false
 			}
 			for _, c := range children {
-				if c.BranchID != nil && target.BranchID != nil && *c.BranchID == *target.BranchID {
+				if sharesAnyBranch(c, target) {
 					return true
 				}
 			}
@@ -601,12 +625,53 @@ func canViewUser(r *http.Request, h *UserHandler, claims *auth.Claims, target *m
 		return false
 	}
 	if claims.Role == models.RoleTutor && target.Role == models.RoleStudent {
-		return target.BranchID != nil && claims.BranchID != nil && *target.BranchID == *claims.BranchID
+		// Тьютор может видеть ученика, только если у обоих есть общий филиал.
+		// Claims содержат текущий основной филиал, поэтому сначала проверяем его.
+		return userHasBranch(target, claims.BranchID)
 	}
 	if claims.Role == models.RoleStudent && target.Role == models.RoleTutor {
-		return target.BranchID != nil && claims.BranchID != nil && *target.BranchID == *claims.BranchID
+		return userHasBranch(target, claims.BranchID)
 	}
 	return false
+}
+
+// PUT /users/{id}/branches — replace memberships for a tutor/student. Owner only.
+type setBranchesRequest struct {
+	BranchIDs []int64 `json:"branch_ids"`
+}
+
+func (h *UserHandler) SetUserBranches(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id")
+		return
+	}
+	claims, _ := middleware.FromContext(r.Context())
+	if claims.Role != models.RoleOwner {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only owner can manage user branches")
+		return
+	}
+	target, err := h.users.GetByID(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "user not found")
+		return
+	}
+	if target.Role != models.RoleTutor && target.Role != models.RoleStudent {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "branches can only be managed for students and tutors")
+		return
+	}
+	var req setBranchesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid body")
+		return
+	}
+	u, err := h.users.SetBranches(r.Context(), id, target.Role, req.BranchIDs)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		return
+	}
+	h.events.UserUpdated(u)
+	writeJSON(w, http.StatusOK, u)
 }
 
 // --- 1.11. POST /users/tutors ---
@@ -617,6 +682,7 @@ type createTutorRequest struct {
 	FirstName      string  `json:"first_name"`
 	Patronymic     *string `json:"patronymic"`
 	BranchID       *int64  `json:"branch_id"`
+	BranchIDs      []int64 `json:"branch_ids"`
 	Specialization string  `json:"specialization"`
 }
 
@@ -642,7 +708,16 @@ func (h *UserHandler) CreateTutor(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		req.BranchID = claims.BranchID
+		req.BranchIDs = []int64{*claims.BranchID}
 	}
+	if len(req.BranchIDs) == 0 && req.BranchID != nil {
+		req.BranchIDs = []int64{*req.BranchID}
+	}
+	if len(req.BranchIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "branch_id or branch_ids required")
+		return
+	}
+	req.BranchID = &req.BranchIDs[0]
 
 	tempPassword, err := auth.GenerateOpaqueToken()
 	if err != nil {
@@ -670,6 +745,13 @@ func (h *UserHandler) CreateTutor(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "could not create tutor")
 		return
+	}
+	if len(req.BranchIDs) > 1 {
+		created, err = h.users.SetBranches(r.Context(), created.ID, models.RoleTutor, req.BranchIDs)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+			return
+		}
 	}
 
 	if err := h.tutorProfiles.Upsert(r.Context(), created.ID, req.Specialization, models.TutorStatusActive); err != nil {
@@ -758,6 +840,7 @@ type createStudentRequest struct {
 	ClassInfo *string `json:"class_info"`
 	School    *string `json:"school"`
 	BranchID  *int64  `json:"branch_id"`
+	BranchIDs []int64 `json:"branch_ids"`
 	ParentID  int64   `json:"parent_id"`
 }
 
@@ -791,7 +874,16 @@ func (h *UserHandler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		req.BranchID = claims.BranchID
+		req.BranchIDs = []int64{*claims.BranchID}
 	}
+	if len(req.BranchIDs) == 0 && req.BranchID != nil {
+		req.BranchIDs = []int64{*req.BranchID}
+	}
+	if len(req.BranchIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "branch_id or branch_ids required")
+		return
+	}
+	req.BranchID = &req.BranchIDs[0]
 
 	tempPassword, err := auth.GenerateOpaqueToken()
 	if err != nil {
@@ -847,6 +939,14 @@ func (h *UserHandler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(req.BranchIDs) > 1 {
+		created, err = h.users.SetBranches(r.Context(), created.ID, models.RoleStudent, req.BranchIDs)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+			return
+		}
+	}
+
 	notifyEmail := ""
 	if parent, err := h.users.GetByID(r.Context(), req.ParentID); err == nil {
 		notifyEmail = parent.Email
@@ -871,7 +971,7 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if claims.Role != models.RoleOwner {
-		if claims.Role != models.RoleBranchOwner || target.BranchID == nil || claims.BranchID == nil || *target.BranchID != *claims.BranchID {
+		if claims.Role != models.RoleBranchOwner || !userHasBranch(target, claims.BranchID) {
 			writeError(w, http.StatusForbidden, "FORBIDDEN", "not allowed to edit this user")
 			return
 		}
@@ -890,31 +990,51 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Смена филиала преподавателя — доступна ТОЛЬКО owner сети (не
-	// branch_owner, даже если target и так в его собственном филиале:
-	// смена филиала — операция уровня сети, а не филиала). Поддерживается
-	// только для role=tutor: у остальных ролей (student/parent/branch_owner)
-	// перенос между филиалами этим общим эндпоинтом не предусмотрен.
-	if rawBranchID, ok := body["branch_id"]; ok {
+	// Членства по филиалам — операция уровня owner. Старый branch_id сохраняем
+	// для обратной совместимости: если приходит только он, это означает
+	// перевод пользователя в один филиал. Новый branch_ids позволяет
+	// назначить несколько филиалов за один запрос.
+	var branchIDs []int64
+	branchMembershipsChanged := false
+	if raw, ok := body["branch_ids"]; ok {
 		if claims.Role != models.RoleOwner {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "only owner can change tutor's branch")
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "only owner can change user branches")
 			return
 		}
-		if target.Role != models.RoleTutor {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "branch can only be changed for a tutor")
+		if target.Role != models.RoleTutor && target.Role != models.RoleStudent {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "branches can only be changed for students and tutors")
 			return
 		}
-		branchIDFloat, ok := rawBranchID.(float64)
-		if !ok || branchIDFloat <= 0 {
+		arr, ok := raw.([]any)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "branch_ids must be an array")
+			return
+		}
+		for _, item := range arr {
+			n, ok := item.(float64)
+			if !ok || n <= 0 || n != float64(int64(n)) {
+				writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid branch_ids")
+				return
+			}
+			branchIDs = append(branchIDs, int64(n))
+		}
+		branchMembershipsChanged = true
+	} else if raw, ok := body["branch_id"]; ok {
+		if claims.Role != models.RoleOwner {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "only owner can change user branches")
+			return
+		}
+		if target.Role != models.RoleTutor && target.Role != models.RoleStudent {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "branches can only be changed for students and tutors")
+			return
+		}
+		n, ok := raw.(float64)
+		if !ok || n <= 0 || n != float64(int64(n)) {
 			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid branch_id")
 			return
 		}
-		newBranchID := int64(branchIDFloat)
-		if existing, err := h.branches.List(r.Context(), &newBranchID); err != nil || len(existing) == 0 {
-			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "branch_id must be an existing branch")
-			return
-		}
-		fields["branch_id"] = newBranchID
+		branchIDs = []int64{int64(n)}
+		branchMembershipsChanged = true
 	}
 
 	// У ученика email — это сгенерированный логин, а не настоящая почта (см.
@@ -938,12 +1058,26 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 		fields["email"] = normalized
 	}
 
+	if branchMembershipsChanged {
+		if _, err := h.users.SetBranches(r.Context(), id, target.Role, branchIDs); err != nil {
+			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+			return
+		}
+	}
+
 	updated, err := h.users.Update(r.Context(), id, fields)
 	if err != nil {
 		if errors.Is(err, repository.ErrDuplicate) {
 			writeError(w, http.StatusConflict, "ALREADY_EXISTS", "email or phone already registered")
 			return
 		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
+		return
+	}
+	// Update() возвращает облегчённую модель без branch_ids, поэтому после
+	// изменения членств перечитываем полную модель перед публикацией события.
+	updated, err = h.users.GetByID(r.Context(), id)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "update failed")
 		return
 	}
@@ -1025,7 +1159,7 @@ func (h *UserHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 	// своего собственного филиала — руководитель другого филиала, owner
 	// или сам branch_owner ему недоступны.
 	if claims.Role == models.RoleBranchOwner {
-		if target.Role != models.RoleTutor || target.BranchID == nil || claims.BranchID == nil || *target.BranchID != *claims.BranchID {
+		if target.Role != models.RoleTutor || !userHasBranch(target, claims.BranchID) {
 			writeError(w, http.StatusForbidden, "FORBIDDEN", "can only change status of tutors in your own branch")
 			return
 		}

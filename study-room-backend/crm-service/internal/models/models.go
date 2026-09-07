@@ -21,10 +21,11 @@ const (
 // (см. event-schema.md, "v1.application.received"), без синхронного похода
 // в User Service на каждую заявку.
 type UserRef struct {
-	UserID   int64  `json:"user_id"`
-	FullName string `json:"full_name"`
-	Role     Role   `json:"role"`
-	BranchID *int64 `json:"branch_id"`
+	UserID    int64   `json:"user_id"`
+	FullName  string  `json:"full_name"`
+	Role      Role    `json:"role"`
+	BranchID  *int64  `json:"branch_id"`
+	BranchIDs []int64 `json:"branch_ids,omitempty"`
 	// ClassInfo — класс ученика (role=student), реплицируется из User
 	// Service по событиям user.created/user.updated. nil для остальных
 	// ролей и для учеников, у которых он ещё не пришёл/не задан.

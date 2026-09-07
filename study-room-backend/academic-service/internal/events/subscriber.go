@@ -26,6 +26,7 @@ type UserEvent struct {
 	LastName  string      `json:"last_name"`
 	Role      models.Role `json:"role"`
 	BranchID  *int64      `json:"branch_id"`
+	BranchIDs []int64     `json:"branch_ids"`
 	// IsActive — из users.is_active. Нужно, чтобы поймать увольнение
 	// репетитора (is_active=false) и отвязать его от курсов/учеников —
 	// см. handleUserEvent ниже.
@@ -153,10 +154,11 @@ func (s *Subscriber) Start(ctx context.Context) error {
 
 func (s *Subscriber) upsertUserRef(ctx context.Context, ev UserEvent) {
 	ref := &models.UserRef{
-		UserID:   ev.ID,
-		FullName: (ev.FirstName + " " + ev.LastName),
-		Role:     ev.Role,
-		BranchID: ev.BranchID,
+		UserID:    ev.ID,
+		FullName:  (ev.FirstName + " " + ev.LastName),
+		Role:      ev.Role,
+		BranchID:  ev.BranchID,
+		BranchIDs: ev.BranchIDs,
 	}
 	if err := s.userRefRepo.Upsert(ctx, ref); err != nil {
 		log.Printf("[events] upsert user_ref %d error: %v", ev.ID, err)

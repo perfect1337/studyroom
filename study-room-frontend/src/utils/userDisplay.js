@@ -9,6 +9,7 @@ export function toSidebarUser(user, extra = {}) {
     name: [user.last_name, user.first_name].filter(Boolean).join(" ") || user.email,
     avatarUrl: user.avatar_url,
     branchName: user.branch_name,
+    branchIds: user.branch_ids || (user.branch_id ? [user.branch_id] : []),
     // role/isTutor — настоящая роль пользователя из JWT/профиля (а не
     // визуальная роль страницы, которая передаётся в Sidebar отдельным
     // проп'ом `role`). Нужны Sidebar'у, чтобы отличить владельца филиала,

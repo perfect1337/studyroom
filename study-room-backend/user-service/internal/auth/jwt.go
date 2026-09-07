@@ -11,9 +11,10 @@ import (
 // Claims — то, что "видят" остальные сервисы, проверяя токен локально.
 // Именно role и branch_id используются в матрице прав из ТЗ.
 type Claims struct {
-	UserID   int64       `json:"user_id"`
-	Role     models.Role `json:"role"`
-	BranchID *int64      `json:"branch_id"`
+	UserID    int64       `json:"user_id"`
+	Role      models.Role `json:"role"`
+	BranchID  *int64      `json:"branch_id"`
+	BranchIDs []int64     `json:"branch_ids,omitempty"`
 	// IsTutor — прокидывает models.User.IsTutor в токен, чтобы остальные
 	// сервисы (academic-service и т.п.), проверяющие права ЛОКАЛЬНО по
 	// claims (без похода в User Service), могли считать branch_owner с
@@ -41,10 +42,11 @@ func NewTokenManager(secret string, accessMinutes, refreshDays int) *TokenManage
 
 func (tm *TokenManager) GenerateAccessToken(u *models.User) (string, error) {
 	claims := Claims{
-		UserID:   u.ID,
-		Role:     u.Role,
-		BranchID: u.BranchID,
-		IsTutor:  u.IsTutor,
+		UserID:    u.ID,
+		Role:      u.Role,
+		BranchID:  u.BranchID,
+		BranchIDs: u.BranchIDs,
+		IsTutor:   u.IsTutor,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(tm.accessTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

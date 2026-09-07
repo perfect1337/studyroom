@@ -37,7 +37,8 @@ const profileColumns = `users.id, users.email, users.phone, users.password_hash,
 	users.patronymic, users.avatar_url, users.branch_id, users.is_active, users.created_at, users.updated_at, users.is_tutor,
 	tutor_profiles.specialization, tutor_profiles.status,
 	student_profiles.class_info, student_profiles.school, student_profiles.avg_grade, student_profiles.attendance_pct,
-	branches.name`
+	branches.name,
+	COALESCE((SELECT array_agg(ubm.branch_id::bigint ORDER BY ubm.branch_id) FROM user_branch_memberships ubm WHERE ubm.user_id = users.id), ARRAY[]::bigint[])`
 
 const fromProfileJoins = `FROM users
 	LEFT JOIN tutor_profiles ON tutor_profiles.user_id = users.id
@@ -63,7 +64,7 @@ func scanUserWithProfiles(row pgx.Row) (*models.User, error) {
 	err := row.Scan(&u.ID, &u.Email, &u.Phone, &u.PasswordHash, &u.Role, &u.LastName,
 		&u.FirstName, &u.Patronymic, &u.AvatarURL, &u.BranchID, &u.IsActive,
 		&u.CreatedAt, &u.UpdatedAt, &u.IsTutor, &u.Specialization, &u.TutorStatus,
-		&u.ClassInfo, &u.School, &u.AvgGrade, &u.AttendancePct, &u.BranchName)
+		&u.ClassInfo, &u.School, &u.AvgGrade, &u.AttendancePct, &u.BranchName, &u.BranchIDs)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -83,6 +84,9 @@ func (r *UserRepository) Create(ctx context.Context, u *models.User) (*models.Us
 		u.LastName, u.FirstName, u.Patronymic, u.AvatarURL, u.BranchID, u.IsActive)
 
 	created, err := scanUser(row)
+	if err == nil && u.BranchID != nil && (u.Role == models.RoleTutor || u.Role == models.RoleStudent) {
+		_, err = r.pool.Exec(ctx, `INSERT INTO user_branch_memberships (user_id, branch_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, created.ID, *u.BranchID)
+	}
 	if err != nil {
 		if isPgUniqueViolation(err) {
 			return nil, ErrDuplicate
@@ -98,9 +102,11 @@ func (r *UserRepository) GetByID(ctx context.Context, id int64) (*models.User, e
 }
 
 func (r *UserRepository) GetByLogin(ctx context.Context, login string) (*models.User, error) {
-	// login может быть email ИЛИ телефоном — так и задумано контрактом (см. 1.2)
-	query := `SELECT ` + userColumns + ` FROM users WHERE email = $1 OR phone = $1`
-	return scanUser(r.pool.QueryRow(ctx, query, login))
+	// login может быть email ИЛИ телефоном — так и задумано контрактом (см. 1.2).
+	// Для JWT нам также нужны все членства филиалов, поэтому логин загружает
+	// полную профильную модель, а не только legacy branch_id.
+	query := "SELECT " + profileColumns + " " + fromProfileJoins + "WHERE users.email = $1 OR users.phone = $1"
+	return scanUserWithProfiles(r.pool.QueryRow(ctx, query, login))
 }
 
 func (r *UserRepository) Update(ctx context.Context, id int64, fields map[string]any) (*models.User, error) {
@@ -298,6 +304,12 @@ func (r *UserRepository) CreateStudentWithParent(
 		return nil, err
 	}
 
+	if u.BranchID != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO user_branch_memberships (user_id, branch_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, created.ID, *u.BranchID); err != nil {
+			return nil, err
+		}
+	}
+
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO parent_student (parent_id, student_id) VALUES ($1,$2)`,
 		parentID, created.ID); err != nil {
@@ -321,6 +333,80 @@ func (r *UserRepository) CreateStudentWithParent(
 	created.ClassInfo = classInfo
 	created.School = school
 	return created, nil
+}
+
+func (r *UserRepository) SetBranches(ctx context.Context, userID int64, role models.Role, branchIDs []int64) (*models.User, error) {
+	if role != models.RoleTutor && role != models.RoleStudent {
+		return nil, ErrNotFound
+	}
+	if len(branchIDs) == 0 {
+		return nil, errors.New("at least one branch is required")
+	}
+	seen := map[int64]struct{}{}
+	unique := make([]int64, 0, len(branchIDs))
+	for _, id := range branchIDs {
+		if id <= 0 {
+			return nil, errors.New("invalid branch id")
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	var actualRole models.Role
+	if err := tx.QueryRow(ctx, `SELECT role FROM users WHERE id=$1 FOR UPDATE`, userID).Scan(&actualRole); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if actualRole != role {
+		return nil, ErrNotFound
+	}
+	rows, err := tx.Query(ctx, `SELECT id FROM branches WHERE id = ANY($1) AND deleted_at IS NULL`, unique)
+	if err != nil {
+		return nil, err
+	}
+	valid := map[int64]struct{}{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		valid[id] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	for _, id := range unique {
+		if _, ok := valid[id]; !ok {
+			return nil, errors.New("branch_id must be an existing active branch")
+		}
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM user_branch_memberships WHERE user_id=$1`, userID); err != nil {
+		return nil, err
+	}
+	for _, id := range unique {
+		if _, err := tx.Exec(ctx, `INSERT INTO user_branch_memberships(user_id,branch_id) VALUES($1,$2)`, userID, id); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := tx.Exec(ctx, `UPDATE users SET branch_id=$1, updated_at=now() WHERE id=$2`, unique[0], userID); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return r.GetByID(ctx, userID)
 }
 
 type ListFilter struct {
@@ -359,7 +445,7 @@ func (r *UserRepository) List(ctx context.Context, f ListFilter) ([]*models.User
 		i++
 	}
 	if f.BranchID != nil {
-		where += " AND users.branch_id = $" + strconv.Itoa(i)
+		where += " AND (users.branch_id = $" + strconv.Itoa(i) + " OR EXISTS (SELECT 1 FROM user_branch_memberships ubm WHERE ubm.user_id = users.id AND ubm.branch_id = $" + strconv.Itoa(i) + "))"
 		args = append(args, *f.BranchID)
 		i++
 	}

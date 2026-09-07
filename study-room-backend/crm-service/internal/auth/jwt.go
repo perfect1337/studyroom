@@ -14,9 +14,10 @@ import (
 )
 
 type Claims struct {
-	UserID   int64       `json:"user_id"`
-	Role     models.Role `json:"role"`
-	BranchID *int64      `json:"branch_id"`
+	UserID    int64       `json:"user_id"`
+	Role      models.Role `json:"role"`
+	BranchID  *int64      `json:"branch_id"`
+	BranchIDs []int64     `json:"branch_ids,omitempty"`
 	jwt.RegisteredClaims
 }
 

@@ -24,6 +24,7 @@ type UserEvent struct {
 	LastName  string      `json:"last_name"`
 	Role      models.Role `json:"role"`
 	BranchID  *int64      `json:"branch_id"`
+	BranchIDs []int64     `json:"branch_ids"`
 	// ClassInfo — класс ученика (role=student), приходит из User Service
 	// (events.UserEvent.ClassInfo). Реплицируется в user_refs, чтобы
 	// CreateInternal мог подставить его в заявку без синхронного похода

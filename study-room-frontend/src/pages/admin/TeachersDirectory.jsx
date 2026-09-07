@@ -38,6 +38,7 @@ const EMPTY_FORM = {
   email: "",
   phone: "",
   branch_id: "",
+  branch_ids: [],
   course_ids: [],
 };
 
@@ -234,7 +235,7 @@ export default function TeachersDirectory({ role }) {
 
   async function handleAddTeacher(e) {
     e.preventDefault();
-    if (!addForm.last_name || !addForm.first_name || !addForm.email || !addForm.branch_id) return;
+    if (!addForm.last_name || !addForm.first_name || !addForm.email || !addForm.branch_ids?.length) return;
     if (!isValidPhone(addForm.phone)) {
       setAddStatus("Введите телефон в формате из 10-15 цифр (можно с +)");
       return;
@@ -253,7 +254,8 @@ export default function TeachersDirectory({ role }) {
         last_name: addForm.last_name,
         first_name: addForm.first_name,
         patronymic: addForm.patronymic || undefined,
-        branch_id: Number(addForm.branch_id),
+        branch_id: Number(addForm.branch_ids[0]),
+        branch_ids: addForm.branch_ids.map(Number),
         specialization,
       });
       const newTutorId = (res?.user ?? res)?.id;
@@ -635,26 +637,27 @@ export default function TeachersDirectory({ role }) {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Филиал *</label>
+                  <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Филиалы *</label>
                   {isOwner ? (
-                    <select
-                      required
-                      value={addForm.branch_id}
-                      onChange={(e) => setAddForm((f) => ({ ...f, branch_id: e.target.value, course_ids: [] }))}
-                      className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-                    >
-                      <option value="">Выберите филиал</option>
-                      {branches.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.name || b.city}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="border border-outline-variant rounded-lg divide-y divide-outline-variant max-h-40 overflow-y-auto">
+                      {branches.map((b) => {
+                        const id = String(b.id);
+                        const checked = addForm.branch_ids.includes(id);
+                        return <label key={b.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-surface-container-high">
+                          <input type="checkbox" checked={checked} onChange={() => setAddForm((f) => {
+                            const next = checked ? f.branch_ids.filter((x) => x !== id) : [...f.branch_ids, id];
+                            return { ...f, branch_ids: next, branch_id: next[0] || "", course_ids: [] };
+                          })} className="w-4 h-4 accent-primary" />
+                          <span className="text-label-md text-on-surface">{b.name || b.city}</span>
+                        </label>;
+                      })}
+                    </div>
                   ) : (
                     <div className="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-label-md text-on-surface-variant">
                       {user?.branch_name || `Филиал #${user?.branch_id}`}
                     </div>
                   )}
+                  <p className="text-[12px] text-on-surface-variant mt-1">Можно выбрать несколько филиалов. Первый выбранный станет основным.</p>
                 </div>
                 <div>
                   <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Курсы</label>

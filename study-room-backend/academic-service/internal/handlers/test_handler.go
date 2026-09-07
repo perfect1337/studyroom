@@ -183,11 +183,20 @@ func (h *TestHandler) filterByOwnBranch(r *http.Request, branchID *int64, items 
 
 	out := make([]*models.Test, 0, len(items))
 	for _, t := range items {
-		if studentBranch := branches[t.StudentID]; studentBranch != nil && *studentBranch == *branchID {
+		if containsBranch(branches[t.StudentID], *branchID) {
 			out = append(out, t)
 		}
 	}
 	return out, nil
+}
+
+func containsBranch(branchIDs []int64, branchID int64) bool {
+	for _, id := range branchIDs {
+		if id == branchID {
+			return true
+		}
+	}
+	return false
 }
 
 func nonNilTests(t []*models.Test) []*models.Test {
