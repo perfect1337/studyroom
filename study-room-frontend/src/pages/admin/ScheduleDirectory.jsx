@@ -513,24 +513,16 @@ export default function ScheduleDirectory({ role }) {
         setCopyingMonth(false);
         return;
       }
-      const targetMonth = viewMonth === 11 ? 0 : viewMonth + 1;
-      const targetYear = viewMonth === 11 ? viewYear + 1 : viewYear;
-      const daysInTarget = new Date(targetYear, targetMonth + 1, 0).getDate();
+      // Недельная логика: каждая неделя копируется на следующую (+28 дней = 4 недели).
+      // Неделя 1 → Неделя 5 (1-я след. месяца), Неделя 2 → Неделя 6 и т.д.
       let created = 0;
       let failed = [];
       for (const lesson of sourceLessons) {
         setCopyProgress(`Дублирование: ${created + 1} из ${sourceLessons.length}...`);
         const sourceDate = new Date(String(lesson.lesson_date).slice(0, 10) + "T12:00:00");
-        const dayOfWeek = sourceDate.getDay();
-        const targetDate = new Date(targetYear, targetMonth, 1);
-        const firstDayOfWeek = targetDate.getDay();
-        const weekOffset = Math.floor((sourceDate.getDate() - 1 + firstDayOfWeek) / 7);
-        let targetDay = 1 + (dayOfWeek - firstDayOfWeek + 7) % 7 + weekOffset * 7;
-        if (targetDay > daysInTarget) {
-          failed.push(`${lesson.lesson_date} — нет такой даты в следующем месяце`);
-          continue;
-        }
-        const targetISO = `${targetYear}-${pad(targetMonth + 1)}-${pad(targetDay)}`;
+        const targetDate = new Date(sourceDate);
+        targetDate.setDate(targetDate.getDate() + 28);
+        const targetISO = `${targetDate.getFullYear()}-${pad(targetDate.getMonth() + 1)}-${pad(targetDate.getDate())}`;
         try {
           await createLesson({
             course_id: lesson.course_id,
@@ -547,7 +539,7 @@ export default function ScheduleDirectory({ role }) {
           });
           created++;
         } catch (e) {
-          failed.push(`${targetISO} — ${e.message || "ошибка"}`);
+          failed.push(`${lesson.lesson_date} → ${targetISO} — ${e.message || "ошибка"}`);
         }
       }
       setCopyProgress(`Создано ${created} из ${sourceLessons.length}${failed.length ? `. Ошибок: ${failed.length}` : "."}`);
