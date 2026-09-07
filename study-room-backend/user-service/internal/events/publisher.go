@@ -126,6 +126,7 @@ type UserDeletedEvent struct {
 	LastName  string  `json:"last_name"`
 	Role      string  `json:"role"`
 	BranchID  *int64  `json:"branch_id,omitempty"`
+	BranchIDs []int64  `json:"branch_ids,omitempty"`
 	ParentIDs []int64 `json:"parent_ids,omitempty"`
 }
 
