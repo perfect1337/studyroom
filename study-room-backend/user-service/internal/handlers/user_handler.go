@@ -656,8 +656,12 @@ func (h *UserHandler) SetUserBranches(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "user not found")
 		return
 	}
-	if target.Role != models.RoleTutor && target.Role != models.RoleStudent {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "branches can only be managed for students and tutors")
+	if target.Role == models.RoleStudent {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "student branches are assigned automatically from active contracts")
+		return
+	}
+	if target.Role != models.RoleTutor {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "branches can only be managed for tutors")
 		return
 	}
 	var req setBranchesRequest
@@ -682,7 +686,6 @@ type createTutorRequest struct {
 	FirstName      string  `json:"first_name"`
 	Patronymic     *string `json:"patronymic"`
 	BranchID       *int64  `json:"branch_id"`
-	BranchIDs      []int64 `json:"branch_ids"`
 	Specialization string  `json:"specialization"`
 }
 
@@ -708,16 +711,11 @@ func (h *UserHandler) CreateTutor(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		req.BranchID = claims.BranchID
-		req.BranchIDs = []int64{*claims.BranchID}
 	}
-	if len(req.BranchIDs) == 0 && req.BranchID != nil {
-		req.BranchIDs = []int64{*req.BranchID}
-	}
-	if len(req.BranchIDs) == 0 {
-		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "branch_id or branch_ids required")
+	if req.BranchID == nil || *req.BranchID <= 0 {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "branch_id is required")
 		return
 	}
-	req.BranchID = &req.BranchIDs[0]
 
 	tempPassword, err := auth.GenerateOpaqueToken()
 	if err != nil {
@@ -746,14 +744,6 @@ func (h *UserHandler) CreateTutor(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "could not create tutor")
 		return
 	}
-	if len(req.BranchIDs) > 1 {
-		created, err = h.users.SetBranches(r.Context(), created.ID, models.RoleTutor, req.BranchIDs)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
-			return
-		}
-	}
-
 	if err := h.tutorProfiles.Upsert(r.Context(), created.ID, req.Specialization, models.TutorStatusActive); err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "could not create tutor profile")
 		return
@@ -839,8 +829,6 @@ type createStudentRequest struct {
 	// этот же обработчик, см. роут в app.go).
 	ClassInfo *string `json:"class_info"`
 	School    *string `json:"school"`
-	BranchID  *int64  `json:"branch_id"`
-	BranchIDs []int64 `json:"branch_ids"`
 	ParentID  int64   `json:"parent_id"`
 }
 
@@ -865,25 +853,8 @@ func (h *UserHandler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// branch_owner создаёт ученика (в рамках оформления договора) только для
-	// своего собственного филиала — branch_id из запроса игнорируется и
-	// принудительно подставляется из claims, аналогично courses/contracts.
-	if claims.Role == models.RoleBranchOwner {
-		if claims.BranchID == nil {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "branch_owner has no branch")
-			return
-		}
-		req.BranchID = claims.BranchID
-		req.BranchIDs = []int64{*claims.BranchID}
-	}
-	if len(req.BranchIDs) == 0 && req.BranchID != nil {
-		req.BranchIDs = []int64{*req.BranchID}
-	}
-	if len(req.BranchIDs) == 0 {
-		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "branch_id or branch_ids required")
-		return
-	}
-	req.BranchID = &req.BranchIDs[0]
+	// Филиал ученика не выбирается при создании. Он определяется автоматически
+	// по активным договорам после события contract.created/contract.activated.
 
 	tempPassword, err := auth.GenerateOpaqueToken()
 	if err != nil {
@@ -906,7 +877,7 @@ func (h *UserHandler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 		u := &models.User{
 			Email: generateStudentLogin(req.LastName, req.FirstName, suffix), PasswordHash: hash, Role: models.RoleStudent,
 			LastName: req.LastName, FirstName: req.FirstName, Patronymic: req.Patronymic,
-			BranchID: req.BranchID, IsActive: true,
+			BranchID: nil, IsActive: true,
 		}
 		var cErr error
 		created, cErr = h.users.CreateStudentWithParent(r.Context(), u, req.ParentID, req.ClassInfo, req.School)
@@ -937,14 +908,6 @@ func (h *UserHandler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "could not create student")
 		return
-	}
-
-	if len(req.BranchIDs) > 1 {
-		created, err = h.users.SetBranches(r.Context(), created.ID, models.RoleStudent, req.BranchIDs)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
-			return
-		}
 	}
 
 	notifyEmail := ""
@@ -1001,8 +964,12 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, "FORBIDDEN", "only owner can change user branches")
 			return
 		}
-		if target.Role != models.RoleTutor && target.Role != models.RoleStudent {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "branches can only be changed for students and tutors")
+		if target.Role == models.RoleStudent {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "student branches are assigned automatically from active contracts")
+			return
+		}
+		if target.Role != models.RoleTutor {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "branches can only be changed for tutors")
 			return
 		}
 		arr, ok := raw.([]any)

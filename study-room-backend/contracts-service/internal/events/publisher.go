@@ -17,30 +17,37 @@ const (
 	SubjectContractExpired      = "contract.expired"
 	SubjectContractActivated    = "contract.activated"
 	SubjectContractUpdated      = "contract.updated"
+	SubjectContractCompleted    = "contract.completed"
+	SubjectContractDeleted      = "contract.deleted"
 )
 
 type Publisher interface {
-	ContractCreated(id, studentID, courseID int64, tutorID *int64, startDate, endDate *string)
+	ContractCreated(id, studentID, courseID, branchID int64, tutorID *int64, startDate, endDate *string)
 	ContractExpiringSoon(userID int64, studentId int64, contractNumber, endDate string)
 	ContractTerminated(id, studentID, courseID int64)
 	ContractExpired(id, studentID, courseID int64, endDate string)
 	ContractActivated(id, studentID, courseID int64, startDate, endDate string)
 	ContractUpdated(id, studentID, courseID int64, startDate, endDate string)
+	ContractCompleted(id, studentID, courseID int64)
+	ContractDeleted(id, studentID, courseID int64)
 }
 
 type NoopPublisher struct{}
 
-func (NoopPublisher) ContractCreated(int64, int64, int64, *int64, *string, *string) {}
-func (NoopPublisher) ContractExpiringSoon(int64, int64, string, string)             {}
-func (NoopPublisher) ContractTerminated(int64, int64, int64)                        {}
-func (NoopPublisher) ContractExpired(int64, int64, int64, string)                   {}
-func (NoopPublisher) ContractActivated(int64, int64, int64, string, string)         {}
-func (NoopPublisher) ContractUpdated(int64, int64, int64, string, string)           {}
+func (NoopPublisher) ContractCreated(int64, int64, int64, int64, *int64, *string, *string) {}
+func (NoopPublisher) ContractExpiringSoon(int64, int64, string, string)                    {}
+func (NoopPublisher) ContractTerminated(int64, int64, int64)                               {}
+func (NoopPublisher) ContractExpired(int64, int64, int64, string)                          {}
+func (NoopPublisher) ContractActivated(int64, int64, int64, string, string)                {}
+func (NoopPublisher) ContractUpdated(int64, int64, int64, string, string)                  {}
+func (NoopPublisher) ContractCompleted(int64, int64, int64)                                {}
+func (NoopPublisher) ContractDeleted(int64, int64, int64)                                  {}
 
 type contractCreatedPayload struct {
 	ID        int64   `json:"id"`
 	StudentID int64   `json:"student_id"`
 	CourseID  int64   `json:"course_id"`
+	BranchID  int64   `json:"branch_id"`
 	TutorID   *int64  `json:"tutor_id"`
 	StartDate *string `json:"start_date"`
 	EndDate   *string `json:"end_date"`
@@ -73,6 +80,14 @@ type contractLifecyclePayload struct {
 	EndDate   string `json:"end_date"`
 }
 
+func (p *NATSPublisher) ContractCompleted(id, studentID, courseID int64) {
+	p.publishLifecycle("contract.completed", contractLifecyclePayload{ID: id, StudentID: studentID, CourseID: courseID})
+}
+
+func (p *NATSPublisher) ContractDeleted(id, studentID, courseID int64) {
+	p.publishLifecycle("contract.deleted", contractLifecyclePayload{ID: id, StudentID: studentID, CourseID: courseID})
+}
+
 type NATSPublisher struct {
 	nc *nats.Conn
 }
@@ -86,9 +101,9 @@ func NewNATSPublisher(nc *nats.Conn) *NATSPublisher {
 // handleContractCreated). tutor_id всегда nil — POST /contracts не
 // принимает tutor_id (см. api-contracts.md 3.1), назначение репетитора на
 // enrollment — отдельное действие уже на стороне Academic Service.
-func (p *NATSPublisher) ContractCreated(id, studentID, courseID int64, tutorID *int64, startDate, endDate *string) {
+func (p *NATSPublisher) ContractCreated(id, studentID, courseID, branchID int64, tutorID *int64, startDate, endDate *string) {
 	data, err := json.Marshal(contractCreatedPayload{
-		ID: id, StudentID: studentID, CourseID: courseID,
+		ID: id, StudentID: studentID, CourseID: courseID, BranchID: branchID,
 		TutorID: tutorID, StartDate: startDate, EndDate: endDate,
 	})
 	if err != nil {
