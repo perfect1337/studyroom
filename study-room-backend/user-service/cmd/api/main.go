@@ -20,8 +20,6 @@ import (
 	"studyroom/user-service/internal/models"
 	"studyroom/user-service/internal/promotion"
 	"studyroom/user-service/internal/repository"
-
-	"github.com/nats-io/nats.go"
 )
 
 func main() {
@@ -53,10 +51,8 @@ func main() {
 	log.Println("migrations up to date")
 
 	var pub events.Publisher = events.NoopPublisher{}
-	var natsConn *nats.Conn
 	if cfg.NATSURL != "" {
 		nc, err := events.Connect(cfg.NATSURL)
-		natsConn = nc
 		if err != nil {
 			log.Printf("events: could not connect to NATS at %s: %v (continuing without publish)", cfg.NATSURL, err)
 		} else {
@@ -76,13 +72,6 @@ func main() {
 		Domain:   cfg.CookieDomain,
 	}
 	deps := app.NewDeps(pool, tm, pub, cfg.AppPublicURL, cfg.AuthRateLimit, cookieOpts)
-	if natsConn != nil {
-		if sub := events.NewSubscriber(natsConn, deps.Users); sub != nil {
-			if err := sub.Start(ctx); err != nil {
-				log.Printf("events: contract subscriber start failed: %v", err)
-			}
-		}
-	}
 	handler := app.NewRouter(deps)
 
 	// Пользователи, заведённые в обход обычного API (сидинг миграцией,
@@ -131,10 +120,6 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
-	if natsConn != nil {
-		_ = natsConn.Drain()
-		natsConn.Close()
-	}
 }
 
 // reconcileOwners переотправляет user.updated для всех пользователей с

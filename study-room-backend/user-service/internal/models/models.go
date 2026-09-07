@@ -55,9 +55,9 @@ type User struct {
 	Patronymic   *string `json:"patronymic,omitempty"`
 	AvatarURL    *string `json:"avatar_url,omitempty"`
 	BranchID     *int64  `json:"branch_id"`
-	// BranchIDs — филиалы, доступные пользователю. Для tutor всегда один
-	// филиал; для student список формируется автоматически по активным
-	// договорам. Вручную менять филиалы ученика нельзя.
+	// BranchIDs — все активные филиалы, в которых состоит пользователь. Для
+	// tutor/student это many-to-many; BranchID остаётся основным филиалом для
+	// обратной совместимости и отображения по умолчанию.
 	BranchIDs []int64 `json:"branch_ids,omitempty"`
 	// BranchName — заполняется через LEFT JOIN branches в profileColumns/
 	// fromProfileJoins (см. user_repository.go). nil, если branch_id не задан.
