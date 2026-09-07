@@ -102,7 +102,7 @@ func (h *ContractHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	startStr, endStr := req.StartDate, req.EndDate
-	h.events.ContractCreated(contract.ID, contract.StudentID, contract.CourseID, contract.BranchID, nil, &startStr, &endStr)
+	h.events.ContractCreated(contract.ID, contract.StudentID, contract.CourseID, nil, &startStr, &endStr)
 
 	writeJSON(w, http.StatusCreated, contract)
 }
@@ -421,8 +421,6 @@ func (h *ContractHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	switch req.Status {
 	case string(models.StatusTerminated):
 		h.events.ContractTerminated(contract.ID, contract.StudentID, contract.CourseID)
-	case string(models.StatusCompleted):
-		h.events.ContractCompleted(contract.ID, contract.StudentID, contract.CourseID)
 	case string(models.StatusActive):
 		h.events.ContractActivated(contract.ID, contract.StudentID, contract.CourseID,
 			contract.StartDate.Format(dateLayout), contract.EndDate.Format(dateLayout))
@@ -488,15 +486,6 @@ func (h *ContractHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", err.Error())
 		return
 	}
-	contract, err := h.repo.GetByID(r.Context(), id)
-	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "NOT_FOUND", "contract not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load contract")
-		return
-	}
 	if err := h.repo.Delete(r.Context(), id, claims.UserID); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "contract not found")
@@ -505,7 +494,6 @@ func (h *ContractHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to delete contract")
 		return
 	}
-	h.events.ContractDeleted(contract.ID, contract.StudentID, contract.CourseID)
 	w.WriteHeader(http.StatusOK)
 }
 

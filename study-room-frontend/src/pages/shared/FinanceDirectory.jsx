@@ -371,6 +371,7 @@ export default function FinanceDirectory({ role }) {
           patronymic: new_student_patronymic.trim() || undefined,
           school: new_student_school.trim() || undefined,
           class_info: new_student_class_info,
+          branch_id: Number(branch_id),
           parent_id: Number(parent_id),
         });
         studentId = created?.id ?? created?.user?.id;
