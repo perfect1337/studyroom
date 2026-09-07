@@ -67,6 +67,7 @@ type DeletedUserInfo struct {
 	LastName  string
 	Role      models.Role
 	BranchID  *int64
+	// BranchIDs — все активные филиалы пользователя на момент удаления.
 	BranchIDs []int64
 	// ParentIDs — id всех родителей удаляемого ученика (parent_student),
 	// чтобы Notification Service мог, если понадобится, разослать им
@@ -125,7 +126,6 @@ type UserDeletedEvent struct {
 	LastName  string  `json:"last_name"`
 	Role      string  `json:"role"`
 	BranchID  *int64  `json:"branch_id,omitempty"`
-	BranchIDs []int64 `json:"branch_ids,omitempty"`
 	ParentIDs []int64 `json:"parent_ids,omitempty"`
 }
 
