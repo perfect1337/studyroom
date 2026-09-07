@@ -813,6 +813,30 @@ export default function ScheduleDirectory({ role }) {
   }
 
   const currentWeek = monthWeeks[Math.min(weekIndex, monthWeeks.length - 1)] ?? [];
+
+  function toggleExpandedWeek(day) {
+    const week = monthWeeks.find((candidate) => candidate.includes(day)) ?? [];
+    const expandableDays = week.filter((weekDay) => (lessonsByDay[weekDay] ?? []).length > 3);
+    if (expandableDays.length === 0) return;
+
+    const shouldExpand = !expandableDays.every((weekDay) => expandedMonthDays.has(weekDay));
+    setExpandedMonthDays((prev) => {
+      const next = new Set(prev);
+      expandableDays.forEach((weekDay) => {
+        if (shouldExpand) next.add(weekDay);
+        else next.delete(weekDay);
+      });
+      return next;
+    });
+  }
+
+  function selectMobileMonthDay(day) {
+    setSelectedDay(day);
+    setSelectedLesson(null);
+    setDetailPage(0);
+    scrollToDetailsOnMobile();
+  }
+
   // Время начала занятий этой недели, по возрастанию — строки недельной сетки.
   const weekTimes = useMemo(() => {
     const set = new Set();
@@ -1080,7 +1104,7 @@ export default function ScheduleDirectory({ role }) {
                 return (
                   <button
                     key={`mobile-day-${day}`}
-                    onClick={() => { setSelectedDay(day); setSelectedLesson(null); setDetailPage(0); }}
+                    onClick={() => selectMobileMonthDay(day)}
                     className={`w-full text-left p-3 rounded-xl border ${dayStateClass} ${isSelected ? "ring-2 ring-primary ring-offset-1" : ""}`}
                   >
                     <div className="flex items-center justify-between gap-3 mb-2">
@@ -1139,12 +1163,7 @@ export default function ScheduleDirectory({ role }) {
                             tabIndex={0}
                             onClick={(event) => {
                               event.stopPropagation();
-                              setExpandedMonthDays((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(day)) next.delete(day);
-                                else next.add(day);
-                                return next;
-                              });
+                              toggleExpandedWeek(day);
                             }}
                             onKeyDown={(event) => {
                               if (event.key === "Enter" || event.key === " ") {
@@ -1264,12 +1283,7 @@ export default function ScheduleDirectory({ role }) {
                             if (event.key === "Enter" || event.key === " ") {
                               event.preventDefault();
                               event.stopPropagation();
-                              setExpandedMonthDays((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(day)) next.delete(day);
-                                else next.add(day);
-                                return next;
-                              });
+                              toggleExpandedWeek(day);
                             }
                           }}
                           className="text-[9px] font-bold text-center rounded-md bg-white/50 py-0.5 cursor-pointer hover:bg-white/70"
