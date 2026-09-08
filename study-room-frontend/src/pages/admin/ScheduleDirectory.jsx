@@ -1121,7 +1121,7 @@ export default function ScheduleDirectory({ role }) {
           <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center shrink-0 group-hover:rotate-90 transition-transform duration-200">
             <span className="material-symbols-outlined text-[16px]">add</span>
           </span>
-          Добавить занятие
+          Добавить занятия
         </button>
         <button
           type="button"
