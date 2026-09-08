@@ -39,6 +39,13 @@ type UserEvent struct {
 // самого договора. Обработчик намеренно нестрогий: если поля не совпадут,
 // когда Contracts Service будет реализован, это не должно ронять подписку —
 // см. handleContractCreated ниже.
+//
+// BranchID — это Contract.BranchID (филиал, чей руководитель выдал
+// договор), а НЕ домашний филиал ученика. Именно это поле становится
+// enrollments.branch_id (см. CreateFromContract) — так ученик из филиала А
+// может ходить на предмет, оформленный по договору в филиале Б, и владелец
+// Б сможет управлять этим зачислением (назначать своего репетитора и т.д.),
+// не запрашивая доступ к чужому филиалу.
 type ContractCreatedEvent struct {
 	ContractID int64   `json:"id"`
 	StudentID  int64   `json:"student_id"`
@@ -46,6 +53,7 @@ type ContractCreatedEvent struct {
 	TutorID    *int64  `json:"tutor_id"`
 	StartDate  *string `json:"start_date"`
 	EndDate    *string `json:"end_date"`
+	BranchID   int64   `json:"branch_id"`
 }
 
 // ContractTerminatedEvent — расторжение договора (см.
@@ -434,7 +442,21 @@ func (s *Subscriber) handleContractCreated(ctx context.Context) nats.MsgHandler 
 			log.Printf("[events] contract.created: missing student_id/course_id, skip (contract_id=%d)", ev.ContractID)
 			return
 		}
-		if _, err := s.enrollRepo.CreateFromContract(ctx, ev.StudentID, ev.CourseID, ev.TutorID, ev.StartDate, ev.EndDate); err != nil {
+		branchID := ev.BranchID
+		if branchID == 0 {
+			// Обратная совместимость: если событие пришло от старой версии
+			// Contracts Service без branch_id, не роняем создание enrollment —
+			// откатываемся на домашний филиал ученика (прежнее поведение).
+			// В штатном режиме (branch_id уже проставляется в
+			// contracts-service, см. events/publisher.go) сюда не заходим.
+			home, err := s.userRefRepo.BranchOf(ctx, ev.StudentID)
+			if err != nil {
+				log.Printf("[events] contract.created: failed to resolve fallback branch for student %d: %v", ev.StudentID, err)
+			} else if home != nil {
+				branchID = *home
+			}
+		}
+		if _, err := s.enrollRepo.CreateFromContract(ctx, ev.StudentID, ev.CourseID, ev.TutorID, ev.StartDate, ev.EndDate, branchID); err != nil {
 			log.Printf("[events] create enrollment from contract %d error: %v", ev.ContractID, err)
 		}
 	}

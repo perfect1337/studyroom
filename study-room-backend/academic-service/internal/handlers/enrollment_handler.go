@@ -15,21 +15,31 @@ import (
 
 type EnrollmentHandler struct {
 	repo       *repository.EnrollmentRepository
+	userRefs   *repository.UserRefRepository
 	userClient ChildrenResolver
 }
 
-func NewEnrollmentHandler(repo *repository.EnrollmentRepository, userClient ChildrenResolver) *EnrollmentHandler {
-	return &EnrollmentHandler{repo: repo, userClient: userClient}
+func NewEnrollmentHandler(repo *repository.EnrollmentRepository, userRefs *repository.UserRefRepository, userClient ChildrenResolver) *EnrollmentHandler {
+	return &EnrollmentHandler{repo: repo, userRefs: userRefs, userClient: userClient}
 }
 
 type createEnrollmentRequest struct {
 	StudentID int64 `json:"student_id"`
 	CourseID  int64 `json:"course_id"`
+	// BranchID — необязательный, филиал ОКАЗАНИЯ УСЛУГИ по этой конкретной
+	// записи (например, owner вручную зачисляет иногороднего ученика на
+	// предмет в другом филиале, минуя договор). Если не передан, по
+	// умолчанию берётся домашний филиал ученика (user_refs) — это
+	// сохраняет прежнее поведение для типового случая "ученик учится там
+	// же, где живёт".
+	BranchID *int64 `json:"branch_id"`
 }
 
 // Create — POST /enrollments, owner only. Ручной способ, для случаев без
 // договора (см. api-contracts.md 2.4) — основной путь это событие
-// contract.created, см. internal/events/subscriber.go.
+// contract.created, см. internal/events/subscriber.go, где branch_id
+// зачисления берётся из Contract.BranchID, а не из домашнего филиала
+// ученика (см. CreateFromContract).
 func (h *EnrollmentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req createEnrollmentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -41,7 +51,21 @@ func (h *EnrollmentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	enrollment, err := h.repo.Create(r.Context(), req.StudentID, req.CourseID)
+	branchID := req.BranchID
+	if branchID == nil {
+		home, err := h.userRefs.BranchOf(r.Context(), req.StudentID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to resolve student branch")
+			return
+		}
+		branchID = home
+	}
+	if branchID == nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "branch_id is required (student has no known home branch)")
+		return
+	}
+
+	enrollment, err := h.repo.Create(r.Context(), req.StudentID, req.CourseID, *branchID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to create enrollment")
 		return
@@ -126,7 +150,7 @@ func (h *EnrollmentHandler) enrollmentInOwnBranch(w http.ResponseWriter, r *http
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load enrollment")
 		return false
 	}
-	branchID, err := h.repo.EnrollmentStudentBranchID(r.Context(), enrollment.ID)
+	branchID, err := h.repo.EnrollmentBranchID(r.Context(), enrollment.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check branch")
 		return false
@@ -144,7 +168,9 @@ func (h *EnrollmentHandler) enrollmentInOwnBranch(w http.ResponseWriter, r *http
 //   - tutor: только свои (tutor_id = claims.UserID, query игнорируется)
 //   - parent: только свои дети (список получаем синхронно у User Service)
 //   - student: только себя (student_id = claims.UserID)
-//   - branch_owner: только свой филиал (по филиалу ученика в user_refs)
+//   - branch_owner: только свой филиал (по enrollments.branch_id — филиалу
+//     оказания услуги конкретной записи, а не по домашнему филиалу ученика,
+//     см. repository.EnrollmentFilter)
 //   - owner: без ограничений, использует query как есть
 func (h *EnrollmentHandler) List(w http.ResponseWriter, r *http.Request) {
 	claims, _ := middleware.FromContext(r.Context())
@@ -292,7 +318,7 @@ func (h *EnrollmentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	case models.RoleOwner:
 		// без ограничений
 	case models.RoleBranchOwner:
-		branchID, err := h.repo.EnrollmentStudentBranchID(r.Context(), enrollment.ID)
+		branchID, err := h.repo.EnrollmentBranchID(r.Context(), enrollment.ID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check branch")
 			return

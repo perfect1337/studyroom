@@ -20,12 +20,12 @@ func NewEnrollmentRepository(pool *pgxpool.Pool) *EnrollmentRepository {
 	return &EnrollmentRepository{pool: pool}
 }
 
-const enrollmentColumns = `id, student_id, course_id, tutor_id, progress_pct, status, start_date, end_date, created_at`
+const enrollmentColumns = `id, student_id, course_id, tutor_id, progress_pct, status, start_date, end_date, created_at, branch_id`
 
 func scanEnrollment(row pgx.Row) (*models.Enrollment, error) {
 	var e models.Enrollment
 	err := row.Scan(&e.ID, &e.StudentID, &e.CourseID, &e.TutorID, &e.ProgressPct,
-		&e.Status, &e.StartDate, &e.EndDate, &e.CreatedAt)
+		&e.Status, &e.StartDate, &e.EndDate, &e.CreatedAt, &e.BranchID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -37,15 +37,27 @@ func scanEnrollment(row pgx.Row) (*models.Enrollment, error) {
 
 // Create — ручное создание записи (POST /enrollments), см. api-contracts.md 2.4.
 // Статус и прогресс всегда стартуют как active/0 — соответствует контракту.
-func (r *EnrollmentRepository) Create(ctx context.Context, studentID, courseID int64) (*models.Enrollment, error) {
-	query := `INSERT INTO enrollments (student_id, course_id, status, progress_pct)
-		VALUES ($1,$2,'active',0) RETURNING ` + enrollmentColumns
-	return scanEnrollment(r.pool.QueryRow(ctx, query, studentID, courseID))
+// Этот путь не связан ни с одним договором (нет Contract.BranchID, откуда
+// обычно берётся филиал оказания услуги — см. CreateFromContract ниже),
+// поэтому branchID передаёт вызывающий (handlers.EnrollmentHandler.Create) —
+// как правило, домашний филиал ученика (user_refs), если он не указан явно.
+func (r *EnrollmentRepository) Create(ctx context.Context, studentID, courseID, branchID int64) (*models.Enrollment, error) {
+	query := `INSERT INTO enrollments (student_id, course_id, status, progress_pct, branch_id)
+		VALUES ($1,$2,'active',0,$3) RETURNING ` + enrollmentColumns
+	return scanEnrollment(r.pool.QueryRow(ctx, query, studentID, courseID, branchID))
 }
 
 // CreateFromContract — автоматическое создание по событию contract.created
 // (см. internal/events/subscriber.go и api-contracts.md 2.4, примечание).
 // startDate/endDate/tutorID опциональны — приходят из тела договора, если есть.
+//
+// branchID — это Contract.BranchID из события (филиал, чей руководитель
+// выдал договор), а НЕ домашний филиал ученика. Раньше этот филиал
+// вычислялся отдельным JOIN на user_refs по студенту (домашний филиал),
+// из-за чего сценарий "ученик из филиала А занимается в филиале Б" ломался
+// в момент, когда владелец Б пытался назначить своего репетитора —
+// enrollment формально принадлежал филиалу А. Теперь у enrollment всегда
+// тот филиал, что и у договора, из которого он появился.
 //
 // Если tutorID указан, дополнительно гарантируем строку в course_tutors:
 // иначе ListForTutor (см. ниже — "мои ученики" через JOIN course_tutors)
@@ -55,7 +67,7 @@ func (r *EnrollmentRepository) Create(ctx context.Context, studentID, courseID i
 // там список учеников берётся иначе — из User Service, без учёта
 // enrollments/course_tutors).
 func (r *EnrollmentRepository) CreateFromContract(
-	ctx context.Context, studentID, courseID int64, tutorID *int64, startDate, endDate *string,
+	ctx context.Context, studentID, courseID int64, tutorID *int64, startDate, endDate *string, branchID int64,
 ) (*models.Enrollment, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -63,9 +75,9 @@ func (r *EnrollmentRepository) CreateFromContract(
 	}
 	defer tx.Rollback(ctx)
 
-	query := `INSERT INTO enrollments (student_id, course_id, tutor_id, status, progress_pct, start_date, end_date)
-		VALUES ($1,$2,$3,'active',0,$4,$5) RETURNING ` + enrollmentColumns
-	enrollment, err := scanEnrollment(tx.QueryRow(ctx, query, studentID, courseID, tutorID, startDate, endDate))
+	query := `INSERT INTO enrollments (student_id, course_id, tutor_id, status, progress_pct, start_date, end_date, branch_id)
+		VALUES ($1,$2,$3,'active',0,$4,$5,$6) RETURNING ` + enrollmentColumns
+	enrollment, err := scanEnrollment(tx.QueryRow(ctx, query, studentID, courseID, tutorID, startDate, endDate, branchID))
 	if err != nil {
 		return nil, err
 	}
@@ -92,9 +104,13 @@ func (r *EnrollmentRepository) GetByID(ctx context.Context, id int64) (*models.E
 
 // EnrollmentFilter — student_id/tutor_id/course_id как в query-параметрах
 // контракта 2.5. BranchID — не часть публичного контракта, а внутренний
-// фильтр для branch_owner (курсы больше не привязаны к филиалу, поэтому
-// фильтруем по филиалу самого ученика через user_refs), проставляется
-// сервером принудительно, а не пользователем.
+// фильтр для branch_owner, проставляется сервером принудительно, а не
+// пользователем. Фильтрует по enrollments.branch_id — филиалу ОКАЗАНИЯ
+// УСЛУГИ по конкретной записи (унаследован от Contract.BranchID, см.
+// CreateFromContract), а не по домашнему филиалу ученика (user_refs):
+// иначе branch_owner не увидел бы у себя "иногороднего" ученика, которого
+// сам же зачислил по договору на предмет, отсутствующий в его домашнем
+// филиале.
 type EnrollmentFilter struct {
 	StudentID *int64
 	Status    string
@@ -109,9 +125,8 @@ type EnrollmentFilter struct {
 
 func (r *EnrollmentRepository) List(ctx context.Context, f EnrollmentFilter) ([]*models.Enrollment, error) {
 	query := `SELECT e.id, e.student_id, e.course_id, e.tutor_id, e.progress_pct, e.status,
-		e.start_date, e.end_date, e.created_at
+		e.start_date, e.end_date, e.created_at, e.branch_id
 		FROM enrollments e
-		LEFT JOIN user_refs ur ON ur.user_id = e.student_id
 		WHERE 1=1`
 	args := []any{}
 	i := 1
@@ -140,7 +155,7 @@ func (r *EnrollmentRepository) List(ctx context.Context, f EnrollmentFilter) ([]
 		i++
 	}
 	if f.BranchID != nil {
-		query += " AND ur.branch_id = $" + strconv.Itoa(i)
+		query += " AND e.branch_id = $" + strconv.Itoa(i)
 		args = append(args, *f.BranchID)
 		i++
 	}
@@ -166,19 +181,21 @@ func (r *EnrollmentRepository) List(ctx context.Context, f EnrollmentFilter) ([]
 // ListForTutor — "мои ученики" преподавателя: enrollments на курсы, которые
 // он реально ведёт (course_tutors), а не на все enrollments, где кто-то
 // когда-то вручную проставил ему enrollments.tutor_id. branchID передаётся
-// сервером принудительно (филиал самого tutor'а) — дополнительная защита
-// на случай, если преподавателя ошибочно назначили на курс чужого филиала.
+// сервером принудительно (филиал самого tutor'а) и фильтрует по
+// enrollments.branch_id (филиал оказания услуги по записи), а не по
+// домашнему филиалу ученика — иначе тьютор филиала Б не увидел бы в "моих
+// учениках" иногороднего ученика филиала А, зачисленного к нему по
+// договору, оформленному в Б.
 func (r *EnrollmentRepository) ListForTutor(ctx context.Context, tutorID int64, branchID *int64, courseID *int64) ([]*models.Enrollment, error) {
 	query := `SELECT e.id, e.student_id, e.course_id, e.tutor_id, e.progress_pct, e.status,
-		e.start_date, e.end_date, e.created_at
+		e.start_date, e.end_date, e.created_at, e.branch_id
 		FROM enrollments e
 		JOIN course_tutors ct ON ct.course_id = e.course_id AND ct.tutor_id = $1
-		LEFT JOIN user_refs ur ON ur.user_id = e.student_id
 		WHERE 1=1`
 	args := []any{tutorID}
 	i := 2
 	if branchID != nil {
-		query += " AND ur.branch_id = $" + strconv.Itoa(i)
+		query += " AND e.branch_id = $" + strconv.Itoa(i)
 		args = append(args, *branchID)
 		i++
 	}
@@ -476,24 +493,26 @@ func (r *EnrollmentRepository) UpdateProgress(ctx context.Context, id int64, fie
 	return scanEnrollment(r.pool.QueryRow(ctx, query, args...))
 }
 
-// EnrollmentStudentBranchID — вспомогательный запрос для авторизации
-// (branch_owner может управлять только записями учеников своего филиала).
-// Курсы больше не привязаны к филиалу, поэтому филиал берётся из карточки
-// ученика (user_refs), а не из курса.
-func (r *EnrollmentRepository) EnrollmentStudentBranchID(ctx context.Context, enrollmentID int64) (int64, error) {
-	var branchID *int64
-	err := r.pool.QueryRow(ctx, `
-		SELECT ur.branch_id FROM enrollments e
-		LEFT JOIN user_refs ur ON ur.user_id = e.student_id
-		WHERE e.id = $1`, enrollmentID).Scan(&branchID)
+// EnrollmentBranchID — вспомогательный запрос для авторизации (branch_owner
+// может управлять только записями своего филиала). До введения
+// enrollments.branch_id тут был JOIN на user_refs — то есть филиалом записи
+// считался домашний филиал ученика. Это было неверной моделью: у ученика
+// один домашний филиал, а у каждого зачисления — свой филиал оказания
+// услуги (Contract.BranchID, см. CreateFromContract), которые могут не
+// совпадать (ученик из филиала А занимается предметом, которого у него
+// дома нет, в филиале Б). Поэтому теперь колонка читается напрямую, без
+// join и без обращения к домашнему филиалу ученика.
+//
+// Было: EnrollmentStudentBranchID.
+func (r *EnrollmentRepository) EnrollmentBranchID(ctx context.Context, enrollmentID int64) (int64, error) {
+	var branchID int64
+	err := r.pool.QueryRow(ctx,
+		`SELECT branch_id FROM enrollments WHERE id = $1`, enrollmentID).Scan(&branchID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, ErrNotFound
 		}
 		return 0, err
 	}
-	if branchID == nil {
-		return 0, ErrNotFound
-	}
-	return *branchID, nil
+	return branchID, nil
 }

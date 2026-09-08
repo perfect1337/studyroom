@@ -20,7 +20,7 @@ const (
 )
 
 type Publisher interface {
-	ContractCreated(id, studentID, courseID int64, tutorID *int64, startDate, endDate *string)
+	ContractCreated(id, studentID, courseID int64, tutorID *int64, startDate, endDate *string, branchID int64)
 	ContractExpiringSoon(userID int64, studentId int64, contractNumber, endDate string)
 	ContractTerminated(id, studentID, courseID int64)
 	ContractExpired(id, studentID, courseID int64, endDate string)
@@ -30,13 +30,21 @@ type Publisher interface {
 
 type NoopPublisher struct{}
 
-func (NoopPublisher) ContractCreated(int64, int64, int64, *int64, *string, *string) {}
-func (NoopPublisher) ContractExpiringSoon(int64, int64, string, string)             {}
-func (NoopPublisher) ContractTerminated(int64, int64, int64)                        {}
-func (NoopPublisher) ContractExpired(int64, int64, int64, string)                   {}
-func (NoopPublisher) ContractActivated(int64, int64, int64, string, string)         {}
-func (NoopPublisher) ContractUpdated(int64, int64, int64, string, string)           {}
+func (NoopPublisher) ContractCreated(int64, int64, int64, *int64, *string, *string, int64) {}
+func (NoopPublisher) ContractExpiringSoon(int64, int64, string, string)                    {}
+func (NoopPublisher) ContractTerminated(int64, int64, int64)                               {}
+func (NoopPublisher) ContractExpired(int64, int64, int64, string)                          {}
+func (NoopPublisher) ContractActivated(int64, int64, int64, string, string)                {}
+func (NoopPublisher) ContractUpdated(int64, int64, int64, string, string)                  {}
 
+// contractCreatedPayload — BranchID это Contract.BranchID (филиал, чей
+// руководитель выдал договор, req.BranchID = *claims.BranchID для
+// branch_owner в ContractHandler.Create), а не домашний филиал ученика.
+// Academic Service использует именно это поле как branch_id создаваемого
+// enrollment (см. academic-service/internal/events/subscriber.go,
+// ContractCreatedEvent/handleContractCreated) — это и есть тот механизм,
+// который позволяет ученику из одного филиала числиться зачисленным на
+// курс в другом филиале, где договор фактически оформлен.
 type contractCreatedPayload struct {
 	ID        int64   `json:"id"`
 	StudentID int64   `json:"student_id"`
@@ -44,6 +52,7 @@ type contractCreatedPayload struct {
 	TutorID   *int64  `json:"tutor_id"`
 	StartDate *string `json:"start_date"`
 	EndDate   *string `json:"end_date"`
+	BranchID  int64   `json:"branch_id"`
 }
 
 type contractExpiringSoonPayload struct {
@@ -86,10 +95,10 @@ func NewNATSPublisher(nc *nats.Conn) *NATSPublisher {
 // handleContractCreated). tutor_id всегда nil — POST /contracts не
 // принимает tutor_id (см. api-contracts.md 3.1), назначение репетитора на
 // enrollment — отдельное действие уже на стороне Academic Service.
-func (p *NATSPublisher) ContractCreated(id, studentID, courseID int64, tutorID *int64, startDate, endDate *string) {
+func (p *NATSPublisher) ContractCreated(id, studentID, courseID int64, tutorID *int64, startDate, endDate *string, branchID int64) {
 	data, err := json.Marshal(contractCreatedPayload{
 		ID: id, StudentID: studentID, CourseID: courseID,
-		TutorID: tutorID, StartDate: startDate, EndDate: endDate,
+		TutorID: tutorID, StartDate: startDate, EndDate: endDate, BranchID: branchID,
 	})
 	if err != nil {
 		log.Printf("[events] marshal contract.created error: %v", err)

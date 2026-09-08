@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchUserById, resetStudentCredentials, fetchMyPeople } from "../../api/users.js";
+import { fetchUserById, resetStudentCredentials, fetchMyPeople, fetchBranches } from "../../api/users.js";
 import { fetchEnrollments, fetchCourses, fetchHomework, fetchLessons, fetchTests } from "../../api/academic.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import CourseTag from "../../components/ui/CourseTag.jsx";
@@ -89,6 +89,13 @@ export default function StudentDetail({ role = "parent" }) {
   const [tests, setTests] = useState([]);
   const [lessons, setLessons] = useState([]);
   const [tutors, setTutors] = useState([]); // для отображения имени преподавателя в мини-календаре
+  // branches — нужны только для подписи "филиал" у каждого курса отдельно
+  // (enrollment.branch_id — филиал ОКАЗАНИЯ УСЛУГИ, который может
+  // отличаться от домашнего филиала ученика child.branch_id, если ученика
+  // зачислили на курс через договор, оформленный в другом филиале —
+  // см. академик-сервис CreateFromContract). Не грузим для parent — там
+  // и так все курсы обычно в одном филиале, и лишний запрос не нужен.
+  const [branches, setBranches] = useState([]);
   // extraTutors — тьюторы, которых не было в fetchMyPeople(), но которые
   // ведут занятия ребёнка (tutor_id из lessons). Нужно для роли parent:
   // GET /users (1.9) для parent отдаёт только children, tutors там всегда
@@ -161,7 +168,7 @@ export default function StudentDetail({ role = "parent" }) {
       try {
         const date_from = toISODate(viewYear, viewMonth, 1);
         const date_to = toISODate(viewYear, viewMonth, daysInMonth);
-        const [childRes, enrollRes, coursesRes, homeworkRes, lessonsRes, peopleRes, testsRes] = await Promise.all([
+        const [childRes, enrollRes, coursesRes, homeworkRes, lessonsRes, peopleRes, testsRes, branchesRes] = await Promise.all([
           fetchUserById(childId),
           fetchEnrollments({ student_id: childId }),
           fetchCourses(),
@@ -169,9 +176,11 @@ export default function StudentDetail({ role = "parent" }) {
           fetchLessons({ student_id: childId, date_from, date_to }),
           fetchMyPeople().catch(() => ({ tutors: [] })),
           fetchTests({ student_id: childId }).catch(() => ({ items: [] })),
+          fetchBranches().catch(() => ({ items: [] })),
         ]);
         if (cancelled) return;
         setChild(childRes);
+        setBranches(branchesRes?.items ?? []);
         const childIdNum = Number(childId);
         const childEnrollments = (enrollRes?.items ?? [])
           .filter((e) => e.student_id === childIdNum)
@@ -249,6 +258,27 @@ export default function StudentDetail({ role = "parent" }) {
     courses.forEach((c) => (map[c.id] = c));
     return map;
   }, [courses]);
+
+  const branchesById = useMemo(() => {
+    const map = {};
+    branches.forEach((b) => (map[b.id] = b));
+    return map;
+  }, [branches]);
+
+  function branchLabel(branchId) {
+    if (branchId == null) return null;
+    const b = branchesById[branchId];
+    return b?.name || b?.city || `Филиал #${branchId}`;
+  }
+
+  // true, если у конкретной записи (enrollment.branch_id — филиал оказания
+  // услуги) филиал отличается от домашнего филиала ученика (child.branch_id).
+  // Именно так фронт узнаёт "ученик ездит на этот курс в другой филиал" —
+  // без этого в карточке был бы один общий "филиал" из профиля на все курсы,
+  // хотя по факту он может быть разным на каждом.
+  function isCrossBranch(e) {
+    return e?.branch_id != null && child?.branch_id != null && Number(e.branch_id) !== Number(child.branch_id);
+  }
 
   const currentEnrollments = useMemo(
     () => enrollments.filter((e) => e.status === "active" || e.status === "paused"),
@@ -439,6 +469,20 @@ export default function StudentDetail({ role = "parent" }) {
                         />
                       </div>
                       <h4 className="font-headline-sm text-[20px] mb-1">{course?.title ?? course?.subject ?? `Курс #${e.course_id}`}</h4>
+                      {branchLabel(e.branch_id) && (
+                        <p className="text-[12px] text-on-surface-variant flex items-center gap-1 mb-2">
+                          <span className="material-symbols-outlined text-[14px]">location_on</span>
+                          {branchLabel(e.branch_id)}
+                          {isCrossBranch(e) && (
+                            <span
+                              title="Отличается от домашнего филиала ученика"
+                              className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-700"
+                            >
+                              не домашний
+                            </span>
+                          )}
+                        </p>
+                      )}
                       <div className="w-full bg-surface-container-high h-2 rounded-full mb-2">
                         <div className="bg-primary h-2 rounded-full" style={{ width: `${e.progress_pct ?? 0}%` }} />
                       </div>
@@ -487,6 +531,7 @@ export default function StudentDetail({ role = "parent" }) {
                             </p>
                             <p className="text-[12px] text-on-surface-variant mt-0.5">
                               Прогресс: {e.progress_pct ?? 0}%
+                              {branchLabel(e.branch_id) ? ` · ${branchLabel(e.branch_id)}` : ""}
                             </p>
                           </div>
                           <StatusBadge

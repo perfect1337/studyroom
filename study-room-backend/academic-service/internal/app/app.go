@@ -58,7 +58,7 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, userServiceURL string, p
 // Публичный префикс — /api/v1/academic (см. api-contracts.md, раздел 2).
 func NewRouter(d *Deps) http.Handler {
 	courseHandler := handlers.NewCourseHandler(d.Courses, d.UserRefs, d.Enrollments, d.UserClient)
-	enrollHandler := handlers.NewEnrollmentHandler(d.Enrollments, d.UserClient)
+	enrollHandler := handlers.NewEnrollmentHandler(d.Enrollments, d.UserRefs, d.UserClient)
 	lessonHandler := handlers.NewLessonHandler(d.Lessons, d.Enrollments, d.Attendance, d.Subgroups, d.Courses, d.UserRefs, d.UserClient, d.Events)
 	homeworkHandler := handlers.NewHomeworkHandler(d.Homework, d.Lessons, d.UserRefs, d.UserClient)
 	testHandler := handlers.NewTestHandler(d.Tests, d.Lessons, d.UserRefs, d.UserClient)

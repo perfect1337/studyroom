@@ -327,6 +327,18 @@ export default function PeopleDirectory({ role }) {
 
   const { page, setPage, pageItems: pagedPeople } = usePagination(filteredPeople, PAGE_SIZE);
 
+  // "Иногородний" ученик — договор/зачисление оформлены в этом филиале
+  // (contract.branch_id / e.branch_id, т.е. филиал ОКАЗАНИЯ УСЛУГИ), но
+  // домашний филиал ученика (p.branch_id, User.BranchID) другой — например,
+  // в его домашнем филиале нет учителя по нужному предмету, и он ездит на
+  // этот предмет в другой филиал. Такого ученика branch_owner видит и может
+  // им управлять (сам выдал договор), но его не стоит путать со "своими"
+  // домашними учениками ни визуально, ни в статистике филиала.
+  function isVisiting(p, contract) {
+    if (!showContracts || !contract || p?.branch_id == null || contract.branch_id == null) return false;
+    return Number(contract.branch_id) !== Number(p.branch_id);
+  }
+
   // Общие для десктопной таблицы и мобильных карточек вычисления по каждой
   // строке. Для owner/branch_owner прогресс берём только по курсу конкретного
   // договора, чтобы соседние договоры одного ученика не смешивались.
@@ -336,9 +348,24 @@ export default function PeopleDirectory({ role }) {
         const avg = pEnrollments.length
           ? Math.round(pEnrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / pEnrollments.length)
           : 0;
-        return { p, pEnrollments, avg, contract, activeEnrollments: activeEnrollments ?? pEnrollments };
+        return {
+          p,
+          pEnrollments,
+          avg,
+          contract,
+          activeEnrollments: activeEnrollments ?? pEnrollments,
+          visiting: isVisiting(p, contract),
+        };
       }),
     [pagedPeople]
+  );
+
+  // Для статистики филиала "иногородних" не считаем "своими" учениками —
+  // иначе владелец филиала видел бы в "Всего учеников" чужих домашних
+  // учеников, которых он временно ведёт по одному предмету.
+  const visitingCount = useMemo(
+    () => (isBranchOwner ? filteredPeople.filter(({ p, contract }) => isVisiting(p, contract)).length : 0),
+    [filteredPeople, isBranchOwner]
   );
 
   const avgProgress = enrollments.length
@@ -348,9 +375,15 @@ export default function PeopleDirectory({ role }) {
   const stats = isParent
     ? null
     : [
-        { label: isTutor ? "Мои ученики" : "Всего учеников", value: String(people.length) },
+        {
+          label: isTutor ? "Мои ученики" : "Всего учеников",
+          value: String(isBranchOwner ? people.length - visitingCount : people.length),
+        },
         { label: "Средний прогресс", value: `${avgProgress}%` },
         { label: "Активные курсы", value: String(courses.length) },
+        ...(isBranchOwner && visitingCount > 0
+          ? [{ label: "Иногородние (учатся здесь)", value: String(visitingCount) }]
+          : []),
       ];
 
   function renderStatusBadge(pEnrollments, contract) {
@@ -521,7 +554,7 @@ export default function PeopleDirectory({ role }) {
                     </td>
                   </tr>
                 )}
-                {pagedRows.map(({ p, pEnrollments, avg, contract, activeEnrollments }) => {
+                {pagedRows.map(({ p, pEnrollments, avg, contract, activeEnrollments, visiting }) => {
                   return (
                     <tr
                       key={contract ? `contract-${contract.id}` : `student-${p.id}`}
@@ -534,7 +567,17 @@ export default function PeopleDirectory({ role }) {
                             {initials(p)}
                           </div>
                           <div>
-                            <div className="font-bold text-on-surface">{fullName(p) || p._fallbackName || "Ученик"}</div>
+                            <div className="font-bold text-on-surface flex items-center gap-2">
+                              {fullName(p) || p._fallbackName || "Ученик"}
+                              {visiting && (
+                                <span
+                                  title="Домашний филиал ученика — другой; здесь он учится по договору на этот курс"
+                                  className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-700"
+                                >
+                                  Иногородний
+                                </span>
+                              )}
+                            </div>
                             <div className="text-[12px] text-on-surface-variant">
                               {[p.class_info, p.school].filter(Boolean).join(" · ") || "—"}
                             </div>
@@ -611,7 +654,7 @@ export default function PeopleDirectory({ role }) {
                   {isParent ? "У вас пока нет добавленных детей." : "Учеников не найдено"}
                 </div>
               )}
-              {pagedRows.map(({ p, pEnrollments, avg, contract, activeEnrollments }) => (
+              {pagedRows.map(({ p, pEnrollments, avg, contract, activeEnrollments, visiting }) => (
                 <div
                   key={contract ? `contract-${contract.id}` : `student-${p.id}`}
                   onClick={() => navigate(detailPath(p.id))}
@@ -622,7 +665,17 @@ export default function PeopleDirectory({ role }) {
                       {initials(p)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="font-bold text-on-surface truncate">{fullName(p) || p._fallbackName || "Ученик"}</div>
+                      <div className="font-bold text-on-surface truncate flex items-center gap-2">
+                        <span className="truncate">{fullName(p) || p._fallbackName || "Ученик"}</span>
+                        {visiting && (
+                          <span
+                            title="Домашний филиал ученика — другой; здесь он учится по договору на этот курс"
+                            className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-700"
+                          >
+                            Иногородний
+                          </span>
+                        )}
+                      </div>
                       <div className="text-[12px] text-on-surface-variant truncate">
                         {[p.class_info, p.school].filter(Boolean).join(" · ") || "—"}
                       </div>

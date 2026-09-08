@@ -102,7 +102,12 @@ func (h *ContractHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	startStr, endStr := req.StartDate, req.EndDate
-	h.events.ContractCreated(contract.ID, contract.StudentID, contract.CourseID, nil, &startStr, &endStr)
+	// contract.BranchID — филиал, выдавший договор (см. выше: для
+	// branch_owner принудительно = claims.BranchID, а не домашний филиал
+	// ученика). Именно это становится enrollments.branch_id в Academic
+	// Service, что и позволяет филиалу-исполнителю управлять зачислением,
+	// даже если ученик административно приписан к другому филиалу.
+	h.events.ContractCreated(contract.ID, contract.StudentID, contract.CourseID, nil, &startStr, &endStr, contract.BranchID)
 
 	writeJSON(w, http.StatusCreated, contract)
 }

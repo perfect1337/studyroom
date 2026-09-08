@@ -76,6 +76,15 @@ const (
 )
 
 // Enrollment — соответствует таблице enrollments.
+//
+// BranchID — филиал ОКАЗАНИЯ УСЛУГИ по этому конкретному зачислению
+// (унаследован от Contract.BranchID в момент создания через
+// contract.created, см. events/subscriber.go), а НЕ домашний филиал
+// ученика (User.BranchID в User Service). Ученик из филиала А может иметь
+// enrollment с BranchID=Б, если договор на этот курс оформил филиал Б —
+// именно так решается сценарий "ученик ездит в другой филиал на предмет,
+// которого нет у него дома". Домашний филиал остаётся источником истины
+// только для профиля/посещаемости по умолчанию/сайдбара.
 type Enrollment struct {
 	ID          int64            `json:"id"`
 	StudentID   int64            `json:"student_id"`
@@ -86,6 +95,7 @@ type Enrollment struct {
 	StartDate   *time.Time       `json:"start_date,omitempty"`
 	EndDate     *time.Time       `json:"end_date,omitempty"`
 	CreatedAt   time.Time        `json:"created_at"`
+	BranchID    int64            `json:"branch_id"`
 }
 
 type LocationType string
