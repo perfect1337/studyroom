@@ -68,6 +68,7 @@ export function createTutor(payload) {
 export function createStudent(payload) {
   return usersApi("/users/students", { method: "POST", body: payload }).then((res) => {
     invalidateQuery(["myPeople"]);
+    invalidateQuery(["parentChildren"]); // обновить ParentOverview (вкладка Обзор)
     return res;
   });
 }

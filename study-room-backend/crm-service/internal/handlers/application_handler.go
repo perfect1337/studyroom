@@ -370,6 +370,23 @@ func (h *ApplicationHandler) notifyReceived(ctx context.Context, app *models.App
 	if globalOwnerID != 0 && globalOwnerID != branchOwnerID {
 		h.events.ApplicationReceived(globalOwnerID, string(app.Source), app.Name)
 	}
+
+	// Retry: если branch owner не найден (user_refs ещё не наполнен из
+	// user.created), пробуем снова через 3 секунды — за это время NATS-
+	// событие успеет обработаться CRM Service.
+	if branchOwnerID == 0 && app.BranchID != nil {
+		go func() {
+			time.Sleep(3 * time.Second)
+			if owner, err := h.userRefs.FindBranchOwner(context.Background(), *app.BranchID); err == nil {
+				log.Printf("[crm] application.received: retry notification to branch_owner %d for app %q (source=%s)",
+					owner.UserID, app.Name, app.Source)
+				h.events.ApplicationReceived(owner.UserID, string(app.Source), app.Name)
+			} else {
+				log.Printf("[crm] application.received: retry failed to find branch_owner for branch %d: %v",
+					*app.BranchID, err)
+			}
+		}()
+	}
 }
 
 func (h *ApplicationHandler) resolveNotifyTargets(ctx context.Context, branchID *int64) (branchOwnerID, globalOwnerID int64) {

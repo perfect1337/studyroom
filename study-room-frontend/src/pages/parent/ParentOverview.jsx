@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import Avatar from "../../components/ui/Avatar.jsx";
@@ -8,6 +8,7 @@ import { fetchEnrollments, fetchCourses, fetchLessons, fetchTests } from "../../
 import { fetchMyContracts } from "../../api/contracts.js";
 import { createInternalApplication } from "../../api/crm.js";
 import { fetchNotificationSettings, updateNotificationSettings, fetchTelegramStatus } from "../../api/notifications.js";
+import { subscribeQuery } from "../../api/queryCache.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import { sanitizePhoneInput, isValidPhone } from "../../utils/phone.js";
 import { useTelegramStatus } from "../../hooks/useTelegramStatus.js";
@@ -42,6 +43,7 @@ function daysUntil(endDateStr) {
 
 export default function ParentOverview() {
   const { user } = useAuth();
+  const unsubscribeRef = useRef(null);
 
   const { status: tgStatus, refresh: refreshTg } = useTelegramStatus();
   const { status: maxStatus, refresh: refreshMax } = useMaxStatus();
@@ -166,6 +168,33 @@ export default function ParentOverview() {
     load();
     return () => {
       cancelled = true;
+    };
+  }, [user?.id]);
+
+  // Подписка на инвалидацию кэша ["parentChildren", userId] —
+  // после createStudent() (PeopleDirectory) кэш инвалидируется,
+  // этот эффект тихо перезапросит детей без перезагрузки страницы.
+  useEffect(() => {
+    if (!user?.id) return;
+    const key = ["parentChildren", user.id];
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+      unsubscribeRef.current = null;
+    }
+    unsubscribeRef.current = subscribeQuery(key, (reason) => {
+      if (reason === "invalidate") {
+        fetchParentChildren(user.id).then((res) => {
+          const kids = res?.items ?? [];
+          setChildren(kids);
+          if (kids[0]) setApplyChildId(String(kids[0].id));
+        }).catch(() => {});
+      }
+    });
+    return () => {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
     };
   }, [user?.id]);
 
