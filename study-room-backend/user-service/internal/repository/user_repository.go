@@ -6,9 +6,10 @@ import (
 	"strconv"
 	"strings"
 
+	"studyroom/user-service/internal/models"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"studyroom/user-service/internal/models"
 )
 
 var ErrNotFound = errors.New("not found")
