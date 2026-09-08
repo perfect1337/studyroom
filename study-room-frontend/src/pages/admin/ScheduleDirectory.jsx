@@ -17,9 +17,6 @@ const MONTH_NAMES = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
   "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
 ];
-// Циклическая палитра для разных курсов на календаре (курсов может быть больше, чем цветов).
-const COURSE_COLORS = ["#004ac6", "#22c55e", "#ab0b1c", "#a855f7", "#0891b2", "#ea580c"];
-
 function pad(n) {
   return String(n).padStart(2, "0");
 }
@@ -142,12 +139,27 @@ function weekBadgeClasses(kind, value) {
   return "bg-surface-container text-on-surface-variant";
 }
 
-// Занятие считается "проблемным" (нет преподавателя или расхождение по
-// договору) — та же логика, что уже подсвечивает дни красным в месячном
-// виде (см. hasProblem/dayStateClass ниже). В недельном виде подсвечиваем
-// так же, но каждое занятие по отдельности, а не весь день целиком.
+// Занятие считается "проблемным" (нет ученика, у ученика истёк/отсутствует
+// договор, либо нет преподавателя) — та же логика, что подсвечивает дни
+// красным в месячном виде (см. hasProblem/dayStateClass ниже) и определяет
+// цвет карточки занятия в панели деталей (см. lessonAccentColor). В
+// недельном виде подсвечиваем так же, но каждое занятие по отдельности,
+// а не весь день целиком. Это ЕДИНСТВЕННОЕ место, определяющее "проблемность" —
+// остальной код должен переиспользовать эту функцию, а не дублировать условие.
 function isLessonProblem(lesson) {
-  return Boolean(lesson.contract_issue || !lesson.tutor_id);
+  const hasStudent = Array.isArray(lesson.participant_ids) && lesson.participant_ids.length > 0;
+  return Boolean(!hasStudent || lesson.contract_issue || !lesson.tutor_id);
+}
+
+// Цвет акцента занятия в расписании — ВСЕГДА один из двух (красный/синий),
+// по логике isLessonProblem выше. Раньше здесь использовалась радужная
+// палитра по курсу, из-за которой в расписании
+// мог случайно появиться фиолетовый (или зелёный/оранжевый) цвет курса —
+// это сбивало с толку, так как цвет должен однозначно сигнализировать
+// "с занятием всё в порядке (синий)" или "требует внимания (красный)",
+// а не то, к какому курсу оно относится.
+function lessonAccentColor(lesson) {
+  return isLessonProblem(lesson) ? "#ba1a1a" : "#004ac6";
 }
 
 // WeekLessonChip — карточка занятия внутри ячейки недельной сетки (десктоп).
@@ -807,12 +819,6 @@ export default function ScheduleDirectory({ role }) {
     return map;
   }, [courses]);
 
-  const courseColor = React.useMemo(() => {
-    const map = {};
-    courses.forEach((c, i) => (map[c.id] = COURSE_COLORS[i % COURSE_COLORS.length]));
-    return map;
-  }, [courses]);
-
   const studentsById = React.useMemo(() => {
     const map = { ...extraStudentsById };
     people.students.forEach((s) => (map[s.id] = s));
@@ -1281,7 +1287,7 @@ export default function ScheduleDirectory({ role }) {
                 const isToday = day === todayDay;
                 const isSelected = day === selectedDay;
                 const isExpanded = expandedMonthDays.has(day);
-                const hasProblem = dayLessons.some((l) => l.contract_issue || !l.tutor_id);
+                const hasProblem = dayLessons.some(isLessonProblem);
                 const roomOverlaps = computeRoomOverlaps(dayLessons);
                 const peakOverlap = roomOverlaps.reduce(
                   (max, seg) => (!max || seg.count > max.count ? seg : max),
@@ -1385,7 +1391,7 @@ export default function ScheduleDirectory({ role }) {
                 const isToday = day === todayDay;
                 const isSelected = day === selectedDay;
                 const isExpanded = expandedMonthDays.has(day);
-                const hasProblem = dayLessons.some((l) => l.contract_issue || !l.tutor_id);
+                const hasProblem = dayLessons.some(isLessonProblem);
                 const hasLessons = dayLessons.length > 0;
                 // Пересечения очных занятий этого дня по времени (см.
                 // computeRoomOverlaps) — сколько занятий реально делят
@@ -1515,7 +1521,7 @@ export default function ScheduleDirectory({ role }) {
               {paginatedLessons.map((lesson) => {
                 const course = coursesById[lesson.course_id];
                 const tutor = tutorsById[lesson.tutor_id];
-                const color = courseColor[lesson.course_id] ?? "#004ac6";
+                const color = lessonAccentColor(lesson);
                 const isCancelled = lesson.status === "cancelled";
                 const isDone =
                   lesson.status === "completed" || lesson.status === "conducted" || (!isCancelled && isLessonPast(lesson, today));
