@@ -13,11 +13,16 @@ import (
 	"time"
 )
 
+type cachedBranch struct {
+	expiresAt time.Time
+	ids       []int64
+}
+
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
 	cacheMu    sync.RWMutex
-	cache      map[int64][]int64
+	cache      map[int64]cachedBranch
 	cacheTTL   time.Duration
 }
 
@@ -25,7 +30,7 @@ func New(baseURL string) *Client {
 	return &Client{
 		baseURL:    baseURL,
 		httpClient: &http.Client{Timeout: 3 * time.Second},
-		cache:      map[int64][]int64{},
+		cache:      map[int64]cachedBranch{},
 		cacheTTL:   30 * time.Second,
 	}
 }
@@ -79,17 +84,17 @@ func (c *Client) cached(branchID int64) ([]int64, bool) {
 	c.cacheMu.RLock()
 	entry, ok := c.cache[branchID]
 	c.cacheMu.RUnlock()
-	if !ok || time.Now().After(entry[0]) {
+	if !ok || time.Now().After(entry.expiresAt) {
 		return nil, false
 	}
-	// cache stores [timestamp, id1, id2, ...]
-	return entry[1:], true
+	return entry.ids, true
 }
 
 func (c *Client) cacheBranch(branchID int64, ids []int64) {
 	c.cacheMu.Lock()
-	entry := make([]int64, 0, len(ids)+1)
-	entry = append(entry, time.Now().UnixNano(), ids...)
-	c.cache[branchID] = entry
+	c.cache[branchID] = cachedBranch{
+		expiresAt: time.Now().Add(c.cacheTTL),
+		ids:       ids,
+	}
 	c.cacheMu.Unlock()
 }
