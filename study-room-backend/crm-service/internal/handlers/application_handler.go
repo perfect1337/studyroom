@@ -144,9 +144,12 @@ const applicationRateLimit = time.Minute
 // ещё не дошло, используется заглушка "Ученик #id", заявка всё равно
 // создаётся (не блокируем родителя из-за задержки доставки события).
 //
-// Анти-спам: не чаще одной заявки в минуту на одного ученика (см.
-// applicationRateLimit) — защита от дублей при повторном/двойном клике по
-// кнопке "Отправить".
+// Анти-спам: не чаще одной заявки в минуту на одного ученика на ТОТ ЖЕ
+// курс/интерес (см. applicationRateLimit, HasRecentInternalApplication) —
+// защита от дублей при повторном/двойном клике по кнопке "Отправить". Не
+// задевает заявки на другой курс и не задевает не связанные автоматические
+// заявки (например, созданную при добавлении ребёнка — см.
+// application_repository.go:HasRecentInternalApplication).
 func (h *ApplicationHandler) CreateInternal(w http.ResponseWriter, r *http.Request) {
 	var req createInternalRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -158,7 +161,7 @@ func (h *ApplicationHandler) CreateInternal(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	recent, err := h.repo.HasRecentInternalApplication(r.Context(), req.StudentID, applicationRateLimit)
+	recent, err := h.repo.HasRecentInternalApplication(r.Context(), req.StudentID, req.SubjectInterest, applicationRateLimit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to check application rate limit")
 		return

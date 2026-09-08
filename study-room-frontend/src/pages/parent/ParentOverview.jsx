@@ -186,7 +186,7 @@ export default function ParentOverview() {
         fetchParentChildren(user.id).then((res) => {
           const kids = res?.items ?? [];
           setChildren(kids);
-          if (kids[0]) setApplyChildId(String(kids[0].id));
+          setApplyChildId((prev) => prev || (kids[0] ? String(kids[0].id) : ""));
         }).catch(() => {});
       }
     });
@@ -195,6 +195,49 @@ export default function ParentOverview() {
         unsubscribeRef.current();
         unsubscribeRef.current = null;
       }
+    };
+  }, [user?.id]);
+
+  // Авто-обновление списка детей без перезагрузки страницы, на случай если
+  // ребёнка добавили НЕ в этой вкладке (invalidateQuery выше срабатывает
+  // только внутри одного и того же браузерного контекста — например, когда
+  // сам родитель добавляет ребёнка через "Мои дети" в этой же вкладке).
+  // Если ребёнка добавил руководитель филиала/админ в СВОЁМ браузере, или
+  // родитель сделал это в другой вкладке/устройстве, локальный кэш об этом
+  // никак не узнает сам по себе — раньше единственным способом увидеть
+  // нового ребёнка на "Обзоре" была ручная перезагрузка страницы. Поэтому
+  // здесь дополнительно: (1) принудительно перезапрашиваем детей при
+  // возврате фокуса на вкладку/её видимости, и (2) на всякий случай — по
+  // таймеру, пока вкладка открыта и активна.
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+
+    function refreshChildren() {
+      fetchParentChildren(user.id, { force: true }).then((res) => {
+        if (cancelled) return;
+        const kids = res?.items ?? [];
+        setChildren(kids);
+        setApplyChildId((prev) => prev || (kids[0] ? String(kids[0].id) : ""));
+      }).catch(() => {});
+    }
+
+    function onVisibilityOrFocus() {
+      if (document.visibilityState === "visible") refreshChildren();
+    }
+
+    window.addEventListener("focus", onVisibilityOrFocus);
+    document.addEventListener("visibilitychange", onVisibilityOrFocus);
+    // Фоновый поллинг раз в 20с — подстраховка, если фокус/видимость не
+    // менялись (например, окно и так было активно, когда ребёнка добавили
+    // с другого устройства).
+    const intervalId = setInterval(refreshChildren, 20_000);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", onVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", onVisibilityOrFocus);
+      clearInterval(intervalId);
     };
   }, [user?.id]);
 
@@ -289,6 +332,14 @@ export default function ParentOverview() {
 
   async function handleApply(e) {
     e.preventDefault();
+    // Защита от повторного клика, пока предыдущий запрос ещё летит: без
+    // этого второй клик успевал уйти на бэкенд ДО того, как кнопка
+    // получала disabled из-за applyStatus==="saving" (React обновляет
+    // состояние асинхронно), и тогда собственный повторный клик родителя
+    // попадал под анти-спам лимит (см. applicationRateLimit на бэкенде) —
+    // выглядело как случайный 429 "на пустом месте", хотя на деле это была
+    // просто вторая, ещё не отрисованная как disabled, попытка отправки.
+    if (applyStatus === "saving") return;
     if (!applyChildId || !applyCourseId) return;
     if (!isValidPhone(applyPhone)) {
       setApplyStatus("Введите телефон в формате из 10-15 цифр (можно с +)");
@@ -734,10 +785,10 @@ export default function ParentOverview() {
                 </div>
                 <button
                   type="submit"
-                  disabled={!applyChildId || !applyCourseId}
+                  disabled={!applyChildId || !applyCourseId || applyStatus === "saving"}
                   className="w-full bg-primary text-on-primary py-3 rounded-lg font-label-md text-label-md hover:bg-primary-container transition-all mt-2 disabled:opacity-60"
                 >
-                  Отправить заявку
+                  {applyStatus === "saving" ? "Отправляем..." : "Отправить заявку"}
                 </button>
                 {applyStatus === "done" && <p className="text-sm text-primary">Заявка отправлена!</p>}
                 {applyStatus && applyStatus !== "saving" && applyStatus !== "done" && (

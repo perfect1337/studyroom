@@ -130,9 +130,17 @@ export function fetchDeletedBranches() {
 }
 
 // 1.18 Дети родителя
-export function fetchParentChildren(parentId) {
+// force=true — игнорировать staleTime и уйти в сеть, даже если кэш ещё
+// "свежий". Нужно для авто-обновления ParentOverview по таймеру/фокусу
+// вкладки (см. ParentOverview.jsx): ребёнка родителю может добавить не он
+// сам в этой же вкладке (тогда сработала бы обычная invalidateQuery), а,
+// например, руководитель филиала в СВОЁМ браузере — invalidateQuery в
+// таком случае некому вызвать в браузере родителя, кэш там ничего не
+// узнает сам по себе без принудительного похода в сеть.
+export function fetchParentChildren(parentId, { force = false } = {}) {
   return cachedQuery(["parentChildren", parentId], () => usersApi(`/parents/${parentId}/children`), {
     staleTime: 30_000,
+    force,
   });
 }
 

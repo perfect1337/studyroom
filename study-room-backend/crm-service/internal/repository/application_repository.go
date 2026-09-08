@@ -57,23 +57,38 @@ func (r *ApplicationRepository) CreateInternal(ctx context.Context, name string,
 }
 
 // HasRecentInternalApplication — true, если для этого ученика уже есть
-// заявка source='internal' ("Записаться на новый курс" из ЛК родителя),
-// созданная за последние `within`. Используется для анти-спам лимита в
-// ApplicationHandler.CreateInternal (api-contracts.md 4.2): не чаще одной
-// заявки на запись на курс в минуту на одного ученика — иначе двойной клик
-// или нервное повторное нажатие "Отправить" плодит дубликаты заявок в CRM.
+// заявка source='internal' НА ТОТ ЖЕ subject_interest ("Записаться на новый
+// курс" из ЛК родителя), созданная за последние `within`. Используется для
+// анти-спам лимита в ApplicationHandler.CreateInternal (api-contracts.md
+// 4.2): не чаще одной заявки на запись на курс в минуту на одного ученика —
+// иначе двойной клик или нервное повторное нажатие "Отправить" плодит
+// дубликаты заявок в CRM.
 // Проверка через БД (а не in-memory счётчик в хендлере), потому что сервис
 // может быть развёрнут в нескольких экземплярах — in-memory лимитер в одном
 // инстансе не увидел бы запрос, обработанный другим.
-func (r *ApplicationRepository) HasRecentInternalApplication(ctx context.Context, studentID int64, within time.Duration) (bool, error) {
+//
+// ВАЖНО: сравнение по subject_interest (через IS NOT DISTINCT FROM, т.к.
+// поле nullable) добавлено, чтобы не блокировать ложно НЕсвязанную заявку.
+// Раньше лимит проверялся только по student_id, из-за чего срабатывал даже
+// когда "недавняя" заявка на этого же ученика была создана автоматически по
+// совсем другому поводу — например, при добавлении ребёнка родителем
+// (PeopleDirectory.jsx: createStudent + createApplication с пустым
+// subject_interest). В итоге родитель, только что добавивший ребёнка и сразу
+// решивший записать его на курс через форму "Записаться на новый курс",
+// получал 429 RATE_LIMITED, хотя сам ни разу не отправлял повторную заявку —
+// ощущалось как лимит "на пустом месте". Теперь лимит применяется только к
+// повторной заявке на ТОТ ЖЕ курс/интерес, что и защищает от дублей по
+// двойному клику, и не задевает не связанные между собой заявки.
+func (r *ApplicationRepository) HasRecentInternalApplication(ctx context.Context, studentID int64, subjectInterest *string, within time.Duration) (bool, error) {
 	var exists bool
 	err := r.pool.QueryRow(ctx, `
 		SELECT EXISTS(
 			SELECT 1 FROM applications
 			WHERE student_id = $1 AND source = 'internal'
-			  AND created_at > now() - make_interval(secs => $2)
+			  AND subject_interest IS NOT DISTINCT FROM $2
+			  AND created_at > now() - make_interval(secs => $3)
 		)`,
-		studentID, within.Seconds(),
+		studentID, subjectInterest, within.Seconds(),
 	).Scan(&exists)
 	return exists, err
 }
