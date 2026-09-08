@@ -24,6 +24,7 @@ type UserRef struct {
 	FullName string `json:"full_name"`
 	Role     Role   `json:"role"`
 	BranchID *int64 `json:"branch_id"`
+	Email    string `json:"email,omitempty"`
 }
 
 type ContractStatus string
