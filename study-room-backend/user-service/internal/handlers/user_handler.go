@@ -510,14 +510,14 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 			out.Tutors = tutors
 		}
 
-		// Раздел «Родители» у branch_owner показывает только семьи, у
-		// которых есть ребёнок, обучающийся именно в его филиале — в
-		// отличие от owner (видит вообще всех родителей сети, см. ветку
-		// RoleOwner ниже). branchFilter здесь уже гарантированно не nil:
-		// выше, в самом начале функции, для RoleBranchOwner без
-		// claims.BranchID мы отдаём emptyDirectory() и не доходим сюда.
+		// Раздел «Родители» у branch_owner показывает всех родителей сети,
+		// а не только семьи своего филиала — как и у owner (см. ветку
+		// RoleOwner ниже). Раньше здесь стоял фильтр ChildBranchID, из-за
+		// которого branch_owner видел только родителей с ребёнком именно
+		// в своём филиале; теперь фильтр по филиалу для родителей не
+		// применяется вовсе.
 		parents, err := h.users.ListAll(ctx, repository.ListFilter{
-			Role: rolePtr(models.RoleParent), Search: search, ChildBranchID: branchFilter,
+			Role: rolePtr(models.RoleParent), Search: search,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")

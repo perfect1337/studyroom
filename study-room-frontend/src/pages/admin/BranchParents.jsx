@@ -7,11 +7,12 @@ import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
 // Управляющий филиалом (branch_owner): та же вкладка "Родители", что и у
 // owner (AdminParents.jsx) — поиск, бан/разбан всей семьи, удаление
-// аккаунта. Единственное отличие — список семей. Сервер сам ограничивает
-// выборку GET /users только теми родителями, у которых есть ребёнок в
-// филиале branch_owner (см. UserHandler.List, ветка RoleBranchOwner), а
-// PATCH /users/{id}/status и DELETE /users/{id} на бэке дополнительно
-// проверяют, что ребёнок родителя учится именно в этом филиале.
+// аккаунта. Список теперь показывает ВСЕХ родителей сети, а не только
+// семьи своего филиала (см. UserHandler.List, ветка RoleBranchOwner — там
+// больше нет фильтра ChildBranchID). Управление (бан/разбан, удаление)
+// при этом по-прежнему ограничено своим филиалом: PATCH /users/{id}/status
+// и DELETE /users/{id} на бэке проверяют, что ребёнок родителя учится
+// именно в филиале branch_owner, и вернут 403 для чужих семей.
 export default function BranchParents() {
   const { user } = useAuth();
   const [parents, setParents] = useState([]);
@@ -111,8 +112,8 @@ export default function BranchParents() {
         <div>
           <h2 className="font-headline-md text-headline-md text-primary mb-2">Родители</h2>
           <p className="font-body-md text-body-md text-on-surface-variant">
-            Семьи, у которых ребёнок обучается в вашем филиале. Бан или восстановление применяется ко всей семье,
-            удаление — к родителю и его детям.
+            Все родители сети, во всех филиалах. Бан, восстановление и удаление доступны только для семей,
+            у которых есть ребёнок в вашем филиале, — остальные показаны для справки.
           </p>
         </div>
 
