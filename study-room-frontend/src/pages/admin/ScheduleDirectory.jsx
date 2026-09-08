@@ -152,14 +152,14 @@ function isLessonProblem(lesson) {
   return Boolean(!hasStudent || lesson.contract_issue || !lesson.tutor_id);
 }
 
-// Цвет акцента занятия в расписании — раньше зависел от "проблемности"
-// занятия (см. isLessonProblem): красный для проблемных, синий для обычных.
-// По просьбе — полоска карточки занятия в панели деталей теперь ВСЕГДА
-// синяя, независимо от проблемности (проблемность по-прежнему видна по
-// другим признакам: подсветка дня в календаре, бейдж чипа занятия и т.д.,
-// см. isLessonProblem и его использование ниже).
+// Цвет акцента занятия в панели деталей — красный для проблемных занятий
+// (нет ученика/препода или проблема с договором, см. isLessonProblem),
+// синий для обычных. Это тот же признак, что подсвечивает день в
+// месячном виде и чип занятия в недельном — здесь просто применяем его
+// и к карточке деталей, чтобы проблемность было видно в одном месте, а
+// не только по красному дню в календаре.
 function lessonAccentColor(lesson) {
-  return "#004ac6";
+  return isLessonProblem(lesson) ? "#b3261e" : "#004ac6";
 }
 
 // WeekLessonChip — карточка занятия внутри ячейки недельной сетки (десктоп).
@@ -1689,6 +1689,7 @@ export default function ScheduleDirectory({ role }) {
                 const course = coursesById[lesson.course_id];
                 const tutor = tutorsById[lesson.tutor_id];
                 const color = lessonAccentColor(lesson);
+                const problem = isLessonProblem(lesson);
                 const isCancelled = lesson.status === "cancelled";
                 const isDone =
                   lesson.status === "completed" || lesson.status === "conducted" || (!isCancelled && isLessonPast(lesson, today));
@@ -1696,7 +1697,9 @@ export default function ScheduleDirectory({ role }) {
                 return (
                   <div
                     key={lesson.id}
-                    className="bg-surface-container-lowest rounded-xl shadow-xl overflow-hidden border border-outline-variant border-t-8"
+                    className={`rounded-xl shadow-xl overflow-hidden border border-t-8 ${
+                      problem ? "bg-error-container/20 border-error/40" : "bg-surface-container-lowest border-outline-variant"
+                    }`}
                     style={{ borderTopColor: color }}
                   >
                     <div className="p-6">
