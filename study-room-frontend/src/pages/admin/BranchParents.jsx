@@ -5,14 +5,17 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import { deleteUser, fetchMyPeople, fetchParentChildren, setUserActive } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
-// Управляющий филиалом (branch_owner): та же вкладка "Родители", что и у
-// owner (AdminParents.jsx) — поиск, бан/разбан всей семьи, удаление
-// аккаунта. Список теперь показывает ВСЕХ родителей сети, а не только
-// семьи своего филиала (см. UserHandler.List, ветка RoleBranchOwner — там
-// больше нет фильтра ChildBranchID). Управление (бан/разбан, удаление)
-// при этом по-прежнему ограничено своим филиалом: PATCH /users/{id}/status
-// и DELETE /users/{id} на бэке проверяют, что ребёнок родителя учится
-// именно в филиале branch_owner, и вернут 403 для чужих семей.
+// Управляющий филиалом (branch_owner): вкладка "Родители", похожая на
+// AdminParents.jsx у owner — поиск, бан/разбан всей семьи, удаление
+// аккаунта. В отличие от выбора родителя на форме добавления договора
+// (см. FinanceDirectory.jsx), где branch_owner видит всех родителей сети
+// (как и owner), здесь список сознательно сужен: показываются только
+// семьи, у которых есть ребёнок именно в этом филиале (parents_scope=branch,
+// см. UserHandler.List, ветка RoleBranchOwner и
+// ParentChildRepository.ListParentsByChildBranch). Управление (бан/разбан,
+// удаление) по-прежнему ограничено своим филиалом и на бэке: PATCH
+// /users/{id}/status и DELETE /users/{id} проверяют, что ребёнок родителя
+// учится именно в филиале branch_owner, и вернут 403 для чужих семей.
 export default function BranchParents() {
   const { user } = useAuth();
   const [parents, setParents] = useState([]);
@@ -31,7 +34,7 @@ export default function BranchParents() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetchMyPeople();
+      const res = await fetchMyPeople({ parents_scope: "branch" });
       const list = res?.parents ?? [];
       setParents(list);
       const counts = {};
@@ -112,8 +115,8 @@ export default function BranchParents() {
         <div>
           <h2 className="font-headline-md text-headline-md text-primary mb-2">Родители</h2>
           <p className="font-body-md text-body-md text-on-surface-variant">
-            Все родители сети, во всех филиалах. Бан, восстановление и удаление доступны только для семей,
-            у которых есть ребёнок в вашем филиале, — остальные показаны для справки.
+            Родители, у которых есть ребёнок в вашем филиале. При оформлении договора по-прежнему доступны
+            родители из всех филиалов сети.
           </p>
         </div>
 

@@ -3,12 +3,22 @@ import { cachedQuery, invalidateQuery } from "./queryCache.js";
 
 // 1.9 Справочник «мои люди» — сервер сам решает, что вернуть, по роли из JWT.
 // Всегда приходят ключи children/students/tutors/branch_owners/parents (пустые массивы, если не применимо).
-// Кэшируется по (search, branch_id): один и тот же фильтр в пределах 20с не бьёт
-// в бэк повторно (например, при быстром переключении вкладок/возврате назад).
-export function fetchMyPeople({ search, branch_id } = {}) {
-  return cachedQuery(["myPeople", { search, branch_id }], () => usersApi("/users", { params: { search, branch_id } }), {
-    staleTime: 20_000,
-  });
+// Кэшируется по (search, branch_id, parents_scope): один и тот же фильтр в
+// пределах 20с не бьёт в бэк повторно (например, при быстром переключении
+// вкладок/возврате назад).
+//
+// parents_scope: необязательный флаг для руководителя филиала (branch_owner).
+// По умолчанию (и на форме добавления договора, см. FinanceDirectory.jsx)
+// поле parents содержит всех родителей сети — так и должно быть, чтобы
+// договор можно было оформить на любого родителя. Значение "branch" сужает
+// parents до семей, у которых ребёнок учится именно в филиале этого
+// branch_owner — используется только на вкладке "Родители" (BranchParents.jsx).
+export function fetchMyPeople({ search, branch_id, parents_scope } = {}) {
+  return cachedQuery(
+    ["myPeople", { search, branch_id, parents_scope }],
+    () => usersApi("/users", { params: { search, branch_id, parents_scope } }),
+    { staleTime: 20_000 }
+  );
 }
 
 // 1.10 Пользователь по id — часто запрашивается повторно из разных компонентов

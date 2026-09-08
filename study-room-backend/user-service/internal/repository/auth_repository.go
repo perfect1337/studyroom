@@ -192,6 +192,42 @@ type ChildView struct {
 	BranchID  *int64  `json:"-"`
 }
 
+// ListParentsByChildBranch возвращает родителей, у которых есть хотя бы
+// один ребёнок с домашним филиалом branchID (users.branch_id ученика).
+// Используется для вкладки "Родители" руководителя филиала (branch_owner) —
+// в отличие от справочника "мои люди" на форме добавления договора, здесь
+// нужны только семьи именно этого филиала, а не вся сеть.
+func (r *ParentChildRepository) ListParentsByChildBranch(ctx context.Context, branchID int64, search string) ([]*models.User, error) {
+	where := `WHERE s.branch_id = $1`
+	args := []any{branchID}
+	if search != "" {
+		where += ` AND (u.last_name ILIKE $2 OR u.first_name ILIKE $2)`
+		args = append(args, "%"+search+"%")
+	}
+	query := `SELECT DISTINCT u.id, u.email, u.phone, u.password_hash, u.role, u.last_name, u.first_name,
+		u.patronymic, u.avatar_url, u.branch_id, u.is_active, u.created_at, u.updated_at, u.is_tutor
+		FROM users u
+		INNER JOIN parent_student ps ON ps.parent_id = u.id
+		INNER JOIN users s ON s.id = ps.student_id
+		` + where + ` ORDER BY u.id`
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []*models.User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
 // GetParentOfStudent возвращает родителя данного ученика (через parent_student).
 // Нужно, чтобы после сброса учётных данных ученика отправить письмо на почту
 // родителя (у ученика своей реальной почты нет — см. CreateStudent).

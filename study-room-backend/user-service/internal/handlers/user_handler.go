@@ -510,15 +510,22 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 			out.Tutors = tutors
 		}
 
-		// Раздел «Родители» у branch_owner показывает всех родителей сети,
-		// а не только семьи своего филиала — как и у owner (см. ветку
-		// RoleOwner ниже). Раньше здесь стоял фильтр ChildBranchID, из-за
-		// которого branch_owner видел только родителей с ребёнком именно
-		// в своём филиале; теперь фильтр по филиалу для родителей не
-		// применяется вовсе.
-		parents, err := h.users.ListAll(ctx, repository.ListFilter{
-			Role: rolePtr(models.RoleParent), Search: search,
-		})
+		// Раздел «Родители»: по умолчанию (например, для выпадающего списка
+		// на форме добавления договора, см. FinanceDirectory.jsx) branch_owner
+		// видит всех родителей сети, а не только семьи своего филиала — как
+		// и у owner (см. ветку RoleOwner ниже). Но вкладка "Родители" в меню
+		// (см. BranchParents.jsx) запрашивает список с parents_scope=branch —
+		// там нужны только семьи, у которых ребёнок учится именно в этом
+		// филиале, поэтому в этом случае используем отдельную выборку
+		// ListParentsByChildBranch вместо полного списка по сети.
+		var parents []*models.User
+		if q.Get("parents_scope") == "branch" {
+			parents, err = h.parentChild.ListParentsByChildBranch(ctx, *branchFilter, search)
+		} else {
+			parents, err = h.users.ListAll(ctx, repository.ListFilter{
+				Role: rolePtr(models.RoleParent), Search: search,
+			})
+		}
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
 			return
