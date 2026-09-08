@@ -99,6 +99,9 @@ func NewRouter(d *Deps) http.Handler {
 			// Подгруппы: список тоже сужается внутри хендлера (owner/branch_owner
 			// видят по фильтру, tutor — только свои, см. SubgroupHandler.List).
 			r.Get("/subgroups", subgroupHandler.List)
+			// Вспомогательный endpoint для user-service: получить student IDs
+			// по филиалу (для поддержки иногородних учеников в справочнике).
+			r.Get("/enrollments/branch/{branchID}/students", enrollHandler.StudentsByBranch)
 
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRoles(models.RoleOwner))

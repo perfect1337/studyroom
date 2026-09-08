@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"studyroom/user-service/internal/academicclient"
 	"studyroom/user-service/internal/auth"
 	"studyroom/user-service/internal/events"
 	"studyroom/user-service/internal/middleware"
@@ -31,8 +32,9 @@ type UserHandler struct {
 	// учителя" меняет is_tutor в JWT-claims, поэтому нужно сразу
 	// перевыпустить пару токенов (как при логине), а не ждать, пока
 	// естественный /auth/refresh подтянет новое значение.
-	tm      *auth.TokenManager
-	cookies cookieSettings
+	tm             *auth.TokenManager
+	academicClient *academicclient.Client
+	cookies        cookieSettings
 }
 
 func NewUserHandler(
@@ -44,6 +46,7 @@ func NewUserHandler(
 	studentProfiles *repository.StudentProfileRepository,
 	pub events.Publisher,
 	tm *auth.TokenManager,
+	academicClient *academicclient.Client,
 	cookieOpts CookieOptions,
 ) *UserHandler {
 	if pub == nil {
@@ -52,7 +55,7 @@ func NewUserHandler(
 	return &UserHandler{
 		users: users, branches: branches, parentChild: pc,
 		authRepo: authRepo, tutorProfiles: tutorProfiles, studentProfiles: studentProfiles, events: pub,
-		tm: tm,
+		tm: tm, academicClient: academicClient,
 		cookies: cookieSettings{
 			secure:   cookieOpts.Secure,
 			sameSite: parseSameSite(cookieOpts.SameSite),
@@ -424,6 +427,7 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case models.RoleBranchOwner:
+		// Домашние ученики филиала (users.branch_id = claims.BranchID)
 		students, err := h.users.ListAll(ctx, repository.ListFilter{
 			Role: rolePtr(models.RoleStudent), BranchID: branchFilter, Search: search,
 		})
@@ -431,12 +435,43 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
 			return
 		}
-		tutors, err := h.users.ListAll(ctx, repository.ListFilter{
-			Role: rolePtr(models.RoleTutor), BranchID: branchFilter, Search: search,
-		})
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
-			return
+		// Собираем ID домашних учеников для дедупликации иногородних
+		homeIDs := map[int64]struct{}{}
+		for _, s := range students {
+			homeIDs[s.ID] = struct{}{}
+		}
+
+		// Иногородние ученики — те, у кого есть active enrollment в этом
+		// филиале (enrollments.branch_id), но домашний филиал другой.
+		// Запрашиваем у academic-service все student IDs с active enrollment
+		// в этом филиале и добавляем тех, кого нет в homeIDs.
+		var visitingStudents []*models.User
+		if h.academicClient != nil {
+			// Получаем Bearer-токен из запроса для авторизации в academic-service
+			bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+			if bearer != "" {
+				if enrollmentIDs, err := h.academicClient.StudentIDsByBranch(ctx, bearer, *branchFilter); err == nil {
+					for _, sid := range enrollmentIDs {
+						if _, seen := homeIDs[sid]; seen {
+							continue // уже в списке домашних
+						}
+						// Загружаем ученика по ID
+						if s, err := h.users.GetByID(ctx, sid); err == nil && s != nil {
+							// Проверяем поиск по ФИО
+							if search == "" || matchesSearch(s, search) {
+								visitingStudents = append(visitingStudents, s)
+							}
+						}
+					}
+				} else {
+					log.Printf("[user-service] academic client error for branch %d: %v", *branchFilter, err)
+				}
+			}
+		}
+
+		// Объединяем домашних и иногородних учеников
+		if visitingStudents != nil {
+			students = append(students, visitingStudents...)
 		}
 		if students != nil {
 			out.Students = students

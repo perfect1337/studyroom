@@ -12,6 +12,7 @@ type Config struct {
 	JWTSecret       string
 	NATSURL         string // опционально: без него события не публикуются
 	AppPublicURL    string // база для ссылок в письмах (reset-password)
+	AcademicURL     string // URL academic-service для HTTP-клиента (иногородние ученики)
 	AccessTokenTTL  int    // минут
 	RefreshTokenTTL int    // дней
 	AuthRateLimit   int    // запросов/минуту на IP к /auth/* (по умолчанию 200)
@@ -42,6 +43,7 @@ func Load() (*Config, error) {
 		JWTSecret:       getEnv("JWT_SECRET", ""),
 		NATSURL:         getEnv("NATS_URL", ""),
 		AppPublicURL:    getEnv("APP_PUBLIC_URL", "http://localhost:3000"),
+		AcademicURL:     getEnv("ACADEMIC_URL", "http://localhost:8082"),
 		AccessTokenTTL:  15,
 		RefreshTokenTTL: 30,
 		AuthRateLimit:   getEnvInt("AUTH_RATE_LIMIT_PER_MIN", 200),

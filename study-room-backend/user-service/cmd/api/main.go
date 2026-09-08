@@ -71,7 +71,7 @@ func main() {
 		SameSite: cfg.CookieSameSite,
 		Domain:   cfg.CookieDomain,
 	}
-	deps := app.NewDeps(pool, tm, pub, cfg.AppPublicURL, cfg.AuthRateLimit, cookieOpts)
+	deps := app.NewDeps(pool, tm, pub, cfg.AppPublicURL, cfg.AcademicURL, cfg.AuthRateLimit, cookieOpts)
 	handler := app.NewRouter(deps)
 
 	// Пользователи, заведённые в обход обычного API (сидинг миграцией,

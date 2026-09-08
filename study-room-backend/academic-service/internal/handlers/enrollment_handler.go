@@ -370,6 +370,35 @@ func (h *EnrollmentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, updated)
 }
 
+// StudentsByBranch — GET /enrollments/branch/{branchID}/students
+// Возвращает список student IDs, у которых есть enrollment в указанном филиале.
+// Используется user-service для фильтрации учеников branch_owner'а — чтобы
+// видеть не только "домашних" учеников (users.branch_id), но и иногородних,
+// которые обучаются в этом филиале по enrollment (enrollments.branch_id).
+// Доступно owner и branch_owner.
+func (h *EnrollmentHandler) StudentsByBranch(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+
+	if claims.Role != models.RoleOwner && claims.Role != models.RoleBranchOwner {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only owner or branch_owner can access")
+		return
+	}
+
+	id, err := parseIntPath(chi.URLParam(r, "branchID"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid branchID")
+		return
+	}
+
+	studentIDs, err := h.repo.StudentIDsByBranch(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list students")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"student_ids": studentIDs})
+}
+
 func bearerToken(r *http.Request) string {
 	return strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 }

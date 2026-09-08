@@ -516,3 +516,29 @@ func (r *EnrollmentRepository) EnrollmentBranchID(ctx context.Context, enrollmen
 	}
 	return branchID, nil
 }
+
+// StudentIDsByBranch — возвращает уникальный список student IDs, у которых
+// есть хотя бы один active enrollment в указанном филиале.
+// Используется user-service для фильтрации учеников branch_owner'а — чтобы
+// видеть не только "домашних" учеников (users.branch_id), но и иногородних,
+// которые обучаются в этом филиале по enrollment (enrollments.branch_id).
+func (r *EnrollmentRepository) StudentIDsByBranch(ctx context.Context, branchID int64) ([]int64, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT DISTINCT e.student_id FROM enrollments e
+		 WHERE e.branch_id = $1 AND e.status = 'active'
+		 ORDER BY e.student_id`, branchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}

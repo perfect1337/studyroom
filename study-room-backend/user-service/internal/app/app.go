@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"studyroom/user-service/internal/academicclient"
 	"studyroom/user-service/internal/auth"
 	"studyroom/user-service/internal/events"
 	"studyroom/user-service/internal/handlers"
@@ -28,6 +29,7 @@ type Deps struct {
 	StudentProfiles *repository.StudentProfileRepository
 	Events          events.Publisher
 	AppPublicURL    string
+	AcademicClient  *academicclient.Client
 
 	// AuthRateLimit — сколько запросов в минуту на IP разрешено к /auth/*
 	// (register/login/refresh/forgot-password/reset-password). 0 или
@@ -41,7 +43,7 @@ type Deps struct {
 	CookieOptions handlers.CookieOptions
 }
 
-func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, pub events.Publisher, appPublicURL string, authRateLimit int, cookieOpts handlers.CookieOptions) *Deps {
+func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, pub events.Publisher, appPublicURL string, academicURL string, authRateLimit int, cookieOpts handlers.CookieOptions) *Deps {
 	if pub == nil {
 		pub = events.NoopPublisher{}
 	}
@@ -56,6 +58,7 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, pub events.Publisher, ap
 		StudentProfiles: repository.NewStudentProfileRepository(pool),
 		Events:          pub,
 		AppPublicURL:    appPublicURL,
+		AcademicClient:  academicclient.New(academicURL),
 		AuthRateLimit:   authRateLimit,
 		CookieOptions:   cookieOpts,
 	}
@@ -64,7 +67,7 @@ func NewDeps(pool *pgxpool.Pool, tm *auth.TokenManager, pub events.Publisher, ap
 // NewRouter собирает HTTP-роутер user-service (общий для main и тестов).
 func NewRouter(d *Deps) http.Handler {
 	authHandler := handlers.NewAuthHandler(d.Users, d.Auth, d.TM, d.Events, d.AppPublicURL, d.CookieOptions)
-	userHandler := handlers.NewUserHandler(d.Users, d.Branches, d.ParentChild, d.Auth, d.TutorProfiles, d.StudentProfiles, d.Events, d.TM, d.CookieOptions)
+	userHandler := handlers.NewUserHandler(d.Users, d.Branches, d.ParentChild, d.Auth, d.TutorProfiles, d.StudentProfiles, d.Events, d.TM, d.AcademicClient, d.CookieOptions)
 	tutorHandler := handlers.NewTutorHandler(d.TutorProfiles, d.Users)
 
 	r := chi.NewRouter()
