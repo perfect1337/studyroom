@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createLesson, fetchEnrollments } from "../../api/academic.js";
 import { fullName } from "../../utils/userDisplay.js";
 import { addMinutesToTime, DEFAULT_LESSON_DURATION_MINUTES } from "../../utils/time.js";
+import SearchableSelect from "../ui/SearchableSelect.jsx";
 
 export default function CreateIndividualLessonModal({ open, onClose, onCreated, courses = [], tutors = [], students: peopleStudents = [], branches = [], isOwner = false, defaultDate = "" }) {
   const [form, setForm] = useState({
@@ -195,14 +196,21 @@ export default function CreateIndividualLessonModal({ open, onClose, onCreated, 
 
         <label className="block">
           <span className="font-label-md text-label-md text-on-surface">Курс (индивидуальный)</span>
-          <select value={form.course_id} onChange={(e) => updateCourseId(e.target.value)} className="mt-1.5 w-full px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow" disabled={availableCourses.length === 0}>
-            <option value="">
-              {availableCourses.length === 0
-                ? (!isOwner && form.tutor_id ? "У преподавателя нет индивидуальных курсов" : "Нет индивидуальных курсов")
-                : "Выберите курс"}
-            </option>
-            {availableCourses.map((c) => <option key={c.id} value={c.id}>{c.title || c.subject}</option>)}
-          </select>
+          <div className="mt-1.5">
+            <SearchableSelect
+              required
+              value={form.course_id}
+              onChange={updateCourseId}
+              options={availableCourses.map((c) => ({ value: c.id, label: c.title || c.subject }))}
+              disabled={availableCourses.length === 0}
+              placeholder={
+                availableCourses.length === 0
+                  ? (!isOwner && form.tutor_id ? "У преподавателя нет индивидуальных курсов" : "Нет индивидуальных курсов")
+                  : "Выберите курс"
+              }
+              searchPlaceholder="Поиск курса…"
+            />
+          </div>
           {selectedCourse && (
             <span className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-md text-[11px]">
               <span className="material-symbols-outlined text-[13px]">person</span>
@@ -214,10 +222,17 @@ export default function CreateIndividualLessonModal({ open, onClose, onCreated, 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="block">
             <span className="font-label-md text-label-md text-on-surface">Преподаватель</span>
-            <select value={form.tutor_id} onChange={(e) => updateTutorId(e.target.value)} className="mt-1.5 w-full px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow">
-              <option value="">Без преподавателя</option>
-              {availableTutors.map((t) => <option key={t.id} value={t.id}>{fullName(t)}</option>)}
-            </select>
+            <div className="mt-1.5">
+              <SearchableSelect
+                allowClear
+                clearLabel="Без преподавателя"
+                value={form.tutor_id}
+                onChange={updateTutorId}
+                options={availableTutors.map((t) => ({ value: t.id, label: fullName(t) }))}
+                placeholder="Без преподавателя"
+                searchPlaceholder="Поиск преподавателя…"
+              />
+            </div>
             {!isOwner && form.course_id && availableTutors.length === 0 && (
               <span className="mt-1 block font-body-md text-[12px] text-error">На этот курс не назначен ни один преподаватель</span>
             )}
@@ -243,10 +258,17 @@ export default function CreateIndividualLessonModal({ open, onClose, onCreated, 
 
         <label className="block p-3 rounded-lg border border-outline-variant bg-surface-container-low">
           <span className="font-label-md text-label-md text-on-surface">Ученик {loadingStudents ? "(загрузка…)" : ""}</span>
-          <select value={form.student_id} onChange={(e) => update("student_id", e.target.value)} className="mt-1.5 w-full px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow" disabled={!form.course_id || loadingStudents}>
-            <option value="">Выберите ученика</option>
-            {students.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+          <div className="mt-1.5">
+            <SearchableSelect
+              required
+              value={form.student_id}
+              onChange={(v) => update("student_id", v)}
+              options={students.map((s) => ({ value: s.id, label: s.name }))}
+              disabled={!form.course_id || loadingStudents}
+              placeholder="Выберите ученика"
+              searchPlaceholder="Поиск ученика по ФИО…"
+            />
+          </div>
         </label>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

@@ -8,6 +8,7 @@ import {
 } from "../../api/academic.js";
 import { fullName } from "../../utils/userDisplay.js";
 import { addMinutesToTime, DEFAULT_LESSON_DURATION_MINUTES } from "../../utils/time.js";
+import SearchableSelect from "../ui/SearchableSelect.jsx";
 
 const WEEKDAYS = [
   [1, "Пн"], [2, "Вт"], [3, "Ср"], [4, "Чт"], [5, "Пт"], [6, "Сб"], [0, "Вс"],
@@ -32,6 +33,7 @@ export default function BulkCreateLessonsModal({
   onClose,
   onCreated,
   canManageSubgroups = false,
+  isOwner = false,
 }) {
   const [form, setForm] = useState(null);
   const [days, setDays] = useState([1, 2, 3, 4, 5]);
@@ -69,9 +71,17 @@ export default function BulkCreateLessonsModal({
   useEffect(() => {
     if (!open) return;
     const startTime = "10:00";
+    const defaultCourse = courses[0];
+    // Для branch_owner преподаватель по умолчанию должен реально вести
+    // курс по умолчанию (см. availableTutors ниже) — иначе форма открылась
+    // бы с невалидной парой курс/преподаватель. Owner видит всех, поэтому
+    // ему по-прежнему подставляем первого преподавателя из списка.
+    const defaultTutor = isOwner
+      ? tutors[0]
+      : tutors.find((t) => (defaultCourse?.tutor_ids || []).some((id) => String(id) === String(t.id)));
     setForm({
-      course_id: courses[0]?.id ? String(courses[0].id) : "",
-      tutor_id: tutors[0]?.id ? String(tutors[0].id) : "",
+      course_id: defaultCourse?.id ? String(defaultCourse.id) : "",
+      tutor_id: defaultTutor?.id ? String(defaultTutor.id) : "",
       week_start_date: mondayOfWeek(),
       start_time: startTime,
       end_time: addMinutesToTime(startTime, DEFAULT_LESSON_DURATION_MINUTES),
@@ -103,6 +113,17 @@ export default function BulkCreateLessonsModal({
     : undefined;
   const groupType = selectedCourse?.format === "group" ? "group" : "individual";
   const selectedDays = new Set(days);
+
+  // Ограничение для branch_owner: курс выбирается первым, а в списке
+  // преподавателей после этого остаются только те, кто реально закреплён
+  // за выбранным курсом (course.tutor_ids, таблица course_tutors) — так же,
+  // как в модалках добавления одного индивидуального/группового занятия.
+  // Owner (сеть филиалов целиком) видит полный список преподавателей.
+  const availableTutors = useMemo(() => {
+    if (isOwner || !form?.course_id) return tutors;
+    const ids = new Set((selectedCourse?.tutor_ids || []).map(String));
+    return tutors.filter((t) => ids.has(String(t.id)));
+  }, [tutors, isOwner, form?.course_id, selectedCourse]);
 
   useEffect(() => {
     if (!open || !form?.course_id) {
@@ -205,8 +226,19 @@ export default function BulkCreateLessonsModal({
   }
 
   function updateCourse(value) {
-    setForm((f) => ({ ...f, course_id: value, student_id: "" }));
     setError("");
+    setForm((f) => {
+      const next = { ...f, course_id: value, student_id: "" };
+      // Если новый курс не ведётся текущим преподавателем — сбрасываем
+      // преподавателя, чтобы нельзя было отправить несовместимую пару
+      // (только для branch_owner, owner ограничением не связан).
+      if (!isOwner && f.tutor_id) {
+        const course = courses.find((c) => String(c.id) === String(value));
+        const ids = new Set((course?.tutor_ids || []).map(String));
+        if (!ids.has(String(f.tutor_id))) next.tutor_id = "";
+      }
+      return next;
+    });
     setSelectedSubgroupId("");
     setCreatingSubgroup(false);
     setEditingSubgroup(null);
@@ -354,9 +386,14 @@ export default function BulkCreateLessonsModal({
         <form onSubmit={submit} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">Курс
-              <select value={form.course_id} onChange={(e) => updateCourse(e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow">
-                <option value="">Выберите курс</option>{courses.map((c) => <option key={c.id} value={c.id}>{c.title ?? c.subject ?? `Курс #${c.id}`}</option>)}
-              </select>
+              <SearchableSelect
+                required
+                value={form.course_id}
+                onChange={updateCourse}
+                options={courses.map((c) => ({ value: c.id, label: c.title ?? c.subject ?? `Курс #${c.id}` }))}
+                placeholder="Выберите курс"
+                searchPlaceholder="Поиск курса…"
+              />
               {selectedCourse && (
                 <span className="mt-0.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-md text-[11px] w-fit">
                   <span className="material-symbols-outlined text-[13px]">{groupType === "group" ? "groups" : "person"}</span>
@@ -365,9 +402,19 @@ export default function BulkCreateLessonsModal({
               )}
             </label>
             <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">Преподаватель
-              <select value={form.tutor_id} onChange={(e) => update("tutor_id", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow">
-                <option value="">Выберите преподавателя</option>{tutors.map((t) => <option key={t.id} value={t.id}>{fullName(t)}</option>)}
-              </select>
+              <SearchableSelect
+                required
+                value={form.tutor_id}
+                onChange={(v) => update("tutor_id", v)}
+                options={availableTutors.map((t) => ({ value: t.id, label: fullName(t) }))}
+                disabled={!isOwner && !form.course_id}
+                placeholder={
+                  !isOwner && form.course_id && availableTutors.length === 0
+                    ? "У курса нет преподавателей"
+                    : "Выберите преподавателя"
+                }
+                searchPlaceholder="Поиск преподавателя…"
+              />
             </label>
           </div>
 

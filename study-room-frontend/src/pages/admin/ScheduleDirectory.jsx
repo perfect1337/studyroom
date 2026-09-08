@@ -6,6 +6,7 @@ import EditLessonModal from "../../components/lessons/EditLessonModal.jsx";
 import BulkCreateLessonsModal from "../../components/lessons/BulkCreateLessonsModal.jsx";
 import CreateIndividualLessonModal from "../../components/lessons/CreateIndividualLessonModal.jsx";
 import CreateGroupLessonModal from "../../components/lessons/CreateGroupLessonModal.jsx";
+import ConfirmToggleModal from "../../components/ui/ConfirmToggleModal.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchLessons, fetchCourses, createLesson } from "../../api/academic.js";
 import { fetchMyPeople, fetchBranches, fetchUserById } from "../../api/users.js";
@@ -451,6 +452,13 @@ export default function ScheduleDirectory({ role }) {
   const [groupCreateOpen, setGroupCreateOpen] = useState(false);
   const [copyingMonth, setCopyingMonth] = useState(false);
   const [copyProgress, setCopyProgress] = useState("");
+  // pendingDuplicate — запрошенное, но ещё не подтверждённое действие
+  // дублирования расписания недели ("week" | "month" | "nextMonth"). Само
+  // действие выполняется только после явного подтверждения в
+  // ConfirmToggleModal ниже — массовое создание занятий необратимо одним
+  // кликом отменить нельзя (это не черновик), поэтому здесь лишний шаг
+  // подтверждения важнее, чем при обычном создании одного занятия.
+  const [pendingDuplicate, setPendingDuplicate] = useState(null);
 
   // При PATCH обновляем занятие локально, не дожидаясь перезагрузки месяца —
   // отзывчивее для пользователя.
@@ -504,6 +512,64 @@ export default function ScheduleDirectory({ role }) {
     setLessons((prev) => prev.filter((l) => l.id !== lessonId));
     setEditingLesson(null);
     setSelectedLesson((prev) => (prev && prev.id === lessonId ? null : prev));
+  }
+
+  // sourceWeekLessons — занятия текущей недели, которые дублируются во всех
+  // трёх сценариях ниже (на след. неделю / на месяц / на след. месяц).
+  // Вынесено отдельно, чтобы посчитать их количество и для превью в
+  // подтверждении, и для самого дублирования — одной и той же логикой.
+  function sourceWeekLessons() {
+    return currentWeek.filter((d) => d !== null).flatMap((day) => (lessonsByDay[day] ?? []));
+  }
+
+  async function handleDuplicateWeekToNextWeek() {
+    setCopyingMonth(true);
+    setCopyProgress("Загрузка занятий текущей недели...");
+    try {
+      const sourceLessons = sourceWeekLessons();
+      if (!sourceLessons.length) {
+        setCopyProgress("На этой неделе занятий нет");
+        setCopyingMonth(false);
+        return;
+      }
+      // Каждое занятие переносим ровно на 7 дней вперёд — тот же день недели,
+      // то же время, следующая неделя.
+      let created = 0;
+      let failed = [];
+      for (const lesson of sourceLessons) {
+        setCopyProgress(`Дублирование: ${created + 1} из ${sourceLessons.length}...`);
+        const sourceDate = new Date(String(lesson.lesson_date).slice(0, 10) + "T12:00:00");
+        const targetDate = new Date(sourceDate);
+        targetDate.setDate(targetDate.getDate() + 7);
+        const targetISO = `${targetDate.getFullYear()}-${pad(targetDate.getMonth() + 1)}-${pad(targetDate.getDate())}`;
+        try {
+          await createLesson({
+            course_id: lesson.course_id,
+            tutor_id: lesson.tutor_id,
+            topic: lesson.topic,
+            lesson_date: targetISO,
+            start_time: lesson.start_time,
+            end_time: lesson.end_time,
+            location_type: lesson.location_type,
+            group_type: lesson.group_type,
+            comment: lesson.comment,
+            student_id: lesson.student_id,
+            participant_ids: lesson.participant_ids,
+          });
+          created++;
+        } catch (e) {
+          failed.push(`${targetISO} — ${e.message || "ошибка"}`);
+        }
+      }
+      setCopyProgress(`Создано ${created} занятий${failed.length ? `. Ошибок: ${failed.length}` : "."}`);
+      if (failed.length === 0) {
+        load({ silent: true });
+      }
+    } catch (e) {
+      setCopyProgress("Ошибка: " + (e.message || "не удалось загрузить занятия"));
+    } finally {
+      setCopyingMonth(false);
+    }
   }
 
   async function handleReflectWeekToMonth() {
@@ -626,6 +692,32 @@ export default function ScheduleDirectory({ role }) {
       setCopyingMonth(false);
     }
   }
+
+  // pendingDuplicateInfo — заголовок/описание/сама функция для того из трёх
+  // сценариев дублирования (см. pendingDuplicate выше), который сейчас
+  // ожидает подтверждения в ConfirmToggleModal. Count пересчитывается на
+  // каждый рендер из текущего lessonsByDay — раз пользователь может успеть
+  // подвигать неделю/месяц, пока диалог открыт, число в описании не должно
+  // "залипать" на устаревшем значении.
+  const pendingDuplicateInfo = pendingDuplicate
+    ? {
+        week: {
+          title: "Дублировать неделю на следующую",
+          run: handleDuplicateWeekToNextWeek,
+          description: `Будет создано по одному занятию на СЛЕДУЮЩЕЙ неделе для каждого из ${sourceWeekLessons().length} занятий текущей недели — тот же день недели, время, курс и преподаватель.\n\nДействие нельзя отменить одним кликом: чтобы убрать созданные занятия, их придётся удалять вручную.`,
+        },
+        month: {
+          title: "Отразить неделю на месяц",
+          run: handleReflectWeekToMonth,
+          description: `Расписание текущей недели (${sourceWeekLessons().length} занятий) будет продублировано на все остальные недели ТЕКУЩЕГО месяца с тем же днём недели.\n\nДействие нельзя отменить одним кликом: чтобы убрать созданные занятия, их придётся удалять вручную.`,
+        },
+        nextMonth: {
+          title: "Отразить неделю на следующий месяц",
+          run: handleReflectWeekToNextMonth,
+          description: `Расписание текущей недели (${sourceWeekLessons().length} занятий) будет продублировано на весь СЛЕДУЮЩИЙ месяц с тем же днём недели.\n\nДействие нельзя отменить одним кликом: чтобы убрать созданные занятия, их придётся удалять вручную.`,
+        },
+      }[pendingDuplicate]
+    : null;
 
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstWeekday = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7; // 0 = Monday
@@ -1165,7 +1257,18 @@ export default function ScheduleDirectory({ role }) {
           <>
             <button
               type="button"
-              onClick={handleReflectWeekToMonth}
+              onClick={() => setPendingDuplicate("week")}
+              disabled={copyingMonth}
+              className="group w-full sm:w-auto inline-flex items-center justify-center gap-2.5 pl-3.5 pr-5 py-2.5 rounded-full border border-outline-variant text-on-surface-variant font-label-md text-label-md hover:bg-surface-container-high transition-all duration-150 disabled:opacity-60 active:scale-[0.98]"
+            >
+              <span className="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center shrink-0 group-hover:bg-surface-container-high transition-colors duration-200">
+                <span className="material-symbols-outlined text-[16px]">calendar_view_week</span>
+              </span>
+              {copyingMonth ? "Дублирование..." : "Дублировать на след. неделю"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPendingDuplicate("month")}
               disabled={copyingMonth}
               className="group w-full sm:w-auto inline-flex items-center justify-center gap-2.5 pl-3.5 pr-5 py-2.5 rounded-full border border-outline-variant text-on-surface-variant font-label-md text-label-md hover:bg-surface-container-high transition-all duration-150 disabled:opacity-60 active:scale-[0.98]"
             >
@@ -1176,7 +1279,7 @@ export default function ScheduleDirectory({ role }) {
             </button>
             <button
               type="button"
-              onClick={handleReflectWeekToNextMonth}
+              onClick={() => setPendingDuplicate("nextMonth")}
               disabled={copyingMonth}
               className="group w-full sm:w-auto inline-flex items-center justify-center gap-2.5 pl-3.5 pr-5 py-2.5 rounded-full border border-outline-variant text-on-surface-variant font-label-md text-label-md hover:bg-surface-container-high transition-all duration-150 disabled:opacity-60 active:scale-[0.98]"
             >
@@ -1665,6 +1768,7 @@ export default function ScheduleDirectory({ role }) {
         onClose={() => setBulkCreateOpen(false)}
         onCreated={() => load({ silent: true })}
         canManageSubgroups
+        isOwner={isOwner}
       />
 
       <CreateIndividualLessonModal
@@ -1686,6 +1790,20 @@ export default function ScheduleDirectory({ role }) {
         tutors={people.tutors}
         students={people.students}
         isOwner={isOwner}
+      />
+
+      <ConfirmToggleModal
+        open={!!pendingDuplicate}
+        title={pendingDuplicateInfo?.title}
+        description={pendingDuplicateInfo?.description}
+        confirmLabel="Дублировать"
+        cancelLabel="Отмена"
+        onCancel={() => setPendingDuplicate(null)}
+        onConfirm={() => {
+          const action = pendingDuplicateInfo;
+          setPendingDuplicate(null);
+          action?.run();
+        }}
       />
 
       {copyProgress && (

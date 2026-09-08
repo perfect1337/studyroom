@@ -48,6 +48,12 @@ function compareRu(a, b) {
  *  - placeholder: текст в поле, когда ничего не выбрано
  *  - searchPlaceholder: текст в поле поиска внутри выпадающего списка
  *  - disabled, required, className
+ *  - allowClear: bool — показывать пункт "очистить выбор" сверху списка
+ *    (закреплён, не участвует в сортировке/поиске) и крестик рядом с
+ *    выбранным значением в закрытом поле — для необязательных полей вроде
+ *    "преподаватель" (в отличие от required-полей типа "курс"/"ученик",
+ *    где значение всегда должно быть выбрано).
+ *  - clearLabel: подпись пункта очистки
  */
 export default function SearchableSelect({
   options,
@@ -58,6 +64,8 @@ export default function SearchableSelect({
   disabled = false,
   required = false,
   className = "",
+  allowClear = false,
+  clearLabel = "Без выбора",
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -127,8 +135,26 @@ export default function SearchableSelect({
         <span className={`truncate ${selected ? "text-on-surface" : "text-on-surface-variant"}`}>
           {selected ? selected.label : placeholder}
         </span>
-        <span className="material-symbols-outlined text-[18px] text-on-surface-variant shrink-0">
-          {open ? "expand_less" : "expand_more"}
+        <span className="flex items-center gap-1 shrink-0">
+          {allowClear && selected && !disabled && (
+            <span
+              role="button"
+              tabIndex={-1}
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange("");
+                setOpen(false);
+                setQuery("");
+              }}
+              className="material-symbols-outlined text-[16px] text-on-surface-variant hover:text-on-surface rounded-full"
+              aria-label={clearLabel}
+            >
+              close
+            </span>
+          )}
+          <span className="material-symbols-outlined text-[18px] text-on-surface-variant">
+            {open ? "expand_less" : "expand_more"}
+          </span>
         </span>
       </button>
 
@@ -145,6 +171,21 @@ export default function SearchableSelect({
             />
           </div>
           <div className="max-h-56 overflow-y-auto py-1">
+            {allowClear && (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange("");
+                  setOpen(false);
+                  setQuery("");
+                }}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-label-md text-left italic transition-colors border-b border-outline-variant/60 ${
+                  !value ? "bg-primary-container/60 text-on-primary-container" : "text-on-surface-variant hover:bg-surface-container-high"
+                }`}
+              >
+                {clearLabel}
+              </button>
+            )}
             {filteredOptions.length === 0 ? (
               <div className="px-3 py-2 text-label-md text-on-surface-variant">Ничего не найдено</div>
             ) : (

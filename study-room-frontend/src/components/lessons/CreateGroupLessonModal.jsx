@@ -8,6 +8,7 @@ import {
 } from "../../api/academic.js";
 import { fullName } from "../../utils/userDisplay.js";
 import { addMinutesToTime, DEFAULT_LESSON_DURATION_MINUTES } from "../../utils/time.js";
+import SearchableSelect from "../ui/SearchableSelect.jsx";
 
 // CreateGroupLessonModal — модалка создания группового занятия для
 // owner/branch_owner. Оболочка (шапка, дата/время, формат, комментарий,
@@ -384,37 +385,37 @@ export default function CreateGroupLessonModal({
 
         <label className="block">
           <span className="font-label-md text-label-md text-on-surface">Преподаватель</span>
-          <select
-            value={form.tutor_id}
-            onChange={(e) => updateTutor(e.target.value)}
-            className="mt-1.5 w-full px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow"
-          >
-            <option value="">Выберите преподавателя</option>
-            {tutors.map((t) => (
-              <option key={t.id} value={t.id}>{fullName(t)}</option>
-            ))}
-          </select>
+          <div className="mt-1.5">
+            <SearchableSelect
+              required
+              value={form.tutor_id}
+              onChange={updateTutor}
+              options={tutors.map((t) => ({ value: t.id, label: fullName(t) }))}
+              placeholder="Выберите преподавателя"
+              searchPlaceholder="Поиск преподавателя…"
+            />
+          </div>
         </label>
 
         <label className="block">
           <span className="font-label-md text-label-md text-on-surface">Курс (групповой)</span>
-          <select
-            value={form.course_id}
-            onChange={(e) => updateCourse(e.target.value)}
-            disabled={!form.tutor_id}
-            className="mt-1.5 w-full px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            <option value="">
-              {!form.tutor_id
-                ? "Сначала выберите преподавателя"
-                : availableGroupCourses.length === 0
-                ? (!isOwner ? "У преподавателя нет групповых курсов" : "Нет групповых курсов")
-                : "Выберите курс"}
-            </option>
-            {availableGroupCourses.map((c) => (
-              <option key={c.id} value={c.id}>{c.title || c.subject}</option>
-            ))}
-          </select>
+          <div className="mt-1.5">
+            <SearchableSelect
+              required
+              value={form.course_id}
+              onChange={updateCourse}
+              options={availableGroupCourses.map((c) => ({ value: c.id, label: c.title || c.subject }))}
+              disabled={!form.tutor_id || availableGroupCourses.length === 0}
+              placeholder={
+                !form.tutor_id
+                  ? "Сначала выберите преподавателя"
+                  : availableGroupCourses.length === 0
+                  ? (!isOwner ? "У преподавателя нет групповых курсов" : "Нет групповых курсов")
+                  : "Выберите курс"
+              }
+              searchPlaceholder="Поиск курса…"
+            />
+          </div>
         </label>
 
         {form.course_id && (
