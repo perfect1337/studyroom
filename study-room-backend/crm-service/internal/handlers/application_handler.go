@@ -127,6 +127,10 @@ type createInternalRequest struct {
 	// (берутся из профиля залогиненного родителя, см. ParentOverview.jsx).
 	ParentName *string `json:"parent_name"`
 	Phone      *string `json:"phone"`
+	// BranchID — опционально, передаётся при создании ученика родителем,
+	// чтобы сразу создать заявку с правильным филиалом (когда user_refs
+	// ещё не обновился событием user.created).
+	BranchID *int64 `json:"branch_id"`
 }
 
 // applicationRateLimit — минимальный интервал между заявками "Записаться
@@ -182,6 +186,11 @@ func (h *ApplicationHandler) CreateInternal(w http.ResponseWriter, r *http.Reque
 		// родителя из-за задержки доставки события (тот же принцип, что и
 		// с studentName ниже).
 		classInfo = ref.ClassInfo
+	}
+	// Если branch_id передан явно в запросе (например, при создании ученика
+	// родителем, когда user_refs ещё не обновился), используем его.
+	if req.BranchID != nil {
+		branchID = req.BranchID
 	}
 	if studentName == "" {
 		studentName = studentPlaceholder(req.StudentID)

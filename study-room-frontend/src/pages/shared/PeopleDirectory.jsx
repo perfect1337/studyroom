@@ -7,7 +7,8 @@ import { usePagination } from "../../utils/usePagination.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople, fetchBranches, createStudent } from "../../api/users.js";
 import { fetchCourses, fetchEnrollments, fetchLessons, fetchTests } from "../../api/academic.js";
-import { fetchContracts } from "../../api/contracts.js";
+import { fetchContracts, createContract } from "../../api/contracts.js";
+import { fetchApplications, createApplication } from "../../api/crm.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
 const PAGE_SIZE = 10;
@@ -422,7 +423,7 @@ export default function PeopleDirectory({ role }) {
     if (!addForm.last_name || !addForm.first_name || !addForm.branch_id || !addForm.class_info) return;
     setAddStatus("saving");
     try {
-      await createStudent({
+      const student = await createStudent({
         last_name: addForm.last_name,
         first_name: addForm.first_name,
         patronymic: addForm.patronymic || undefined,
@@ -430,8 +431,27 @@ export default function PeopleDirectory({ role }) {
         class_info: String(addForm.class_info),
         parent_id: user.id,
       });
+      // Создаём заявку в CRM и уведомляем branch owner
+      try {
+        await createApplication({
+          student_id: student?.id,
+          branch_id: Number(addForm.branch_id),
+          name: `${addForm.last_name} ${addForm.first_name}`,
+          parent_name: user?.last_name && user?.first_name ? `${user.last_name} ${user.first_name}` : undefined,
+          phone: user?.phone,
+        });
+      } catch {
+        // Не блокируем создание ученика если CRM недоступен
+      }
       setAddStatus("done");
-      await load(); // подтягиваем свежий список детей
+      // Обновляем только список детей без полной перезагрузки всех данных
+      try {
+        const peopleRes = await fetchMyPeople();
+        setPeople(peopleRes?.children ?? []);
+      } catch {
+        // fallback на полную перезагрузку
+        await load();
+      }
     } catch (err) {
       setAddStatus(err.message || "Не удалось добавить ребёнка");
     }

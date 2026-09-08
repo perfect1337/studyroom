@@ -4,14 +4,20 @@ import { cachedQuery, invalidateQuery } from "./queryCache.js";
 // 4.2 Внутренняя заявка «записаться на новый курс» (parent)
 // parent_name/phone — контактные данные родителя, оформляющего заявку,
 // чтобы менеджер видел их сразу в заявке в CRM, не уходя за ними в User Service.
-export function createInternalApplication({ student_id, subject_interest, format, parent_name, phone }) {
+// branch_id — опционально, передаётся если известен (например, при создании ученика).
+export function createInternalApplication({ student_id, subject_interest, format, parent_name, phone, branch_id }) {
   return crmApi("/applications", {
     method: "POST",
-    body: { student_id, subject_interest, format, parent_name, phone },
+    body: { student_id, subject_interest, format, parent_name, phone, branch_id },
   }).then((res) => {
     invalidateQuery(["applications"]);
     return res;
   });
+}
+
+// shortcut для создания заявки при добавлении ученика
+export function createApplication(payload) {
+  return crmApi("/applications", { method: "POST", body: payload });
 }
 
 // 4.3 Список заявок (owner only)
