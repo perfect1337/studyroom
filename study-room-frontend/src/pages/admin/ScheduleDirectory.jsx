@@ -692,32 +692,6 @@ export default function ScheduleDirectory({ role }) {
     }
   }
 
-  // pendingDuplicateInfo — заголовок/описание/сама функция для того из трёх
-  // сценариев дублирования (см. pendingDuplicate выше), который сейчас
-  // ожидает подтверждения в ConfirmToggleModal. Count пересчитывается на
-  // каждый рендер из текущего lessonsByDay — раз пользователь может успеть
-  // подвигать неделю/месяц, пока диалог открыт, число в описании не должно
-  // "залипать" на устаревшем значении.
-  const pendingDuplicateInfo = pendingDuplicate
-    ? {
-        week: {
-          title: "Дублировать неделю на следующую",
-          run: handleDuplicateWeekToNextWeek,
-          description: `Будет создано по одному занятию на СЛЕДУЮЩЕЙ неделе для каждого из ${sourceWeekLessons().length} занятий текущей недели — тот же день недели, время, курс и преподаватель.\n\nДействие нельзя отменить одним кликом: чтобы убрать созданные занятия, их придётся удалять вручную.`,
-        },
-        month: {
-          title: "Отразить неделю на месяц",
-          run: handleReflectWeekToMonth,
-          description: `Расписание текущей недели (${sourceWeekLessons().length} занятий) будет продублировано на все остальные недели ТЕКУЩЕГО месяца с тем же днём недели.\n\nДействие нельзя отменить одним кликом: чтобы убрать созданные занятия, их придётся удалять вручную.`,
-        },
-        nextMonth: {
-          title: "Отразить неделю на следующий месяц",
-          run: handleReflectWeekToNextMonth,
-          description: `Расписание текущей недели (${sourceWeekLessons().length} занятий) будет продублировано на весь СЛЕДУЮЩИЙ месяц с тем же днём недели.\n\nДействие нельзя отменить одним кликом: чтобы убрать созданные занятия, их придётся удалять вручную.`,
-        },
-      }[pendingDuplicate]
-    : null;
-
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstWeekday = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7; // 0 = Monday
 
@@ -1051,6 +1025,39 @@ export default function ScheduleDirectory({ role }) {
   }
 
   const currentWeek = monthWeeks[Math.min(weekIndex, monthWeeks.length - 1)] ?? [];
+
+  // pendingDuplicateInfo — заголовок/описание/сама функция для того из трёх
+  // сценариев дублирования (см. pendingDuplicate выше), который сейчас
+  // ожидает подтверждения в ConfirmToggleModal. Count пересчитывается на
+  // каждый рендер из текущего lessonsByDay — раз пользователь может успеть
+  // подвигать неделю/месяц, пока диалог открыт, число в описании не должно
+  // "залипать" на устаревшем значении.
+  //
+  // ВАЖНО: этот блок должен идти ПОСЛЕ объявления currentWeek/lessonsByDay
+  // (см. sourceWeekLessons выше) — он сразу же вызывает sourceWeekLessons()
+  // при построении объекта, а не только внутри обработчика клика. Если
+  // разместить его раньше их объявления, вызов упадёт с ReferenceError
+  // "Cannot access 'currentWeek'/'lessonsByDay' before initialization"
+  // (TDZ) в тот момент, когда pendingDuplicate становится не-null.
+  const pendingDuplicateInfo = pendingDuplicate
+    ? {
+        week: {
+          title: "Дублировать неделю на следующую",
+          run: handleDuplicateWeekToNextWeek,
+          description: `Будет создано по одному занятию на СЛЕДУЮЩЕЙ неделе для каждого из ${sourceWeekLessons().length} занятий текущей недели — тот же день недели, время, курс и преподаватель.\n\nДействие нельзя отменить одним кликом: чтобы убрать созданные занятия, их придётся удалять вручную.`,
+        },
+        month: {
+          title: "Отразить неделю на месяц",
+          run: handleReflectWeekToMonth,
+          description: `Расписание текущей недели (${sourceWeekLessons().length} занятий) будет продублировано на все остальные недели ТЕКУЩЕГО месяца с тем же днём недели.\n\nДействие нельзя отменить одним кликом: чтобы убрать созданные занятия, их придётся удалять вручную.`,
+        },
+        nextMonth: {
+          title: "Отразить неделю на следующий месяц",
+          run: handleReflectWeekToNextMonth,
+          description: `Расписание текущей недели (${sourceWeekLessons().length} занятий) будет продублировано на весь СЛЕДУЮЩИЙ месяц с тем же днём недели.\n\nДействие нельзя отменить одним кликом: чтобы убрать созданные занятия, их придётся удалять вручную.`,
+        },
+      }[pendingDuplicate]
+    : null;
 
   function toggleExpandedWeek(day) {
     const week = monthWeeks.find((candidate) => candidate.includes(day)) ?? [];
