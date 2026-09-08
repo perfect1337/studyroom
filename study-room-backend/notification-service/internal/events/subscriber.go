@@ -67,10 +67,11 @@ type passwordResetEvent struct {
 }
 
 type contractExpiringEvent struct {
-	UserID    int64  `json:"user_id"`
-	Contract  string `json:"contract_number"`
-	EndDate   string `json:"end_date"`
-	StudentID int64  `json:"student_id"`
+	UserID           int64  `json:"user_id"`
+	Contract         string `json:"contract_number"`
+	EndDate          string `json:"end_date"`
+	StudentID        int64  `json:"student_id"`
+	BranchOwnerEmail string `json:"branch_owner_email"`
 }
 
 // lessonCreatedEvent — payload lesson.created, публикуется Academic Service
@@ -312,6 +313,10 @@ func (s *Subscriber) handleContractExpiring(msg *nats.Msg) {
 		"Договор по вашему ребёнку %s истекает %s. Не забудьте оплатить продление, если оно требуется.",
 		studentName, dateStr,
 	)
+
+	if evt.BranchOwnerEmail != "" {
+		message = fmt.Sprintf("%s\n\nПосле оплаты пришлите чек на почту: %s", message, evt.BranchOwnerEmail)
+	}
 
 	s.send(evt.UserID, "contract_expiring", message, "")
 }

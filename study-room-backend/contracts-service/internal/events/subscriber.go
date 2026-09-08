@@ -14,6 +14,7 @@ type UserEvent struct {
 	ID        int64       `json:"id"`
 	FirstName string      `json:"first_name"`
 	LastName  string      `json:"last_name"`
+	Email     string      `json:"email"`
 	Role      models.Role `json:"role"`
 	BranchID  *int64      `json:"branch_id"`
 }
@@ -104,6 +105,7 @@ func (s *Subscriber) handleUserEvent(ctx context.Context) nats.MsgHandler {
 			FullName: (ev.FirstName + " " + ev.LastName),
 			Role:     ev.Role,
 			BranchID: ev.BranchID,
+			Email:    ev.Email,
 		}
 		if err := s.userRefRepo.Upsert(ctx, ref); err != nil {
 			log.Printf("[events] upsert user_ref %d error: %v", ev.ID, err)

@@ -183,15 +183,17 @@ func checkExpiringSoon(ctx context.Context, deps *app.Deps) {
 	for _, c := range contracts {
 		end := c.EndDate.Format("2006-01-02")
 
+		branchOwnerEmail, _ := deps.UserRefs.GetBranchOwnerEmail(ctx, c.BranchID)
+
 		switch {
 		case end == tomorrow:
 			// Первое уведомление: завтра истекает – отправляем, но флаг не ставим.
-			deps.Events.ContractExpiringSoon(c.ParentID, c.StudentID, c.ContractNumber, end)
+			deps.Events.ContractExpiringSoon(c.ParentID, c.StudentID, c.ContractNumber, end, branchOwnerEmail)
 			log.Printf("[expiring-soon-job] sent first notification (tomorrow) for contract %d", c.ID)
 
 		case end == today:
 			// Второе уведомление: сегодня истекает – отправляем и ставим флаг.
-			deps.Events.ContractExpiringSoon(c.ParentID, c.StudentID, c.ContractNumber, end)
+			deps.Events.ContractExpiringSoon(c.ParentID, c.StudentID, c.ContractNumber, end, branchOwnerEmail)
 			if err := deps.Contracts.MarkExpiryNotified(ctx, c.ID); err != nil {
 				log.Printf("[expiring-soon-job] mark notified contract=%d error: %v", c.ID, err)
 			} else {

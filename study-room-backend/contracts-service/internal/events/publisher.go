@@ -21,7 +21,7 @@ const (
 
 type Publisher interface {
 	ContractCreated(id, studentID, courseID int64, tutorID *int64, startDate, endDate *string, branchID int64)
-	ContractExpiringSoon(userID int64, studentId int64, contractNumber, endDate string)
+	ContractExpiringSoon(userID int64, studentId int64, contractNumber, endDate, branchOwnerEmail string)
 	ContractTerminated(id, studentID, courseID int64)
 	ContractExpired(id, studentID, courseID int64, endDate string)
 	ContractActivated(id, studentID, courseID int64, startDate, endDate string)
@@ -31,7 +31,7 @@ type Publisher interface {
 type NoopPublisher struct{}
 
 func (NoopPublisher) ContractCreated(int64, int64, int64, *int64, *string, *string, int64) {}
-func (NoopPublisher) ContractExpiringSoon(int64, int64, string, string)                    {}
+func (NoopPublisher) ContractExpiringSoon(int64, int64, string, string, string)                    {}
 func (NoopPublisher) ContractTerminated(int64, int64, int64)                               {}
 func (NoopPublisher) ContractExpired(int64, int64, int64, string)                          {}
 func (NoopPublisher) ContractActivated(int64, int64, int64, string, string)                {}
@@ -56,10 +56,11 @@ type contractCreatedPayload struct {
 }
 
 type contractExpiringSoonPayload struct {
-	UserID         int64  `json:"user_id"`
-	StudentID      int64  `json:"student_id"`
-	ContractNumber string `json:"contract_number"`
-	EndDate        string `json:"end_date"`
+	UserID           int64  `json:"user_id"`
+	StudentID        int64  `json:"student_id"`
+	ContractNumber   string `json:"contract_number"`
+	EndDate          string `json:"end_date"`
+	BranchOwnerEmail string `json:"branch_owner_email"`
 }
 
 // contractTerminatedPayload — расторжение договора (PATCH /contracts/{id}/status
@@ -109,13 +110,14 @@ func (p *NATSPublisher) ContractCreated(id, studentID, courseID int64, tutorID *
 	}
 }
 
-func (p *NATSPublisher) ContractExpiringSoon(userID int64, studentID int64, contractNumber, endDate string) {
+func (p *NATSPublisher) ContractExpiringSoon(userID int64, studentID int64, contractNumber, endDate, branchOwnerEmail string) {
 	if userID == 0 {
 		log.Printf("[events] contract.expiring_soon: empty user_id, skip publish (contract=%s)", contractNumber)
 		return
 	}
 	data, err := json.Marshal(contractExpiringSoonPayload{
 		UserID: userID, StudentID: studentID, ContractNumber: contractNumber, EndDate: endDate,
+		BranchOwnerEmail: branchOwnerEmail,
 	})
 	if err != nil {
 		log.Printf("[events] marshal contract.expiring_soon error: %v", err)
