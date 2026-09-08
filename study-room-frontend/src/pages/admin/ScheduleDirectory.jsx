@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
@@ -561,7 +561,7 @@ export default function ScheduleDirectory({ role }) {
   // Варианты для фильтра "выбрать конкретный месяц" — год назад / год вперёд
   // от текущего года, плюс сам текущий год. Этого достаточно для выбора
   // произвольного месяца одним кликом, не листая стрелками.
-  const monthOptions = useMemo(() => {
+  const monthOptions = React.useMemo(() => {
     const options = [];
     const baseYear = today.getFullYear();
     for (let y = baseYear - 1; y <= baseYear + 1; y++) {
@@ -741,19 +741,19 @@ export default function ScheduleDirectory({ role }) {
     return unsubscribe;
   }, [viewYear, viewMonth, daysInMonth, tutorFilter, studentFilter, branchFilter, isOwner, load]);
 
-  const coursesById = useMemo(() => {
+  const coursesById = React.useMemo(() => {
     const map = {};
     courses.forEach((c) => (map[c.id] = c));
     return map;
   }, [courses]);
 
-  const courseColor = useMemo(() => {
+  const courseColor = React.useMemo(() => {
     const map = {};
     courses.forEach((c, i) => (map[c.id] = COURSE_COLORS[i % COURSE_COLORS.length]));
     return map;
   }, [courses]);
 
-  const studentsById = useMemo(() => {
+  const studentsById = React.useMemo(() => {
     const map = { ...extraStudentsById };
     people.students.forEach((s) => (map[s.id] = s));
     return map;
@@ -769,7 +769,7 @@ export default function ScheduleDirectory({ role }) {
   // снапшот имён с бэкенда специально для этого случая (см. Lesson.ParticipantNames
   // в academic-service/internal/models/models.go) — и только если даже его нет,
   // показываем "Ученик #id" как последний фолбэк.
-  const studentsForLesson = useMemo(() => {
+  const studentsForLesson = React.useMemo(() => {
     const map = {}; // lesson.id -> [student, ...]
     lessons.forEach((l) => {
       const ids = [...new Set(l.participant_ids ?? [])];
@@ -782,7 +782,7 @@ export default function ScheduleDirectory({ role }) {
     return map;
   }, [lessons, studentsById]);
 
-  const lessonsByDay = useMemo(() => {
+  const lessonsByDay = React.useMemo(() => {
     const map = {};
     for (const lesson of lessons) {
       const day = Number(lesson.lesson_date?.slice(8, 10));
@@ -809,7 +809,7 @@ export default function ScheduleDirectory({ role }) {
   // поэтому количество недель само получается 4/5/6 в зависимости от того,
   // на какой день недели пришлось 1-е число и сколько дней в месяце —
   // отдельно хардкодить не нужно.
-  const monthWeeks = useMemo(() => {
+  const monthWeeks = React.useMemo(() => {
     const totalCells = firstWeekday + daysInMonth;
     const rowCount = Math.ceil(totalCells / 7);
     const weeks = [];
@@ -919,7 +919,7 @@ export default function ScheduleDirectory({ role }) {
   }
 
   // Время начала занятий этой недели, по возрастанию — строки недельной сетки.
-  const weekTimes = useMemo(() => {
+  const weekTimes = React.useMemo(() => {
     const set = new Set();
     currentWeek.forEach((day) => {
       if (!day) return;
@@ -1579,7 +1579,6 @@ export default function ScheduleDirectory({ role }) {
         courses={courses}
         tutors={people.tutors}
         students={people.students}
-        canManageSubgroups={isOwner || role === "branch_owner"}
         onClose={() => setBulkCreateOpen(false)}
         onCreated={() => load({ silent: true })}
       />
