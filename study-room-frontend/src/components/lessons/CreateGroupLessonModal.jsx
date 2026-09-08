@@ -92,6 +92,17 @@ export default function CreateGroupLessonModal({
   // Только групповые курсы — на индивидуальном подгруппы не имеют смысла.
   const groupCourses = useMemo(() => courses.filter((c) => c.format === "group"), [courses]);
 
+  // Ограничение для branch_owner: после выбора преподавателя показываем
+  // только те групповые курсы, что реально закреплены за ним
+  // (course.tutor_ids, таблица course_tutors) — назначить занятие по
+  // чужому курсу нельзя. Owner видит все групповые курсы без ограничений.
+  const availableGroupCourses = useMemo(() => {
+    if (isOwner || !form.tutor_id) return groupCourses;
+    return groupCourses.filter((c) =>
+      (c.tutor_ids || []).some((id) => String(id) === String(form.tutor_id))
+    );
+  }, [groupCourses, isOwner, form.tutor_id]);
+
   const selectedCourse = useMemo(
     () => groupCourses.find((c) => String(c.id) === String(form.course_id)),
     [groupCourses, form.course_id]
@@ -396,11 +407,11 @@ export default function CreateGroupLessonModal({
             <option value="">
               {!form.tutor_id
                 ? "Сначала выберите преподавателя"
-                : groupCourses.length === 0
-                ? "Нет групповых курсов"
+                : availableGroupCourses.length === 0
+                ? (!isOwner ? "У преподавателя нет групповых курсов" : "Нет групповых курсов")
                 : "Выберите курс"}
             </option>
-            {groupCourses.map((c) => (
+            {availableGroupCourses.map((c) => (
               <option key={c.id} value={c.id}>{c.title || c.subject}</option>
             ))}
           </select>

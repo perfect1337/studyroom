@@ -29,6 +29,26 @@ export default function CreateIndividualLessonModal({ open, onClose, onCreated, 
     [courses]
   );
 
+  // Ограничение для branch_owner: он может назначать занятия только по
+  // курсам, которые реально ведёт выбранный преподаватель (course.tutor_ids,
+  // таблица course_tutors), и наоборот — выбирать только тех преподавателей,
+  // что закреплены за выбранным курсом. Owner (сеть филиалов целиком)
+  // видит полный список без ограничений — он управляет назначениями сам.
+  const availableCourses = useMemo(() => {
+    if (isOwner || !form.tutor_id) return individualCourses;
+    return individualCourses.filter((c) =>
+      (c.tutor_ids || []).some((id) => String(id) === String(form.tutor_id))
+    );
+  }, [individualCourses, isOwner, form.tutor_id]);
+
+  const availableTutors = useMemo(() => {
+    if (isOwner || !form.course_id) return tutors;
+    const course = individualCourses.find((c) => String(c.id) === String(form.course_id));
+    if (!course) return tutors;
+    const ids = new Set((course.tutor_ids || []).map(String));
+    return tutors.filter((t) => ids.has(String(t.id)));
+  }, [tutors, isOwner, form.course_id, individualCourses]);
+
   useEffect(() => {
     if (!open || !form.course_id) {
       setEnrollments([]);
@@ -79,6 +99,36 @@ export default function CreateIndividualLessonModal({ open, onClose, onCreated, 
   function updateEndTime(value) {
     endTimeTouched.current = true;
     update("end_time", value);
+  }
+
+  // Смена курса/преподавателя branch_owner'ом может сделать текущий выбор
+  // второго поля невалидным (преподаватель не ведёт новый курс / курс не
+  // ведётся новым преподавателем) — в этом случае сбрасываем его, чтобы
+  // нельзя было отправить несовместимую пару course_id/tutor_id.
+  function updateCourseId(value) {
+    setError("");
+    setForm((f) => {
+      const next = { ...f, course_id: value };
+      if (!isOwner && value && f.tutor_id) {
+        const course = individualCourses.find((c) => String(c.id) === String(value));
+        const ids = new Set((course?.tutor_ids || []).map(String));
+        if (!ids.has(String(f.tutor_id))) next.tutor_id = "";
+      }
+      return next;
+    });
+  }
+
+  function updateTutorId(value) {
+    setError("");
+    setForm((f) => {
+      const next = { ...f, tutor_id: value };
+      if (!isOwner && value && f.course_id) {
+        const course = individualCourses.find((c) => String(c.id) === String(f.course_id));
+        const ids = new Set((course?.tutor_ids || []).map(String));
+        if (!ids.has(String(value))) next.course_id = "";
+      }
+      return next;
+    });
   }
 
   async function submit(e) {
@@ -145,11 +195,13 @@ export default function CreateIndividualLessonModal({ open, onClose, onCreated, 
 
         <label className="block">
           <span className="font-label-md text-label-md text-on-surface">Курс (индивидуальный)</span>
-          <select value={form.course_id} onChange={(e) => update("course_id", e.target.value)} className="mt-1.5 w-full px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow" disabled={individualCourses.length === 0}>
+          <select value={form.course_id} onChange={(e) => updateCourseId(e.target.value)} className="mt-1.5 w-full px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow" disabled={availableCourses.length === 0}>
             <option value="">
-              {individualCourses.length === 0 ? "Нет индивидуальных курсов" : "Выберите курс"}
+              {availableCourses.length === 0
+                ? (!isOwner && form.tutor_id ? "У преподавателя нет индивидуальных курсов" : "Нет индивидуальных курсов")
+                : "Выберите курс"}
             </option>
-            {individualCourses.map((c) => <option key={c.id} value={c.id}>{c.title || c.subject}</option>)}
+            {availableCourses.map((c) => <option key={c.id} value={c.id}>{c.title || c.subject}</option>)}
           </select>
           {selectedCourse && (
             <span className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-md text-[11px]">
@@ -162,10 +214,13 @@ export default function CreateIndividualLessonModal({ open, onClose, onCreated, 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="block">
             <span className="font-label-md text-label-md text-on-surface">Преподаватель</span>
-            <select value={form.tutor_id} onChange={(e) => update("tutor_id", e.target.value)} className="mt-1.5 w-full px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow">
+            <select value={form.tutor_id} onChange={(e) => updateTutorId(e.target.value)} className="mt-1.5 w-full px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow">
               <option value="">Без преподавателя</option>
-              {tutors.map((t) => <option key={t.id} value={t.id}>{fullName(t)}</option>)}
+              {availableTutors.map((t) => <option key={t.id} value={t.id}>{fullName(t)}</option>)}
             </select>
+            {!isOwner && form.course_id && availableTutors.length === 0 && (
+              <span className="mt-1 block font-body-md text-[12px] text-error">На этот курс не назначен ни один преподаватель</span>
+            )}
           </label>
           {isOwner && (
             <label className="block">
