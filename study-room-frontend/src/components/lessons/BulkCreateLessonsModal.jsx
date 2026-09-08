@@ -88,10 +88,9 @@ export default function BulkCreateLessonsModal({
     setEditSubgroupError("");
   }, [open]);
 
-  if (!open || !form) return null;
-
-  const selectedCourse = courses.find((c) => String(c.id) === String(form.course_id));
-  // Тип занятия целиком определяется форматом выбранного курса.
+  const selectedCourse = form
+    ? courses.find((c) => String(c.id) === String(form.course_id))
+    : undefined;
   const groupType = selectedCourse?.format === "group" ? "group" : "individual";
   const filteredStudents = peopleStudents;
   const selectedDays = new Set(days);
@@ -156,6 +155,8 @@ export default function BulkCreateLessonsModal({
     const q = editSubgroupStudentQuery.trim().toLowerCase();
     return q ? courseStudents.filter((s) => s.name.toLowerCase().includes(q)) : courseStudents;
   }, [courseStudents, editSubgroupStudentQuery]);
+
+  if (!open || !form) return null;
 
   function update(field, value) {
     setError("");
