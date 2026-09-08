@@ -620,7 +620,7 @@ export default function TeacherDetail({ role = "owner" }) {
               lessons={allTeacherLessons}
               courses={courses}
               students={students}
-              title="Подгруппы преподавателя"
+              title="Группы преподавателя"
             />
 
             <div className="grid grid-cols-12 gap-gutter">
@@ -930,7 +930,7 @@ export default function TeacherDetail({ role = "owner" }) {
                             </p>
                             <p className="text-[12px] text-primary font-bold truncate">
                               {l.group_type === "group" && subgroupByLessonId[l.id]
-                                ? `Подгруппа: ${subgroupByLessonId[l.id].name}`
+                                ? `Группа: ${subgroupByLessonId[l.id].name}`
                                 : (l.participant_ids ?? []).length > 0
                                 ? l.participant_ids
                                     .map((sid) => studentsById[sid] ? fullName(studentsById[sid]) : (l.participant_names?.[sid] ?? `Ученик #${sid}`))

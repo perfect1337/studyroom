@@ -12,6 +12,11 @@ import (
 	"studyroom/academic-service/internal/repository"
 )
 
+// maxSubgroupSize — максимальное число учеников в одной группе (бывшей
+// подгруппе). Ограничение прикладное (не связано с форматом курса) —
+// проверяется и при создании, и при полной замене состава через Update.
+const maxSubgroupSize = 7
+
 // SubgroupHandler — CRUD для подгрупп (сохраняемый набор учеников на
 // групповом курсе, переиспользуемый при создании занятий — см.
 // LessonHandler.Create, createLessonRequest.SubgroupID). Доступ повторяет
@@ -85,6 +90,10 @@ func (h *SubgroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.CourseID == 0 || req.Name == "" || len(req.StudentIDs) == 0 {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "course_id, name, student_ids are required")
+		return
+	}
+	if len(req.StudentIDs) > maxSubgroupSize {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "a group cannot have more than 7 students")
 		return
 	}
 
@@ -205,6 +214,10 @@ func (h *SubgroupHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.StudentIDs != nil {
 		if len(*req.StudentIDs) == 0 {
 			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student_ids cannot be empty")
+			return
+		}
+		if len(*req.StudentIDs) > maxSubgroupSize {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "a group cannot have more than 7 students")
 			return
 		}
 		enrollments, err := h.enrollments.List(r.Context(), repository.EnrollmentFilter{CourseID: &sg.CourseID})

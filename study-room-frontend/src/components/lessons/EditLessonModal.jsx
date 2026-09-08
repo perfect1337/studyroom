@@ -73,7 +73,7 @@ export default function EditLessonModal({
   const [rosterError, setRosterError] = useState("");
   const [courseSubgroups, setCourseSubgroups] = useState([]);
   const [courseRoster, setCourseRoster] = useState([]); // [{id, student}] — активные записи на курс этого занятия
-  const [participantsMode, setParticipantsMode] = useState("custom"); // "custom" | id подгруппы (строка)
+  const [participantsMode, setParticipantsMode] = useState("custom"); // "custom" | id группы (строка)
   const [manualParticipantIds, setManualParticipantIds] = useState([]);
   const [manualStudentQuery, setManualStudentQuery] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState("");
@@ -271,7 +271,7 @@ export default function EditLessonModal({
       if (effectiveIds.length === 0) {
         setError(
           selectedSubgroup
-            ? "В выбранной подгруппе не осталось активных учеников — выберите другую подгруппу или свой набор."
+            ? "В выбранной группе не осталось активных учеников — выберите другую группу или свой набор."
             : "Выберите хотя бы одного ученика для группового занятия."
         );
         return;
@@ -551,7 +551,7 @@ export default function EditLessonModal({
                       <option value="custom">Свой набор учеников (выбрать вручную)</option>
                       {courseSubgroups.map((sg) => (
                         <option key={sg.id} value={sg.id}>
-                          Подгруппа «{sg.name}»
+                          Группа «{sg.name}»
                         </option>
                       ))}
                     </select>
@@ -559,7 +559,7 @@ export default function EditLessonModal({
                     {selectedSubgroup ? (
                       <div className="text-[13px] text-on-surface-variant">
                         {subgroupEffectiveIds.length === 0 ? (
-                          <span className="text-error">В этой подгруппе не осталось активных на курсе учеников.</span>
+                          <span className="text-error">В этой группе не осталось активных на курсе учеников.</span>
                         ) : (
                           <>
                             {subgroupEffectiveIds.length} {subgroupEffectiveIds.length === 1 ? "ученик" : subgroupEffectiveIds.length < 5 ? "ученика" : "учеников"}:{" "}

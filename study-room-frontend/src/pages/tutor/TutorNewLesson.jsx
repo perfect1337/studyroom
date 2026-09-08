@@ -6,6 +6,9 @@ import { fetchEnrollments, fetchCourses, createLesson, fetchSubgroups, createSub
 import { fetchMyPeople } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
+// Максимум учеников в одной группе (см. maxSubgroupSize в SubgroupHandler на бэкенде).
+const MAX_GROUP_SIZE = 7;
+
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 const MONTH_NAMES = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -271,9 +274,14 @@ export default function TutorNewLesson() {
   }
 
   function toggleNewSubgroupStudent(studentId) {
-    setNewSubgroupStudentIds((prev) =>
-      prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId]
-    );
+    setNewSubgroupStudentIds((prev) => {
+      if (prev.includes(studentId)) return prev.filter((id) => id !== studentId);
+      if (prev.length >= MAX_GROUP_SIZE) {
+        setSubgroupError(`В группе не может быть больше ${MAX_GROUP_SIZE} учеников`);
+        return prev;
+      }
+      return [...prev, studentId];
+    });
   }
 
   async function handleCreateSubgroup() {
@@ -284,6 +292,10 @@ export default function TutorNewLesson() {
     }
     if (newSubgroupStudentIds.length === 0) {
       setSubgroupError("Выберите хотя бы одного ученика");
+      return;
+    }
+    if (newSubgroupStudentIds.length > MAX_GROUP_SIZE) {
+      setSubgroupError(`В группе не может быть больше ${MAX_GROUP_SIZE} учеников`);
       return;
     }
     setSubgroupSubmitting(true);
@@ -317,20 +329,29 @@ export default function TutorNewLesson() {
   }
 
   function toggleEditSubgroupStudent(studentId) {
-    setEditSubgroupStudentIds((prev) =>
-      prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId]
-    );
+    setEditSubgroupStudentIds((prev) => {
+      if (prev.includes(studentId)) return prev.filter((id) => id !== studentId);
+      if (prev.length >= MAX_GROUP_SIZE) {
+        setEditSubgroupError(`В группе не может быть больше ${MAX_GROUP_SIZE} учеников`);
+        return prev;
+      }
+      return [...prev, studentId];
+    });
   }
 
   async function handleUpdateSubgroup() {
     setEditSubgroupError("");
     if (!editingSubgroup) return;
     if (!editSubgroupName.trim()) {
-      setEditSubgroupError("Введите название подгруппы");
+      setEditSubgroupError("Введите название группы");
       return;
     }
     if (editSubgroupStudentIds.length === 0) {
       setEditSubgroupError("Выберите хотя бы одного ученика");
+      return;
+    }
+    if (editSubgroupStudentIds.length > MAX_GROUP_SIZE) {
+      setEditSubgroupError(`В группе не может быть больше ${MAX_GROUP_SIZE} учеников`);
       return;
     }
     setEditSubgroupSubmitting(true);
@@ -348,7 +369,7 @@ export default function TutorNewLesson() {
       setEditingSubgroup(null);
       setEditSubgroupStudentQuery("");
     } catch (e) {
-      setEditSubgroupError(e.message || "Не удалось обновить подгруппу");
+      setEditSubgroupError(e.message || "Не удалось обновить группу");
     } finally {
       setEditSubgroupSubmitting(false);
     }
@@ -632,7 +653,7 @@ export default function TutorNewLesson() {
                 {selectedCourseId && (
                   <div className="flex flex-col gap-stack-sm">
                     <label className="font-label-md text-label-md text-on-surface">
-                      Подгруппа <span className="text-error">*</span>
+                      Группа <span className="text-error">*</span>
                     </label>
 
                     {loadingSubgroups ? (
@@ -665,7 +686,7 @@ export default function TutorNewLesson() {
                           className="px-4 py-2 rounded-lg border border-dashed border-primary text-primary font-label-md text-label-md hover:bg-primary-container/20 transition-colors flex items-center gap-1"
                         >
                           <span className="material-symbols-outlined text-[18px]">add</span>
-                          Новая подгруппа
+                          Новая группа
                         </button>
                       </div>
                     )}
@@ -674,7 +695,7 @@ export default function TutorNewLesson() {
                       <div className="mt-2 p-stack-md bg-surface-container-low rounded-lg border border-outline-variant flex flex-col gap-stack-sm">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="font-label-md font-bold text-on-surface">Информация о подгруппе</p>
+                            <p className="font-label-md font-bold text-on-surface">Информация о группе</p>
                             <p className="font-body-md text-on-surface-variant mt-1">
                               {selectedSubgroup.name} · {selectedSubgroupStudents.length} {selectedSubgroupStudents.length === 1 ? "ученик" : selectedSubgroupStudents.length < 5 ? "ученика" : "учеников"}
                             </p>
@@ -701,7 +722,7 @@ export default function TutorNewLesson() {
                     {editingSubgroup && (
                       <div className="mt-2 p-stack-md bg-surface-container-low rounded-lg flex flex-col gap-stack-sm border border-primary/30">
                         <div className="flex items-center justify-between">
-                          <p className="font-label-md font-bold text-on-surface">Редактирование подгруппы</p>
+                          <p className="font-label-md font-bold text-on-surface">Редактирование группы</p>
                           <button
                             type="button"
                             onClick={() => {
@@ -717,7 +738,7 @@ export default function TutorNewLesson() {
                           type="text"
                           value={editSubgroupName}
                           onChange={(e) => setEditSubgroupName(e.target.value)}
-                          placeholder="Название подгруппы"
+                          placeholder="Название группы"
                           className="w-full px-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                         />
                         <div className="relative">
@@ -734,7 +755,7 @@ export default function TutorNewLesson() {
                         </div>
                         <div className="flex items-center justify-between px-1">
                           <span className="font-body-md text-[12px] text-on-surface-variant">
-                            Выбрано: {editSubgroupStudentIds.length}
+                            Выбрано: {editSubgroupStudentIds.length}/{MAX_GROUP_SIZE}
                           </span>
                           {editSubgroupStudentIds.length > 0 && (
                             <button
@@ -752,17 +773,25 @@ export default function TutorNewLesson() {
                               Никто не найден по запросу «{editSubgroupStudentQuery}»
                             </p>
                           ) : (
-                            editSubgroupFilteredStudents.map((student) => (
-                              <label key={student.id} className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-surface-container cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={editSubgroupStudentIds.includes(student.id)}
-                                  onChange={() => toggleEditSubgroupStudent(student.id)}
-                                  className="accent-primary"
-                                />
-                                <span className="font-body-md text-body-md text-on-surface">{student.name}</span>
-                              </label>
-                            ))
+                            editSubgroupFilteredStudents.map((student) => {
+                              const isChecked = editSubgroupStudentIds.includes(student.id);
+                              const isDisabled = !isChecked && editSubgroupStudentIds.length >= MAX_GROUP_SIZE;
+                              return (
+                                <label
+                                  key={student.id}
+                                  className={`flex items-center gap-2 px-2 py-1 rounded-md hover:bg-surface-container ${isDisabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    disabled={isDisabled}
+                                    onChange={() => toggleEditSubgroupStudent(student.id)}
+                                    className="accent-primary"
+                                  />
+                                  <span className="font-body-md text-body-md text-on-surface">{student.name}</span>
+                                </label>
+                              );
+                            })
                           )}
                         </div>
                         {editSubgroupError && <p className="font-body-md text-[12px] text-error">{editSubgroupError}</p>}
@@ -786,7 +815,7 @@ export default function TutorNewLesson() {
                       <div className="mt-2 p-stack-md bg-surface-container-low rounded-lg flex flex-col gap-stack-sm">
                         <input
                           type="text"
-                          placeholder="Название подгруппы, например «Вторник 16:00»"
+                          placeholder="Название группы, например «Вторник 16:00»"
                           value={newSubgroupName}
                           onChange={(e) => setNewSubgroupName(e.target.value)}
                           className="w-full px-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
@@ -807,7 +836,7 @@ export default function TutorNewLesson() {
                             </div>
                             <div className="flex items-center justify-between px-1">
                               <span className="font-body-md text-[12px] text-on-surface-variant">
-                                Выбрано: {newSubgroupStudentIds.length}
+                                Выбрано: {newSubgroupStudentIds.length}/{MAX_GROUP_SIZE}
                               </span>
                               {newSubgroupStudentIds.length > 0 && (
                                 <button
@@ -831,20 +860,25 @@ export default function TutorNewLesson() {
                               Никто не найден по запросу «{newSubgroupStudentQuery}»
                             </p>
                           ) : (
-                            newSubgroupFilteredStudents.map((s) => (
-                              <label
-                                key={s.id}
-                                className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-surface-container cursor-pointer"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={newSubgroupStudentIds.includes(s.id)}
-                                  onChange={() => toggleNewSubgroupStudent(s.id)}
-                                  className="accent-primary"
-                                />
-                                <span className="font-body-md text-body-md text-on-surface">{s.name}</span>
-                              </label>
-                            ))
+                            newSubgroupFilteredStudents.map((s) => {
+                              const isChecked = newSubgroupStudentIds.includes(s.id);
+                              const isDisabled = !isChecked && newSubgroupStudentIds.length >= MAX_GROUP_SIZE;
+                              return (
+                                <label
+                                  key={s.id}
+                                  className={`flex items-center gap-2 px-2 py-1 rounded-md hover:bg-surface-container ${isDisabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    disabled={isDisabled}
+                                    onChange={() => toggleNewSubgroupStudent(s.id)}
+                                    className="accent-primary"
+                                  />
+                                  <span className="font-body-md text-body-md text-on-surface">{s.name}</span>
+                                </label>
+                              );
+                            })
                           )}
                         </div>
                         {subgroupError && (

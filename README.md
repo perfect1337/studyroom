@@ -1,74 +1,103 @@
-# Fix: учитель не может войти после «Уволить → Восстановить в штат»
+# Изменения в studyroom
 
-## Что внутри
+Архив содержит только изменённые файлы (с сохранением путей относительно корня
+репозитория) + `changes.diff` — unified diff всех правок, который можно
+применить через `git apply changes.diff`, находясь в корне репозитория
+(`perfect1337/studyroom`, ветка `master`).
 
-Структура папок совпадает со структурой репозитория `studyroom` — можно
-просто распаковать архив поверх корня репозитория и подтвердить перезапись
-изменённых файлов (или применить `fix-teacher-reinstate.patch`, если удобнее
-через git).
+## 1. Переименование «подгруппа» → «группа» в интерфейсе
 
-```
-study-room-backend/
-  user-service/
-    internal/handlers/user_handler.go        (изменён)
-    tests/contracts/users_contracts_test.go  (изменён)
-    tests/contracts/repro_fire_reinstate_test.go  (новый файл)
-study-room-frontend/
-  src/pages/admin/TeacherDetail.jsx          (изменён)
-fix-teacher-reinstate.patch                  (тот же diff в виде git-патча)
-```
+Заменены все пользовательские тексты (заголовки, плейсхолдеры, кнопки,
+сообщения об ошибках) с «подгруппа/подгруппы» на «группа/группы»:
 
-## Причина бага
+- `study-room-frontend/src/components/lessons/EditLessonModal.jsx`
+- `study-room-frontend/src/components/lessons/CreateGroupLessonModal.jsx`
+- `study-room-frontend/src/components/lessons/BulkCreateLessonsModal.jsx`
+- `study-room-frontend/src/components/tutor/TutorSubgroupsCard.jsx`
+- `study-room-frontend/src/pages/admin/TeacherDetail.jsx`
+- `study-room-frontend/src/pages/tutor/TutorNewLesson.jsx`
 
-При увольнении (`fireTutorOrDeactivate`) менялись два поля:
-`users.is_active = false` **и** `tutor_profiles.status = inactive`.
+Внутренние имена (переменные, функции, API-эндпоинты `/subgroups`,
+`SubgroupHandler` и т.д.) не переименовывались — это отдельная, гораздо более
+рискованная задача (затронула бы бэкенд, БД, все вызовы API). Менялось только
+то, что видит пользователь.
 
-При восстановлении (кнопка «Восстановить в штат») менялось только
-`users.is_active = true` — `tutor_profiles.status` так и оставался
-`inactive`. Карточка учителя продолжала показывать «Неактивен» рядом с
-отдельным выпадающим списком статуса, который всегда был виден (даже для
-уволенных) и дёргал **другой** эндпоинт (`PATCH /tutors/{id}/status`),
-не трогающий `is_active`. Админ, видя «Неактивен», часто переключал именно
-этот дропдаун вместо кнопки «Восстановить в штат» — бейдж менялся на
-«Активен», а `is_active` оставался `false`, и вход был по-прежнему заблокирован.
+## 2. Логика переноса ученика между филиалами (как сейчас работает)
 
-## Что исправлено
+Кратко: **полноценного переноса ученика в другой филиал в системе не
+предусмотрено.**
 
-1. `user_handler.go` — новая функция `reinstateTutorOrActivate`,
-   симметричная `fireTutorOrDeactivate`: восстановление теперь синхронно
-   возвращает и `is_active=true`, и `tutor_profiles.status=active`.
-2. `TeacherDetail.jsx` — выпадающий список статуса скрыт, пока преподаватель
-   уволен (виден только когда `isFired === false`). Единственный способ
-   восстановить доступ — кнопка «Восстановить в штат».
-3. `users_contracts_test.go` — исправлен ранее битый тест
-   `TestContract_1_14_SetStatus_OwnerOnly` (ошибочно ожидал 403 там, где код
-   и так корректно разрешал branch_owner восстанавливать учителя своего
-   филиала); переименован в `TestContract_1_14_SetStatus_BranchScoped` с
-   более полным набором проверок.
-4. `repro_fire_reinstate_test.go` — новый регрессионный тест, гоняющий
-   весь сценарий увольнение → блокировка логина → восстановление → логин
-   снова работает, отдельно для owner и для branch_owner.
+- У ученика есть «домашний» филиал — `User.BranchID` (user-service). Он
+  является источником истины для профиля, посещаемости по умолчанию и
+  сайдбара.
+- Общий эндпоинт `PATCH /users/{id}` (`user-service/internal/handlers/user_handler.go`,
+  функция `Update`) **разрешает менять `branch_id` только для роли `tutor`**,
+  и только владельцу сети (`owner`), не `branch_owner`. Для student/parent/
+  branch_owner смена `branch_id` через этот эндпоинт заблокирована в принципе
+  (см. проверку `if target.Role != models.RoleTutor` в `Update`).
+- Единственный механизм, из-за которого ученик оказывается связан с другим
+  филиалом — оформление договора (Contract) на курс в этом филиале:
+  `contract.BranchID` берётся из филиала, оформившего договор (для
+  `branch_owner` — принудительно его собственный филиал, для `owner` — то,
+  что передано в запросе), см. `contracts-service/internal/handlers/contract_handler.go`.
+  При создании договора событие `contract.created` прокидывает `branch_id` в
+  Academic Service, где создаётся `Enrollment` с этим же `BranchID`
+  (см. комментарий у `Enrollment` в `academic-service/internal/models/models.go`).
+  Так решается сценарий «ученик ездит в другой филиал на предмет, которого нет
+  у него дома» — но именно на уровне отдельного зачисления (`enrollment`), а
+  не домашнего профиля ученика в целом.
+- Домашний `User.BranchID` при этом никак не меняется и не пересчитывается
+  автоматически.
 
-Все тесты проверены на реальном Postgres (не только компиляция).
+Итого: если нужно «переселить» ученика в другой филиал целиком (с историей,
+договорами, посещаемостью) — такой операции сейчас в коде нет ни как отдельного
+эндпоинта, ни как побочного эффекта существующих. Если это нужно — потребуется
+отдельная доработка (например, admin-эндпоинт `PATCH /users/{id}/branch` для
+student с явной проверкой прав и логированием).
 
-## Деплой
+## 3. Ограничение на добавление учеников в группу — максимум 7
 
-Нужно пересобрать и передеплоить:
-- `user-service` (бэкенд, Go)
-- `study-room-frontend`
+- **Бэкенд** (`study-room-backend/academic-service/internal/handlers/subgroup_handler.go`):
+  добавлена константа `maxSubgroupSize = 7` и проверка длины `student_ids`
+  в `Create` и в `Update` (при полной замене состава через `SetMembers`).
+  При превышении лимита возвращается `400 BAD_REQUEST` с сообщением
+  `"a group cannot have more than 7 students"`.
+- **Фронтенд**: добавлена константа `MAX_GROUP_SIZE = 7` и:
+  - блокировка добавления сверх лимита (чекбоксы становятся `disabled` и
+    полупрозрачными) с сообщением об ошибке;
+  - счётчик «Выбрано: X/7» вместо простого «Выбрано: X»;
+  - та же проверка при сабмите формы (на случай гонки состояний).
 
-## Разовая правка для уже "зависших" записей в БД
+  Реализовано в трёх формах создания/редактирования группы:
+  - `study-room-frontend/src/components/lessons/CreateGroupLessonModal.jsx`
+    (owner/branch_owner создают групповое занятие)
+  - `study-room-frontend/src/components/lessons/BulkCreateLessonsModal.jsx`
+    (массовое создание занятий по расписанию)
+  - `study-room-frontend/src/pages/tutor/TutorNewLesson.jsx`
+    (создание занятия тьютором)
 
-Если в проде уже есть учителя, которых уволили и восстановили ДО этого
-фикса — у них `is_active=true`, но `tutor_profiles.status` всё ещё
-`inactive`. Разовый SQL, чтобы починить только их (без повторного клика по
-кнопке):
+## 4. Полоска в карточке занятия — синий вместо красного
 
-```sql
-UPDATE tutor_profiles
-SET status = 'active'
-FROM users
-WHERE tutor_profiles.user_id = users.id
-  AND users.is_active = true
-  AND tutor_profiles.status = 'inactive';
-```
+- `study-room-frontend/src/pages/admin/ScheduleDirectory.jsx`
+  (используется на `/admin/schedule` и `/branch/schedule` — owner/branch_owner).
+  Функция `lessonAccentColor(lesson)` раньше возвращала `#ba1a1a` (красный)
+  для «проблемных» занятий (нет ученика/договор истёк/нет преподавателя) и
+  `#004ac6` (синий) для обычных — это и есть верхняя 8px-полоска карточки в
+  панели деталей справа. Теперь функция **всегда возвращает синий**
+  (`#004ac6`), независимо от «проблемности» занятия.
+
+  Важно: сама логика определения «проблемности» (`isLessonProblem`) не
+  тронута и по-прежнему используется в других местах — подсветка дня в
+  календаре красным и бейдж/цвет рамки чипа занятия в недельной сетке
+  (`WeekLessonChip`). Если нужно убрать красный цвет и там — скажите, уберу
+  отдельно, это уже другие компоненты, не «полоска» карточки подробностей.
+
+## Проверка
+
+- Фронтенд собран (`npm install && npx vite build`) — сборка проходит без
+  ошибок после всех правок.
+- Go-бэкенд визуально проверен (изменения точечные, без новых импортов/
+  зависимостей); собрать `go build` в этой песочнице не удалось — нет доступа
+  к модулю `go` и его прокси в разрешённых сетевых доменах. Рекомендую
+  прогнать `go build ./...` и существующие тесты в `study-room-backend/tests`
+  перед деплоем.

@@ -10,6 +10,9 @@ import { fullName } from "../../utils/userDisplay.js";
 import { addMinutesToTime, DEFAULT_LESSON_DURATION_MINUTES } from "../../utils/time.js";
 import SearchableSelect from "../ui/SearchableSelect.jsx";
 
+// Максимум учеников в одной группе (см. maxSubgroupSize в SubgroupHandler на бэкенде).
+const MAX_GROUP_SIZE = 7;
+
 const WEEKDAYS = [
   [1, "Пн"], [2, "Вт"], [3, "Ср"], [4, "Чт"], [5, "Пт"], [6, "Сб"], [0, "Вс"],
 ];
@@ -246,13 +249,18 @@ export default function BulkCreateLessonsModal({
   }
 
   function toggleNewSubgroupStudent(studentId) {
-    setNewSubgroupStudentIds((prev) => prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId]);
+    setNewSubgroupStudentIds((prev) => {
+      if (prev.includes(studentId)) return prev.filter((id) => id !== studentId);
+      if (prev.length >= MAX_GROUP_SIZE) { setSubgroupError(`В группе не может быть больше ${MAX_GROUP_SIZE} учеников`); return prev; }
+      return [...prev, studentId];
+    });
   }
 
   async function handleCreateSubgroup() {
     setSubgroupError("");
-    if (!newSubgroupName.trim()) return setSubgroupError("Введите название подгруппы");
+    if (!newSubgroupName.trim()) return setSubgroupError("Введите название группы");
     if (!newSubgroupStudentIds.length) return setSubgroupError("Выберите хотя бы одного ученика");
+    if (newSubgroupStudentIds.length > MAX_GROUP_SIZE) return setSubgroupError(`В группе не может быть больше ${MAX_GROUP_SIZE} учеников`);
     setSubgroupSubmitting(true);
     try {
       const sg = await createSubgroup({
@@ -268,7 +276,7 @@ export default function BulkCreateLessonsModal({
       setNewSubgroupStudentIds([]);
       setNewSubgroupStudentQuery("");
     } catch (e) {
-      setSubgroupError(e.message || "Не удалось создать подгруппу");
+      setSubgroupError(e.message || "Не удалось создать группу");
     } finally { setSubgroupSubmitting(false); }
   }
 
@@ -282,14 +290,19 @@ export default function BulkCreateLessonsModal({
   }
 
   function toggleEditSubgroupStudent(studentId) {
-    setEditSubgroupStudentIds((prev) => prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId]);
+    setEditSubgroupStudentIds((prev) => {
+      if (prev.includes(studentId)) return prev.filter((id) => id !== studentId);
+      if (prev.length >= MAX_GROUP_SIZE) { setEditSubgroupError(`В группе не может быть больше ${MAX_GROUP_SIZE} учеников`); return prev; }
+      return [...prev, studentId];
+    });
   }
 
   async function handleUpdateSubgroup() {
     setEditSubgroupError("");
     if (!editingSubgroup) return;
-    if (!editSubgroupName.trim()) return setEditSubgroupError("Введите название подгруппы");
+    if (!editSubgroupName.trim()) return setEditSubgroupError("Введите название группы");
     if (!editSubgroupStudentIds.length) return setEditSubgroupError("Выберите хотя бы одного ученика");
+    if (editSubgroupStudentIds.length > MAX_GROUP_SIZE) return setEditSubgroupError(`В группе не может быть больше ${MAX_GROUP_SIZE} учеников`);
     setEditSubgroupSubmitting(true);
     try {
       const updated = await updateSubgroup(editingSubgroup.id, {
@@ -302,7 +315,7 @@ export default function BulkCreateLessonsModal({
       setEditingSubgroup(null);
       setEditSubgroupStudentQuery("");
     } catch (e) {
-      setEditSubgroupError(e.message || "Не удалось обновить подгруппу");
+      setEditSubgroupError(e.message || "Не удалось обновить группу");
     } finally { setEditSubgroupSubmitting(false); }
   }
 
@@ -314,7 +327,7 @@ export default function BulkCreateLessonsModal({
     if (!days.length) { setError("Выберите хотя бы один день недели."); return; }
     if (form.end_time <= form.start_time) { setError("Время окончания должно быть позже времени начала."); return; }
     if (groupType === "individual" && !form.student_id) { setError("Для индивидуальных занятий выберите ученика."); return; }
-    if (groupType === "group" && canManageSubgroups && !selectedSubgroupId) { setError("Для групповых занятий выберите подгруппу или создайте новую."); return; }
+    if (groupType === "group" && canManageSubgroups && !selectedSubgroupId) { setError("Для групповых занятий выберите группу или создайте новую."); return; }
 
     // Генерируем даты на выбранную неделю (7 дней от week_start_date)
     const dates = [];
@@ -420,7 +433,7 @@ export default function BulkCreateLessonsModal({
 
           {groupType === "group" && canManageSubgroups && form.course_id && form.tutor_id && (
             <div className="flex flex-col gap-2 p-3 rounded-lg border border-outline-variant bg-surface-container-low">
-              <span className="font-label-md text-label-md text-on-surface">Подгруппа</span>
+              <span className="font-label-md text-label-md text-on-surface">Группа</span>
               {loadingSubgroups || loadingEnrollments ? (
                 <p className="font-body-md text-body-md text-on-surface-variant">Загрузка групп…</p>
               ) : (
@@ -431,7 +444,7 @@ export default function BulkCreateLessonsModal({
                     </button>
                   ))}
                   <button type="button" onClick={() => { setCreatingSubgroup((v) => !v); setSelectedSubgroupId(""); }} className="px-4 py-2 rounded-lg border border-dashed border-primary text-primary font-label-md text-label-md hover:bg-primary-container/20 transition-colors flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[18px]">add</span>Новая подгруппа
+                    <span className="material-symbols-outlined text-[18px]">add</span>Новая группа
                   </button>
                 </div>
               )}
@@ -439,7 +452,7 @@ export default function BulkCreateLessonsModal({
               {selectedSubgroup && !creatingSubgroup && (
                 <div className="mt-1 p-3 bg-surface rounded-lg border border-outline-variant flex flex-col gap-2">
                   <div className="flex items-start justify-between gap-3">
-                    <div><p className="font-label-md font-bold text-on-surface">Информация о подгруппе</p><p className="font-body-md text-on-surface-variant mt-1">{selectedSubgroup.name} · {selectedSubgroupStudents.length} {selectedSubgroupStudents.length === 1 ? "ученик" : selectedSubgroupStudents.length < 5 ? "ученика" : "учеников"}</p></div>
+                    <div><p className="font-label-md font-bold text-on-surface">Информация о группе</p><p className="font-body-md text-on-surface-variant mt-1">{selectedSubgroup.name} · {selectedSubgroupStudents.length} {selectedSubgroupStudents.length === 1 ? "ученик" : selectedSubgroupStudents.length < 5 ? "ученика" : "учеников"}</p></div>
                     <button type="button" onClick={openEditSubgroup} className="shrink-0 px-3 py-2 rounded-lg border border-primary text-primary font-label-md text-[12px] hover:bg-primary-container/20 transition-colors flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">edit</span>Редактировать</button>
                   </div>
                   <div className="flex flex-wrap gap-2">{selectedSubgroupStudents.map((student) => <span key={student.id} className="px-2.5 py-1 rounded-full bg-surface-container text-on-surface font-body-md text-[12px] border border-outline-variant">{student.name}</span>)}</div>
@@ -448,11 +461,11 @@ export default function BulkCreateLessonsModal({
 
               {editingSubgroup && (
                 <div className="mt-1 p-3 bg-surface rounded-lg flex flex-col gap-2 border border-primary/30">
-                  <div className="flex items-center justify-between"><p className="font-label-md font-bold text-on-surface">Редактирование подгруппы</p><button type="button" onClick={() => setEditingSubgroup(null)} className="p-1 hover:bg-surface-container rounded"><span className="material-symbols-outlined text-[18px]">close</span></button></div>
-                  <input type="text" value={editSubgroupName} onChange={(e) => setEditSubgroupName(e.target.value)} placeholder="Название подгруппы" className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none" />
+                  <div className="flex items-center justify-between"><p className="font-label-md font-bold text-on-surface">Редактирование группы</p><button type="button" onClick={() => setEditingSubgroup(null)} className="p-1 hover:bg-surface-container rounded"><span className="material-symbols-outlined text-[18px]">close</span></button></div>
+                  <input type="text" value={editSubgroupName} onChange={(e) => setEditSubgroupName(e.target.value)} placeholder="Название группы" className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none" />
                   <input type="text" value={editSubgroupStudentQuery} onChange={(e) => setEditSubgroupStudentQuery(e.target.value)} placeholder="Поиск ученика по ФИО…" className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md outline-none" />
                   <div className="flex items-center justify-between px-1"><span className="font-body-md text-[12px] text-on-surface-variant">Выбрано: {editSubgroupStudentIds.length}</span>{editSubgroupStudentIds.length > 0 && <button type="button" onClick={() => setEditSubgroupStudentIds([])} className="font-body-md text-[12px] text-primary hover:underline">Снять выбор</button>}</div>
-                  <div className="flex flex-col gap-1 max-h-48 overflow-y-auto border border-outline-variant rounded-lg p-2">{editSubgroupFilteredStudents.length ? editSubgroupFilteredStudents.map((student) => <label key={student.id} className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-surface-container cursor-pointer"><input type="checkbox" checked={editSubgroupStudentIds.includes(student.id)} onChange={() => toggleEditSubgroupStudent(student.id)} className="accent-primary" /><span className="font-body-md text-body-md text-on-surface">{student.name}</span></label>) : <p className="font-body-md text-body-md text-on-surface-variant italic px-2 py-1">Никто не найден</p>}</div>
+                  <div className="flex flex-col gap-1 max-h-48 overflow-y-auto border border-outline-variant rounded-lg p-2">{editSubgroupFilteredStudents.length ? editSubgroupFilteredStudents.map((student) => { const isChecked = editSubgroupStudentIds.includes(student.id); const isDisabled = !isChecked && editSubgroupStudentIds.length >= MAX_GROUP_SIZE; return <label key={student.id} className={`flex items-center gap-2 px-2 py-1 rounded-md hover:bg-surface-container ${isDisabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}><input type="checkbox" checked={isChecked} disabled={isDisabled} onChange={() => toggleEditSubgroupStudent(student.id)} className="accent-primary" /><span className="font-body-md text-body-md text-on-surface">{student.name}</span></label>; }) : <p className="font-body-md text-body-md text-on-surface-variant italic px-2 py-1">Никто не найден</p>}</div>
                   {editSubgroupError && <p className="font-body-md text-[12px] text-error">{editSubgroupError}</p>}
                   <div className="flex justify-end gap-2"><button type="button" onClick={() => setEditingSubgroup(null)} className="px-4 py-2 rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface-container">Отмена</button><button type="button" disabled={editSubgroupSubmitting} onClick={handleUpdateSubgroup} className="px-4 py-2 rounded-lg font-label-md text-label-md bg-primary text-on-primary disabled:opacity-60">{editSubgroupSubmitting ? "Сохраняем…" : "Сохранить"}</button></div>
                 </div>
@@ -460,7 +473,7 @@ export default function BulkCreateLessonsModal({
 
               {creatingSubgroup && (
                 <div className="mt-1 p-3 bg-surface rounded-lg flex flex-col gap-2">
-                  <input type="text" placeholder="Название подгруппы, например «Вторник 16:00»" value={newSubgroupName} onChange={(e) => setNewSubgroupName(e.target.value)} className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none" />
+                  <input type="text" placeholder="Название группы, например «Вторник 16:00»" value={newSubgroupName} onChange={(e) => setNewSubgroupName(e.target.value)} className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none" />
                   <input type="text" value={newSubgroupStudentQuery} onChange={(e) => setNewSubgroupStudentQuery(e.target.value)} placeholder="Поиск ученика по ФИО…" className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md outline-none" />
                   <div className="flex items-center justify-between px-1"><span className="font-body-md text-[12px] text-on-surface-variant">Выбрано: {newSubgroupStudentIds.length}</span>{newSubgroupStudentIds.length > 0 && <button type="button" onClick={() => setNewSubgroupStudentIds([])} className="font-body-md text-[12px] text-primary hover:underline">Снять выбор</button>}</div>
                   <div className="flex flex-col gap-1 max-h-48 overflow-y-auto border border-outline-variant rounded-lg p-2">{newSubgroupFilteredStudents.length ? newSubgroupFilteredStudents.map((student) => <label key={student.id} className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-surface-container cursor-pointer"><input type="checkbox" checked={newSubgroupStudentIds.includes(student.id)} onChange={() => toggleNewSubgroupStudent(student.id)} className="accent-primary" /><span className="font-body-md text-body-md text-on-surface">{student.name}</span></label>) : <p className="font-body-md text-body-md text-on-surface-variant italic px-2 py-1">На этом курсе нет учеников с активной записью</p>}</div>

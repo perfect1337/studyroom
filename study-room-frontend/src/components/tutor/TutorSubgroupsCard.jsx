@@ -24,7 +24,7 @@ function lessonBelongsToSubgroup(lesson, subgroup) {
   return subgroupIds.every((id, index) => id === lessonIds[index]);
 }
 
-export default function TutorSubgroupsCard({ subgroups = [], lessons = [], courses = [], students = [], title = "Подгруппы преподавателя" }) {
+export default function TutorSubgroupsCard({ subgroups = [], lessons = [], courses = [], students = [], title = "Группы преподавателя" }) {
   const studentsById = useMemo(() => Object.fromEntries(students.map((student) => [student.id, student])), [students]);
   const coursesById = useMemo(() => Object.fromEntries(courses.map((course) => [course.id, course])), [courses]);
 
@@ -57,13 +57,13 @@ export default function TutorSubgroupsCard({ subgroups = [], lessons = [], cours
       <div className="flex items-center justify-between gap-3 mb-4">
         <div>
           <h3 className="font-headline-sm text-[20px] text-on-surface">{title}</h3>
-          <p className="text-xs text-on-surface-variant mt-1">Показываются только рабочие подгруппы, у которых есть активные или уже прошедшие занятия.</p>
+          <p className="text-xs text-on-surface-variant mt-1">Показываются только рабочие группы, у которых есть активные или уже прошедшие занятия.</p>
         </div>
         <span className="inline-flex items-center justify-center min-w-8 h-8 px-2 rounded-full bg-primary/10 text-primary text-sm font-bold">{items.length}</span>
       </div>
 
       {items.length === 0 ? (
-        <div className="rounded-lg bg-surface-container-low p-4 text-sm text-on-surface-variant">Подгрупп с занятиями пока нет.</div>
+        <div className="rounded-lg bg-surface-container-low p-4 text-sm text-on-surface-variant">Групп с занятиями пока нет.</div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
           {items.map(({ subgroup, course, lessons: subgroupLessons, upcoming, completed, studentNames }) => (
