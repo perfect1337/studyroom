@@ -5,6 +5,7 @@ import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import EditLessonModal from "../../components/lessons/EditLessonModal.jsx";
 import BulkCreateLessonsModal from "../../components/lessons/BulkCreateLessonsModal.jsx";
 import CreateLessonModal from "../../components/lessons/CreateLessonModal.jsx";
+import CreateGroupLessonModal from "../../components/lessons/CreateGroupLessonModal.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchLessons, fetchCourses, createLesson } from "../../api/academic.js";
 import { fetchMyPeople, fetchBranches, fetchUserById } from "../../api/users.js";
@@ -435,6 +436,7 @@ export default function ScheduleDirectory({ role }) {
   const [editingLesson, setEditingLesson] = useState(null);
   const [bulkCreateOpen, setBulkCreateOpen] = useState(false);
   const [singleCreateOpen, setSingleCreateOpen] = useState(false);
+  const [groupCreateOpen, setGroupCreateOpen] = useState(false);
   const [copyingMonth, setCopyingMonth] = useState(false);
   const [copyProgress, setCopyProgress] = useState("");
 
@@ -1083,6 +1085,16 @@ export default function ScheduleDirectory({ role }) {
         </button>
         <button
           type="button"
+          onClick={() => setGroupCreateOpen(true)}
+          className="group w-full sm:w-auto inline-flex items-center justify-center gap-2.5 pl-3.5 pr-5 py-2.5 rounded-full border border-outline-variant text-on-surface-variant font-label-md text-label-md hover:bg-surface-container-high transition-all duration-150 active:scale-[0.98]"
+        >
+          <span className="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center shrink-0 group-hover:bg-surface-container-high transition-colors duration-200">
+            <span className="material-symbols-outlined text-[16px]">groups</span>
+          </span>
+          Добавить групповое занятие
+        </button>
+        <button
+          type="button"
           onClick={handleCopyMonthToNext}
           disabled={copyingMonth}
           className="group w-full sm:w-auto inline-flex items-center justify-center gap-2.5 pl-3.5 pr-5 py-2.5 rounded-full border border-outline-variant text-on-surface-variant font-label-md text-label-md hover:bg-surface-container-high transition-all duration-150 disabled:opacity-60 active:scale-[0.98]"
@@ -1579,6 +1591,16 @@ export default function ScheduleDirectory({ role }) {
         tutors={people.tutors}
         students={people.students}
         branches={branches}
+        isOwner={isOwner}
+      />
+
+      <CreateGroupLessonModal
+        open={groupCreateOpen}
+        onClose={() => setGroupCreateOpen(false)}
+        onCreated={() => load({ silent: true })}
+        courses={courses}
+        tutors={people.tutors}
+        students={people.students}
         isOwner={isOwner}
       />
 
