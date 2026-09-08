@@ -494,36 +494,86 @@ export default function ScheduleDirectory({ role }) {
     setSelectedLesson((prev) => (prev && prev.id === lessonId ? null : prev));
   }
 
-  async function handleCopyMonthToNext() {
+  async function handleReflectWeekToMonth() {
     setCopyingMonth(true);
-    setCopyProgress("Загрузка занятий...");
+    setCopyProgress("Загрузка занятий текущей недели...");
     try {
-      const date_from = toISODate(viewYear, viewMonth, 1);
-      const date_to = toISODate(viewYear, viewMonth, daysInMonth);
-      const [lessonsRes] = await Promise.all([
-        fetchLessons({
-          tutor_id: tutorFilter ? Number(tutorFilter) : undefined,
-          student_id: studentFilter ? Number(studentFilter) : undefined,
-          branch_id: isOwner && branchFilter ? Number(branchFilter) : undefined,
-          date_from,
-          date_to,
-        }),
-      ]);
-      const sourceLessons = lessonsRes?.items ?? [];
+      const sourceLessons = currentWeek
+        .filter((d) => d !== null)
+        .flatMap((day) => (lessonsByDay[day] ?? []));
       if (!sourceLessons.length) {
-        setCopyProgress("В этом месяце нет занятий для дублирования");
+        setCopyProgress("На этой неделе занятий нет");
         setCopyingMonth(false);
         return;
       }
-      // Недельная логика: каждая неделя копируется на следующую (+28 дней = 4 недели).
-      // Неделя 1 → Неделя 5 (1-я след. месяца), Неделя 2 → Неделя 6 и т.д.
+      // Для каждого занятия найти все остальные даты этого месяца с тем же днём недели
+      // и создать занятия на эти даты (исключая исходную дату).
       let created = 0;
       let failed = [];
       for (const lesson of sourceLessons) {
-        setCopyProgress(`Дублирование: ${created + 1} из ${sourceLessons.length}...`);
+        setCopyProgress(`Отражение: ${created + 1} из ${sourceLessons.length}...`);
+        const sourceDate = new Date(String(lesson.lesson_date).slice(0, 10) + "T12:00:00");
+        const sourceWeekday = sourceDate.getDay(); // 0=Вс..6=Сб
+        // Все даты текущего месяца с тем же днём недели
+        const year = viewYear;
+        const month = viewMonth;
+        const daysInThisMonth = new Date(year, month + 1, 0).getDate();
+        for (let day = 1; day <= daysInThisMonth; day++) {
+          const d = new Date(year, month, day);
+          if (d.getDay() !== sourceWeekday) continue;
+          const targetISO = `${year}-${pad(month + 1)}-${pad(day)}`;
+          // Пропускаем исходную дату
+          if (targetISO === String(lesson.lesson_date).slice(0, 10)) continue;
+          try {
+            await createLesson({
+              course_id: lesson.course_id,
+              tutor_id: lesson.tutor_id,
+              topic: lesson.topic,
+              lesson_date: targetISO,
+              start_time: lesson.start_time,
+              end_time: lesson.end_time,
+              location_type: lesson.location_type,
+              group_type: lesson.group_type,
+              comment: lesson.comment,
+              student_id: lesson.student_id,
+              participant_ids: lesson.participant_ids,
+            });
+            created++;
+          } catch (e) {
+            failed.push(`${targetISO} — ${e.message || "ошибка"}`);
+          }
+        }
+      }
+      setCopyProgress(`Создано ${created} занятий${failed.length ? `. Ошибок: ${failed.length}` : "."}`);
+      if (failed.length === 0) {
+        load({ silent: true });
+      }
+    } catch (e) {
+      setCopyProgress("Ошибка: " + (e.message || "не удалось загрузить занятия"));
+    } finally {
+      setCopyingMonth(false);
+    }
+  }
+
+  async function handleReflectWeekToNextMonth() {
+    setCopyingMonth(true);
+    setCopyProgress("Загрузка занятий текущей недели...");
+    try {
+      const sourceLessons = currentWeek
+        .filter((d) => d !== null)
+        .flatMap((day) => (lessonsByDay[day] ?? []));
+      if (!sourceLessons.length) {
+        setCopyProgress("На этой неделе занятий нет");
+        setCopyingMonth(false);
+        return;
+      }
+      let created = 0;
+      let failed = [];
+      for (const lesson of sourceLessons) {
+        setCopyProgress(`Отражение: ${created + 1} из ${sourceLessons.length}...`);
         const sourceDate = new Date(String(lesson.lesson_date).slice(0, 10) + "T12:00:00");
         const targetDate = new Date(sourceDate);
-        targetDate.setDate(targetDate.getDate() + 28);
+        targetDate.setMonth(targetDate.getMonth() + 1);
         const targetISO = `${targetDate.getFullYear()}-${pad(targetDate.getMonth() + 1)}-${pad(targetDate.getDate())}`;
         try {
           await createLesson({
@@ -541,7 +591,7 @@ export default function ScheduleDirectory({ role }) {
           });
           created++;
         } catch (e) {
-          failed.push(`${lesson.lesson_date} → ${targetISO} — ${e.message || "ошибка"}`);
+          failed.push(`${String(lesson.lesson_date).slice(0, 10)} → ${targetISO} — ${e.message || "ошибка"}`);
         }
       }
       setCopyProgress(`Создано ${created} из ${sourceLessons.length}${failed.length ? `. Ошибок: ${failed.length}` : "."}`);
@@ -1093,17 +1143,32 @@ export default function ScheduleDirectory({ role }) {
           </span>
           Добавить групповое занятие
         </button>
-        <button
-          type="button"
-          onClick={handleCopyMonthToNext}
-          disabled={copyingMonth}
-          className="group w-full sm:w-auto inline-flex items-center justify-center gap-2.5 pl-3.5 pr-5 py-2.5 rounded-full border border-outline-variant text-on-surface-variant font-label-md text-label-md hover:bg-surface-container-high transition-all duration-150 disabled:opacity-60 active:scale-[0.98]"
-        >
-          <span className="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center shrink-0 group-hover:bg-surface-container-high transition-colors duration-200">
-            <span className="material-symbols-outlined text-[16px]">content_copy</span>
-          </span>
-          {copyingMonth ? "Копирование..." : "Дублировать на след. месяц"}
-        </button>
+        {isWeekMode && (
+          <>
+            <button
+              type="button"
+              onClick={handleReflectWeekToMonth}
+              disabled={copyingMonth}
+              className="group w-full sm:w-auto inline-flex items-center justify-center gap-2.5 pl-3.5 pr-5 py-2.5 rounded-full border border-outline-variant text-on-surface-variant font-label-md text-label-md hover:bg-surface-container-high transition-all duration-150 disabled:opacity-60 active:scale-[0.98]"
+            >
+              <span className="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center shrink-0 group-hover:bg-surface-container-high transition-colors duration-200">
+                <span className="material-symbols-outlined text-[16px]">calendar_month</span>
+              </span>
+              {copyingMonth ? "Отражение..." : "Отразить неделю на месяц"}
+            </button>
+            <button
+              type="button"
+              onClick={handleReflectWeekToNextMonth}
+              disabled={copyingMonth}
+              className="group w-full sm:w-auto inline-flex items-center justify-center gap-2.5 pl-3.5 pr-5 py-2.5 rounded-full border border-outline-variant text-on-surface-variant font-label-md text-label-md hover:bg-surface-container-high transition-all duration-150 disabled:opacity-60 active:scale-[0.98]"
+            >
+              <span className="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center shrink-0 group-hover:bg-surface-container-high transition-colors duration-200">
+                <span className="material-symbols-outlined text-[16px]">calendar_add_on</span>
+              </span>
+              {copyingMonth ? "Отражение..." : "Отразить неделю на след. месяц"}
+            </button>
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-stack-lg">
