@@ -13,8 +13,6 @@ const MONTH_NAMES = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
   "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
 ];
-// Циклическая палитра для разных курсов на календаре (курсов может быть больше, чем цветов).
-const COURSE_COLORS = ["#004ac6", "#22c55e", "#ab0b1c", "#a855f7", "#0891b2", "#ea580c"];
 
 function pad(n) {
   return String(n).padStart(2, "0");
@@ -536,12 +534,6 @@ export default function TutorSchedule() {
   const coursesById = useMemo(() => {
     const map = {};
     courses.forEach((c) => (map[c.id] = c));
-    return map;
-  }, [courses]);
-
-  const courseColor = useMemo(() => {
-    const map = {};
-    courses.forEach((c, i) => (map[c.id] = COURSE_COLORS[i % COURSE_COLORS.length]));
     return map;
   }, [courses]);
 
@@ -1077,7 +1069,10 @@ export default function TutorSchedule() {
             ) : (
               selectedLessons.map((lesson) => {
                 const course = coursesById[lesson.course_id];
-                const color = courseColor[lesson.course_id] ?? "#004ac6";
+                // Полоска карточки занятия в панели деталей — всегда синяя
+                // (раньше цвет брался из циклической палитры курсов и на
+                // некоторых курсах случайно получался красным).
+                const color = "#004ac6";
                 const isCancelled = lesson.status === "cancelled";
                 const isCompletedInBackend = lesson.status === "completed";
                 const isDone =
