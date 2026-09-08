@@ -254,7 +254,7 @@ export default function BulkCreateLessonsModal({
 
   async function submit(e) {
     e.preventDefault();
-    if (!form.course_id || !form.tutor_id || !form.week_start_date || !form.start_time || !form.end_time) {
+    if (!form.course_id || !form.tutor_id || !form.start_time || !form.end_time) {
       setError("Заполните курс, преподавателя и время."); return;
     }
     if (!days.length) { setError("Выберите хотя бы один день недели."); return; }
@@ -262,20 +262,18 @@ export default function BulkCreateLessonsModal({
     if (groupType === "individual" && !form.student_id) { setError("Для индивидуальных занятий выберите ученика."); return; }
     if (groupType === "group" && canManageSubgroups && !selectedSubgroupId) { setError("Для групповых занятий выберите подгруппу или создайте новую."); return; }
 
-    // Генерируем даты на текущий месяц для выбранных дней недели
+    // Генерируем даты на выбранную неделю (7 дней от week_start_date)
     const dates = [];
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    for (let day = 1; day <= daysInMonth; day++) {
-      const d = new Date(year, month, day);
+    const weekStartObj = new Date(`${form.week_start_date}T12:00:00`);
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(weekStartObj);
+      d.setDate(d.getDate() + i);
       const jsDay = d.getDay() === 0 ? 0 : d.getDay();
       if (selectedDays.has(jsDay)) {
         dates.push(isoDate(d));
       }
     }
-    if (!dates.length) { setError("В текущем месяце нет подходящих дней."); return; }
+    if (!dates.length) { setError("В выбранной неделе нет подходящих дней."); return; }
 
     setSaving(true); setError("");
     let created = 0; const failed = [];
@@ -319,8 +317,8 @@ export default function BulkCreateLessonsModal({
               <span className="material-symbols-outlined">event_repeat</span>
             </div>
             <div>
-              <h3 className="font-headline-sm text-headline-sm text-on-surface">Отразить неделю на месяц</h3>
-              <p className="font-body-md text-[13px] text-on-surface-variant mt-1">Создаст занятия на выбранные дни недели за текущий месяц.</p>
+              <h3 className="font-headline-sm text-headline-sm text-on-surface">Добавить занятия на неделю</h3>
+              <p className="font-body-md text-[13px] text-on-surface-variant mt-1">Создаст занятия на выбранные дни текущей недели.</p>
             </div>
           </div>
           <button type="button" onClick={onClose} disabled={saving} className="p-2 rounded-lg hover:bg-surface-container-high transition-colors disabled:opacity-40 shrink-0"><span className="material-symbols-outlined">close</span></button>
@@ -404,7 +402,7 @@ export default function BulkCreateLessonsModal({
             </div>
           )}
 
-          <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">Начало недели
+          <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">Текущая неделя с
             <input type="date" value={form.week_start_date} onChange={(e) => update("week_start_date", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow" />
           </label>
           <div>
@@ -431,7 +429,7 @@ export default function BulkCreateLessonsModal({
           )}
           <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-3 border-t border-outline-variant/50">
             <button type="button" onClick={onClose} disabled={saving} className="px-6 py-2 rounded-lg font-label-md text-label-md text-primary border border-primary hover:bg-primary-container/20 transition-colors disabled:opacity-60">Отмена</button>
-            <button type="submit" disabled={saving} className="px-6 py-2 rounded-lg font-label-md text-label-md bg-primary text-on-primary hover:bg-on-primary-fixed-variant shadow-sm hover:shadow-md transition-all active:scale-95 duration-150 disabled:opacity-60">{saving ? "Создаём…" : "Отразить неделю на месяц"}</button>
+            <button type="submit" disabled={saving} className="px-6 py-2 rounded-lg font-label-md text-label-md bg-primary text-on-primary hover:bg-on-primary-fixed-variant shadow-sm hover:shadow-md transition-all active:scale-95 duration-150 disabled:opacity-60">{saving ? "Создаём…" : "Создать на неделю"}</button>
           </div>
         </form>
       </div>

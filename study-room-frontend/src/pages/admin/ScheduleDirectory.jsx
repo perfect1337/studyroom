@@ -4,7 +4,7 @@ import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import EditLessonModal from "../../components/lessons/EditLessonModal.jsx";
 import BulkCreateLessonsModal from "../../components/lessons/BulkCreateLessonsModal.jsx";
-import CreateLessonModal from "../../components/lessons/CreateLessonModal.jsx";
+import CreateIndividualLessonModal from "../../components/lessons/CreateIndividualLessonModal.jsx";
 import CreateGroupLessonModal from "../../components/lessons/CreateGroupLessonModal.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchLessons, fetchCourses, createLesson } from "../../api/academic.js";
@@ -1123,25 +1123,27 @@ export default function ScheduleDirectory({ role }) {
       </div>
 
       <div className="flex flex-wrap justify-end gap-3 mb-4">
-        <button
-          type="button"
-          onClick={() => setBulkCreateOpen(true)}
-          className="group w-full sm:w-auto inline-flex items-center justify-center gap-2.5 pl-3.5 pr-5 py-2.5 rounded-full bg-primary text-on-primary font-label-md text-label-md shadow-sm hover:shadow-md hover:bg-on-primary-fixed-variant active:scale-[0.98] transition-all duration-150"
-        >
-          <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center shrink-0 group-hover:rotate-90 transition-transform duration-200">
-            <span className="material-symbols-outlined text-[16px]">add</span>
-          </span>
-          Добавить занятия
-        </button>
+        {isWeekMode && (
+          <button
+            type="button"
+            onClick={() => setBulkCreateOpen(true)}
+            className="group w-full sm:w-auto inline-flex items-center justify-center gap-2.5 pl-3.5 pr-5 py-2.5 rounded-full bg-primary text-on-primary font-label-md text-label-md shadow-sm hover:shadow-md hover:bg-on-primary-fixed-variant active:scale-[0.98] transition-all duration-150"
+          >
+            <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center shrink-0 group-hover:rotate-90 transition-transform duration-200">
+              <span className="material-symbols-outlined text-[16px]">add</span>
+            </span>
+            Добавить занятия
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setSingleCreateOpen(true)}
           className="group w-full sm:w-auto inline-flex items-center justify-center gap-2.5 pl-3.5 pr-5 py-2.5 rounded-full border border-outline-variant text-on-surface-variant font-label-md text-label-md hover:bg-surface-container-high transition-all duration-150 active:scale-[0.98]"
         >
           <span className="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center shrink-0 group-hover:bg-surface-container-high transition-colors duration-200">
-            <span className="material-symbols-outlined text-[16px]">event</span>
+            <span className="material-symbols-outlined text-[16px]">person</span>
           </span>
-          Добавить одно занятие
+          Добавить индивидуальное занятие
         </button>
         <button
           type="button"
@@ -1658,7 +1660,7 @@ export default function ScheduleDirectory({ role }) {
         onCreated={() => load({ silent: true })}
       />
 
-      <CreateLessonModal
+      <CreateIndividualLessonModal
         open={singleCreateOpen}
         onClose={() => setSingleCreateOpen(false)}
         onCreated={() => load({ silent: true })}
