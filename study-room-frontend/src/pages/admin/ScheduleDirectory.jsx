@@ -567,34 +567,44 @@ export default function ScheduleDirectory({ role }) {
         setCopyingMonth(false);
         return;
       }
+      // Для каждого занятия найти все даты СЛЕДУЮЩЕГО месяца с тем же днём недели
+      // и создать занятия на эти даты.
+      const targetYear = viewYear;
+      const targetMonth = viewMonth + 1;
+      const daysInTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+
       let created = 0;
       let failed = [];
       for (const lesson of sourceLessons) {
         setCopyProgress(`Отражение: ${created + 1} из ${sourceLessons.length}...`);
         const sourceDate = new Date(String(lesson.lesson_date).slice(0, 10) + "T12:00:00");
-        const targetDate = new Date(sourceDate);
-        targetDate.setMonth(targetDate.getMonth() + 1);
-        const targetISO = `${targetDate.getFullYear()}-${pad(targetDate.getMonth() + 1)}-${pad(targetDate.getDate())}`;
-        try {
-          await createLesson({
-            course_id: lesson.course_id,
-            tutor_id: lesson.tutor_id,
-            topic: lesson.topic,
-            lesson_date: targetISO,
-            start_time: lesson.start_time,
-            end_time: lesson.end_time,
-            location_type: lesson.location_type,
-            group_type: lesson.group_type,
-            comment: lesson.comment,
-            student_id: lesson.student_id,
-            participant_ids: lesson.participant_ids,
-          });
-          created++;
-        } catch (e) {
-          failed.push(`${String(lesson.lesson_date).slice(0, 10)} → ${targetISO} — ${e.message || "ошибка"}`);
+        const sourceWeekday = sourceDate.getDay(); // 0=Вс..6=Сб
+        // Все даты следующего месяца с тем же днём недели
+        for (let day = 1; day <= daysInTargetMonth; day++) {
+          const d = new Date(targetYear, targetMonth, day);
+          if (d.getDay() !== sourceWeekday) continue;
+          const targetISO = `${targetYear}-${pad(targetMonth + 1)}-${pad(day)}`;
+          try {
+            await createLesson({
+              course_id: lesson.course_id,
+              tutor_id: lesson.tutor_id,
+              topic: lesson.topic,
+              lesson_date: targetISO,
+              start_time: lesson.start_time,
+              end_time: lesson.end_time,
+              location_type: lesson.location_type,
+              group_type: lesson.group_type,
+              comment: lesson.comment,
+              student_id: lesson.student_id,
+              participant_ids: lesson.participant_ids,
+            });
+            created++;
+          } catch (e) {
+            failed.push(`${String(lesson.lesson_date).slice(0, 10)} → ${targetISO} — ${e.message || "ошибка"}`);
+          }
         }
       }
-      setCopyProgress(`Создано ${created} из ${sourceLessons.length}${failed.length ? `. Ошибок: ${failed.length}` : "."}`);
+      setCopyProgress(`Создано ${created} занятий${failed.length ? `. Ошибок: ${failed.length}` : "."}`);
       if (failed.length === 0) {
         load({ silent: true });
       }
