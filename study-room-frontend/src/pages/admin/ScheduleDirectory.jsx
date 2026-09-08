@@ -1664,6 +1664,7 @@ export default function ScheduleDirectory({ role }) {
         students={people.students}
         onClose={() => setBulkCreateOpen(false)}
         onCreated={() => load({ silent: true })}
+        canManageSubgroups
       />
 
       <CreateIndividualLessonModal

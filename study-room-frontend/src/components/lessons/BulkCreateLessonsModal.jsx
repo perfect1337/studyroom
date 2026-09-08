@@ -61,6 +61,10 @@ export default function BulkCreateLessonsModal({
   const [editSubgroupStudentQuery, setEditSubgroupStudentQuery] = useState("");
   const [editSubgroupError, setEditSubgroupError] = useState("");
   const [editSubgroupSubmitting, setEditSubgroupSubmitting] = useState(false);
+  // studentQuery — поиск по ФИО в списке учеников для индивидуального
+  // занятия (см. форму ниже); список при этом ограничен courseStudents —
+  // учениками с активной записью на выбранный курс, как и в подгруппах.
+  const [studentQuery, setStudentQuery] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -91,13 +95,13 @@ export default function BulkCreateLessonsModal({
     setEditSubgroupStudentIds([]);
     setEditSubgroupStudentQuery("");
     setEditSubgroupError("");
+    setStudentQuery("");
   }, [open]);
 
   const selectedCourse = form
     ? courses.find((c) => String(c.id) === String(form.course_id))
     : undefined;
   const groupType = selectedCourse?.format === "group" ? "group" : "individual";
-  const filteredStudents = peopleStudents;
   const selectedDays = new Set(days);
 
   useEffect(() => {
@@ -160,6 +164,14 @@ export default function BulkCreateLessonsModal({
     const q = editSubgroupStudentQuery.trim().toLowerCase();
     return q ? courseStudents.filter((s) => s.name.toLowerCase().includes(q)) : courseStudents;
   }, [courseStudents, editSubgroupStudentQuery]);
+  // filteredStudents — пул для выбора ученика на ИНДИВИДУАЛЬНОЕ занятие:
+  // только те, у кого активная запись на выбранный курс (courseStudents),
+  // отфильтрованные поиском по ФИО (studentQuery) — та же логика, что уже
+  // применяется к подгруппам группового курса выше.
+  const filteredStudents = useMemo(() => {
+    const q = studentQuery.trim().toLowerCase();
+    return q ? courseStudents.filter((s) => s.name.toLowerCase().includes(q)) : courseStudents;
+  }, [courseStudents, studentQuery]);
 
   if (!open || !form) return null;
 
@@ -185,10 +197,20 @@ export default function BulkCreateLessonsModal({
 
   function updateTutor(value) {
     update("tutor_id", value);
-    setForm((f) => ({ ...f, course_id: "" }));
+    setForm((f) => ({ ...f, course_id: "", student_id: "" }));
     setSelectedSubgroupId("");
     setCreatingSubgroup(false);
     setEditingSubgroup(null);
+    setStudentQuery("");
+  }
+
+  function updateCourse(value) {
+    setForm((f) => ({ ...f, course_id: value, student_id: "" }));
+    setError("");
+    setSelectedSubgroupId("");
+    setCreatingSubgroup(false);
+    setEditingSubgroup(null);
+    setStudentQuery("");
   }
 
   function toggleNewSubgroupStudent(studentId) {
@@ -332,7 +354,7 @@ export default function BulkCreateLessonsModal({
         <form onSubmit={submit} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">Курс
-              <select value={form.course_id} onChange={(e) => update("course_id", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow">
+              <select value={form.course_id} onChange={(e) => updateCourse(e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow">
                 <option value="">Выберите курс</option>{courses.map((c) => <option key={c.id} value={c.id}>{c.title ?? c.subject ?? `Курс #${c.id}`}</option>)}
               </select>
               {selectedCourse && (
@@ -417,9 +439,39 @@ export default function BulkCreateLessonsModal({
             <select value={form.location_type} onChange={(e) => update("location_type", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow"><option value="onsite">Очно, в филиале</option><option value="remote">Дистанционно (Zoom)</option></select>
           </label>
           {groupType === "individual" && (
-            <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface p-3 rounded-lg border border-outline-variant bg-surface-container-low">Ученик
-              <select value={form.student_id} onChange={(e) => update("student_id", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow"><option value="">Выберите ученика</option>{filteredStudents.map((s) => <option key={s.id} value={s.id}>{fullName(s)}{s.class_info ? ` · ${s.class_info}` : ""}</option>)}</select>
-            </label>
+            <div className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface p-3 rounded-lg border border-outline-variant bg-surface-container-low">
+              <span>Ученик {loadingEnrollments ? "(загрузка…)" : ""}</span>
+              <input
+                type="text"
+                value={studentQuery}
+                onChange={(e) => setStudentQuery(e.target.value)}
+                placeholder="Поиск ученика по ФИО…"
+                disabled={!form.course_id}
+                className="px-3 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow disabled:opacity-60"
+              />
+              <div className="flex flex-col gap-1 max-h-48 overflow-y-auto border border-outline-variant rounded-lg p-2">
+                {!form.course_id ? (
+                  <p className="font-body-md text-body-md text-on-surface-variant italic px-2 py-1">Сначала выберите курс</p>
+                ) : loadingEnrollments ? (
+                  <p className="font-body-md text-body-md text-on-surface-variant px-2 py-1">Загрузка учеников…</p>
+                ) : filteredStudents.length ? (
+                  filteredStudents.map((s) => (
+                    <label key={s.id} className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-surface-container cursor-pointer">
+                      <input
+                        type="radio"
+                        name="bulk_individual_student"
+                        checked={String(form.student_id) === String(s.id)}
+                        onChange={() => update("student_id", String(s.id))}
+                        className="accent-primary"
+                      />
+                      <span className="font-body-md text-body-md text-on-surface">{s.name}</span>
+                    </label>
+                  ))
+                ) : (
+                  <p className="font-body-md text-body-md text-on-surface-variant italic px-2 py-1">На этом курсе нет учеников с активной записью</p>
+                )}
+              </div>
+            </div>
           )}
           {progress && (
             <p className="font-label-md text-[13px] text-primary flex items-center gap-2">
