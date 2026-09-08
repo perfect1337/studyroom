@@ -15,8 +15,14 @@ const WEEKDAYS = [
 
 function pad(n) { return String(n).padStart(2, "0"); }
 function isoDate(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
-function monthStart() { const d = new Date(); return isoDate(new Date(d.getFullYear(), d.getMonth(), 1)); }
-function monthEnd() { const d = new Date(); return isoDate(new Date(d.getFullYear(), d.getMonth() + 1, 0)); }
+function mondayOfWeek() {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(d);
+  monday.setDate(diff);
+  return isoDate(monday);
+}
 
 export default function BulkCreateLessonsModal({
   open,
@@ -62,8 +68,7 @@ export default function BulkCreateLessonsModal({
     setForm({
       course_id: courses[0]?.id ? String(courses[0].id) : "",
       tutor_id: tutors[0]?.id ? String(tutors[0].id) : "",
-      lesson_date_from: monthStart(),
-      lesson_date_to: monthEnd(),
+      week_start_date: mondayOfWeek(),
       start_time: startTime,
       end_time: addMinutesToTime(startTime, DEFAULT_LESSON_DURATION_MINUTES),
       location_type: "onsite",
@@ -249,22 +254,28 @@ export default function BulkCreateLessonsModal({
 
   async function submit(e) {
     e.preventDefault();
-    if (!form.course_id || !form.tutor_id || !form.lesson_date_from || !form.lesson_date_to || !form.start_time || !form.end_time) {
-      setError("Заполните курс, преподавателя, период и время."); return;
+    if (!form.course_id || !form.tutor_id || !form.week_start_date || !form.start_time || !form.end_time) {
+      setError("Заполните курс, преподавателя и время."); return;
     }
     if (!days.length) { setError("Выберите хотя бы один день недели."); return; }
     if (form.end_time <= form.start_time) { setError("Время окончания должно быть позже времени начала."); return; }
     if (groupType === "individual" && !form.student_id) { setError("Для индивидуальных занятий выберите ученика."); return; }
     if (groupType === "group" && canManageSubgroups && !selectedSubgroupId) { setError("Для групповых занятий выберите подгруппу или создайте новую."); return; }
-    if (form.lesson_date_from > form.lesson_date_to) { setError("Начало периода не может быть позже конца."); return; }
 
+    // Генерируем даты на текущий месяц для выбранных дней недели
     const dates = [];
-    const from = new Date(`${form.lesson_date_from}T12:00:00`);
-    const to = new Date(`${form.lesson_date_to}T12:00:00`);
-    for (let d = from; d <= to; d.setDate(d.getDate() + 1)) {
-      if (selectedDays.has(d.getDay() === 0 ? 0 : d.getDay())) dates.push(isoDate(d));
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(year, month, day);
+      const jsDay = d.getDay() === 0 ? 0 : d.getDay();
+      if (selectedDays.has(jsDay)) {
+        dates.push(isoDate(d));
+      }
     }
-    if (!dates.length) { setError("В выбранном периоде нет подходящих дней."); return; }
+    if (!dates.length) { setError("В текущем месяце нет подходящих дней."); return; }
 
     setSaving(true); setError("");
     let created = 0; const failed = [];
@@ -308,8 +319,8 @@ export default function BulkCreateLessonsModal({
               <span className="material-symbols-outlined">event_repeat</span>
             </div>
             <div>
-              <h3 className="font-headline-sm text-headline-sm text-on-surface">Быстро создать занятия на месяц</h3>
-              <p className="font-body-md text-[13px] text-on-surface-variant mt-1">Одно правило создаст занятия сразу на все выбранные даты.</p>
+              <h3 className="font-headline-sm text-headline-sm text-on-surface">Отразить неделю на месяц</h3>
+              <p className="font-body-md text-[13px] text-on-surface-variant mt-1">Создаст занятия на выбранные дни недели за текущий месяц.</p>
             </div>
           </div>
           <button type="button" onClick={onClose} disabled={saving} className="p-2 rounded-lg hover:bg-surface-container-high transition-colors disabled:opacity-40 shrink-0"><span className="material-symbols-outlined">close</span></button>
@@ -393,14 +404,9 @@ export default function BulkCreateLessonsModal({
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">С
-              <input type="date" value={form.lesson_date_from} onChange={(e) => update("lesson_date_from", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow" />
-            </label>
-            <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">По
-              <input type="date" value={form.lesson_date_to} onChange={(e) => update("lesson_date_to", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow" />
-            </label>
-          </div>
+          <label className="flex flex-col gap-1.5 font-label-md text-label-md text-on-surface">Начало недели
+            <input type="date" value={form.week_start_date} onChange={(e) => update("week_start_date", e.target.value)} className="px-3 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-shadow" />
+          </label>
           <div>
             <p className="font-label-md text-label-md text-on-surface mb-2">Дни недели</p>
             <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">{WEEKDAYS.map(([day, label]) => <button key={day} type="button" onClick={() => toggleDay(day)} className={`py-2 rounded-lg border font-label-md text-[13px] font-semibold transition-colors ${days.includes(day) ? "border-primary bg-primary text-on-primary shadow-sm" : "border-outline-variant text-on-surface-variant hover:bg-surface-container-high"}`}>{label}</button>)}</div>
@@ -425,7 +431,7 @@ export default function BulkCreateLessonsModal({
           )}
           <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-3 border-t border-outline-variant/50">
             <button type="button" onClick={onClose} disabled={saving} className="px-6 py-2 rounded-lg font-label-md text-label-md text-primary border border-primary hover:bg-primary-container/20 transition-colors disabled:opacity-60">Отмена</button>
-            <button type="submit" disabled={saving} className="px-6 py-2 rounded-lg font-label-md text-label-md bg-primary text-on-primary hover:bg-on-primary-fixed-variant shadow-sm hover:shadow-md transition-all active:scale-95 duration-150 disabled:opacity-60">{saving ? "Создаём…" : "Создать на месяц"}</button>
+            <button type="submit" disabled={saving} className="px-6 py-2 rounded-lg font-label-md text-label-md bg-primary text-on-primary hover:bg-on-primary-fixed-variant shadow-sm hover:shadow-md transition-all active:scale-95 duration-150 disabled:opacity-60">{saving ? "Создаём…" : "Отразить неделю на месяц"}</button>
           </div>
         </form>
       </div>
