@@ -1579,6 +1579,7 @@ export default function ScheduleDirectory({ role }) {
         courses={courses}
         tutors={people.tutors}
         students={people.students}
+        canManageSubgroups={isOwner || role === "branch_owner"}
         onClose={() => setBulkCreateOpen(false)}
         onCreated={() => load({ silent: true })}
       />
