@@ -571,6 +571,18 @@ export default function ScheduleDirectory({ role }) {
     }
   }
 
+  // existingLessonKey/buildExistingLessonKeySet — ключ "курс+преподаватель+
+  // дата+время начала", по которому определяем, что занятие с такими же
+  // параметрами уже существует. Используется, чтобы при отражении недели
+  // не пытаться создать занятие поверх уже существующего (см. ниже) — раньше
+  // такие попытки просто падали с ошибкой на бэкенде (конфликт), и при
+  // повторном запуске отражения (или когда в месяце уже что-то отражено
+  // ранее) пользователь стабильно видел "Ошибок: N", хотя по факту всё
+  // нужное уже было создано.
+  function existingLessonKey(l) {
+    return [l.course_id, l.tutor_id, String(l.lesson_date).slice(0, 10), String(l.start_time ?? "").slice(0, 5)].join("|");
+  }
+
   async function handleReflectWeekToMonth() {
     setCopyingMonth(true);
     setCopyProgress("Загрузка занятий текущей недели...");
@@ -583,15 +595,22 @@ export default function ScheduleDirectory({ role }) {
         setCopyingMonth(false);
         return;
       }
-      // Для каждого занятия найти все остальные даты этого месяца с тем же днём недели
-      // и создать занятия на эти даты (исключая исходную дату).
-      let created = 0;
-      let failed = [];
+      // lessons здесь — уже загруженные занятия ТЕКУЩЕГО месяца (весь месяц
+      // виден в этом же состоянии, см. load()), так что можно надёжно
+      // проверить, какие из целевых дат уже заняты тем же курсом/
+      // преподавателем/временем, и пропустить их без обращения к API.
+      const existingKeys = new Set(lessons.map(existingLessonKey));
+
+      // Сначала считаем ПОЛНЫЙ список задач (занятие × дата), чтобы прогресс
+      // "N из M" показывал реальное количество создаваемых занятий, а не
+      // количество исходных занятий недели — раньше M было равно числу
+      // занятий недели, а N (число фактических созданий по всем датам месяца)
+      // могло быть в несколько раз больше, из-за чего счётчик показывал,
+      // например, "16 из 5".
+      const tasks = [];
       for (const lesson of sourceLessons) {
-        setCopyProgress(`Отражение: ${created + 1} из ${sourceLessons.length}...`);
         const sourceDate = new Date(String(lesson.lesson_date).slice(0, 10) + "T12:00:00");
         const sourceWeekday = sourceDate.getDay(); // 0=Вс..6=Сб
-        // Все даты текущего месяца с тем же днём недели
         const year = viewYear;
         const month = viewMonth;
         const daysInThisMonth = new Date(year, month + 1, 0).getDate();
@@ -599,29 +618,50 @@ export default function ScheduleDirectory({ role }) {
           const d = new Date(year, month, day);
           if (d.getDay() !== sourceWeekday) continue;
           const targetISO = `${year}-${pad(month + 1)}-${pad(day)}`;
-          // Пропускаем исходную дату
-          if (targetISO === String(lesson.lesson_date).slice(0, 10)) continue;
-          try {
-            await createLesson({
-              course_id: lesson.course_id,
-              tutor_id: lesson.tutor_id,
-              topic: lesson.topic,
-              lesson_date: targetISO,
-              start_time: lesson.start_time,
-              end_time: lesson.end_time,
-              location_type: lesson.location_type,
-              group_type: lesson.group_type,
-              comment: lesson.comment,
-              student_id: lesson.student_id,
-              participant_ids: lesson.participant_ids,
-            });
-            created++;
-          } catch (e) {
-            failed.push(`${targetISO} — ${e.message || "ошибка"}`);
-          }
+          if (targetISO === String(lesson.lesson_date).slice(0, 10)) continue; // исходная дата
+          tasks.push({ lesson, targetISO });
         }
       }
-      setCopyProgress(`Создано ${created} занятий${failed.length ? `. Ошибок: ${failed.length}` : "."}`);
+
+      if (!tasks.length) {
+        setCopyProgress("Больше нет дат в этом месяце для отражения");
+        setCopyingMonth(false);
+        return;
+      }
+
+      let created = 0;
+      let skipped = 0;
+      let failed = [];
+      for (let i = 0; i < tasks.length; i++) {
+        const { lesson, targetISO } = tasks[i];
+        setCopyProgress(`Отражение: ${i + 1} из ${tasks.length}...`);
+        const key = [lesson.course_id, lesson.tutor_id, targetISO, String(lesson.start_time ?? "").slice(0, 5)].join("|");
+        if (existingKeys.has(key)) {
+          skipped++;
+          continue;
+        }
+        try {
+          await createLesson({
+            course_id: lesson.course_id,
+            tutor_id: lesson.tutor_id,
+            topic: lesson.topic,
+            lesson_date: targetISO,
+            start_time: lesson.start_time,
+            end_time: lesson.end_time,
+            location_type: lesson.location_type,
+            group_type: lesson.group_type,
+            comment: lesson.comment,
+            student_id: lesson.student_id,
+            participant_ids: lesson.participant_ids,
+          });
+          existingKeys.add(key); // не пытаться создать ту же дату дважды за этот же прогон
+          created++;
+        } catch (e) {
+          failed.push(`${targetISO} — ${e.message || "ошибка"}`);
+        }
+      }
+      const skippedNote = skipped ? ` Уже было: ${skipped}.` : "";
+      setCopyProgress(`Создано ${created} занятий.${skippedNote}${failed.length ? ` Ошибок: ${failed.length}` : ""}`);
       if (failed.length === 0) {
         load({ silent: true });
       }
@@ -644,41 +684,59 @@ export default function ScheduleDirectory({ role }) {
         setCopyingMonth(false);
         return;
       }
-      // Для каждого занятия найти все даты СЛЕДУЮЩЕГО месяца с тем же днём недели
-      // и создать занятия на эти даты.
+      // Для каждого занятия найти все даты СЛЕДУЮЩЕГО месяца с тем же днём недели.
       const targetYear = viewYear;
       const targetMonth = viewMonth + 1;
       const daysInTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
 
-      let created = 0;
-      let failed = [];
+      // Как и в handleReflectWeekToMonth — сначала строим полный список
+      // задач (занятие × дата), чтобы "N из M" считало реальное число
+      // создаваемых занятий, а не число занятий недели-источника.
+      const tasks = [];
       for (const lesson of sourceLessons) {
-        setCopyProgress(`Отражение: ${created + 1} из ${sourceLessons.length}...`);
         const sourceDate = new Date(String(lesson.lesson_date).slice(0, 10) + "T12:00:00");
         const sourceWeekday = sourceDate.getDay(); // 0=Вс..6=Сб
-        // Все даты следующего месяца с тем же днём недели
         for (let day = 1; day <= daysInTargetMonth; day++) {
           const d = new Date(targetYear, targetMonth, day);
           if (d.getDay() !== sourceWeekday) continue;
           const targetISO = `${targetYear}-${pad(targetMonth + 1)}-${pad(day)}`;
-          try {
-            await createLesson({
-              course_id: lesson.course_id,
-              tutor_id: lesson.tutor_id,
-              topic: lesson.topic,
-              lesson_date: targetISO,
-              start_time: lesson.start_time,
-              end_time: lesson.end_time,
-              location_type: lesson.location_type,
-              group_type: lesson.group_type,
-              comment: lesson.comment,
-              student_id: lesson.student_id,
-              participant_ids: lesson.participant_ids,
-            });
-            created++;
-          } catch (e) {
-            failed.push(`${String(lesson.lesson_date).slice(0, 10)} → ${targetISO} — ${e.message || "ошибка"}`);
-          }
+          tasks.push({ lesson, targetISO });
+        }
+      }
+
+      if (!tasks.length) {
+        setCopyProgress("Нет подходящих дат в следующем месяце");
+        setCopyingMonth(false);
+        return;
+      }
+
+      // lessons здесь — занятия ТЕКУЩЕГО месяца; следующий месяц ими не
+      // покрыт, поэтому в отличие от handleReflectWeekToMonth здесь нет
+      // достоверных данных, чтобы заранее пропустить уже существующие в
+      // следующем месяце занятия — такие конфликты по-прежнему попадут в
+      // "Ошибок". Счётчик прогресса при этом всё равно считается правильно.
+      let created = 0;
+      let failed = [];
+      for (let i = 0; i < tasks.length; i++) {
+        const { lesson, targetISO } = tasks[i];
+        setCopyProgress(`Отражение: ${i + 1} из ${tasks.length}...`);
+        try {
+          await createLesson({
+            course_id: lesson.course_id,
+            tutor_id: lesson.tutor_id,
+            topic: lesson.topic,
+            lesson_date: targetISO,
+            start_time: lesson.start_time,
+            end_time: lesson.end_time,
+            location_type: lesson.location_type,
+            group_type: lesson.group_type,
+            comment: lesson.comment,
+            student_id: lesson.student_id,
+            participant_ids: lesson.participant_ids,
+          });
+          created++;
+        } catch (e) {
+          failed.push(`${String(lesson.lesson_date).slice(0, 10)} → ${targetISO} — ${e.message || "ошибка"}`);
         }
       }
       setCopyProgress(`Создано ${created} занятий${failed.length ? `. Ошибок: ${failed.length}` : "."}`);
