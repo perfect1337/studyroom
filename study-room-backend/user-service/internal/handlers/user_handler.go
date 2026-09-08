@@ -477,6 +477,15 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 			out.Students = students
 		}
 
+		// Преподаватели филиала
+		tutors, err := h.users.ListAll(ctx, repository.ListFilter{
+			Role: rolePtr(models.RoleTutor), BranchID: branchFilter, Search: search,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "list failed")
+			return
+		}
+
 		// Если branch_owner включил себе "версию учителя" (см. PATCH
 		// /users/me/tutor-mode), он должен появляться в разделе "Преподаватели"
 		// своего же филиала — иначе ни TeachersDirectory (карточка), ни
