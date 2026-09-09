@@ -41,6 +41,43 @@ function pickPriorityContract(contractsList) {
   })[0];
 }
 
+// Приоритет enrollment.status для того же выбора "самой приоритетной"
+// записи — используется, когда у ученика нет НИ ОДНОГО видимого этому
+// филиалу договора (см. pickPriorityEnrollment/buildFallbackContract ниже).
+const ENROLLMENT_STATUS_PRIORITY = { active: 0, paused: 1, terminated: 2, completed: 3 };
+
+function pickPriorityEnrollment(enrollmentsList) {
+  if (!enrollmentsList.length) return null;
+  return [...enrollmentsList].sort((a, b) => {
+    const pa = ENROLLMENT_STATUS_PRIORITY[a.status] ?? 99;
+    const pb = ENROLLMENT_STATUS_PRIORITY[b.status] ?? 99;
+    if (pa !== pb) return pa - pb;
+    return new Date(b.start_date ?? 0) - new Date(a.start_date ?? 0);
+  })[0];
+}
+
+// Иногороднего/переданного ученика (см. isVisiting ниже) обслуживает этот
+// филиал, но сам договор мог оформить ДРУГОЙ филиал (service_branch_id —
+// см. contracts-service, ContractHandler.Create/List: branch_owner видит
+// в GET /contracts только договоры, которые выдал САМ, а не те, где он —
+// лишь "филиал обучения") — поэтому в contractsByStudent для такого
+// ученика пусто. При этом enrollment у него всё равно создан именно в
+// этом филиале и несёт собственные start_date/end_date/status,
+// синхронизированные из contract.created/contract.updated/
+// contract.activated/contract.terminated (см. academic-service,
+// events/subscriber.go) — их и показываем вместо пустого "—", раз сам
+// договор недоступен. "paused" (временно нет преподавателя) намеренно
+// не равнозначен прекращению договора — показываем как "активен".
+function buildFallbackContract(enrollment) {
+  return {
+    id: `enrollment-${enrollment.id}`,
+    course_id: enrollment.course_id,
+    start_date: enrollment.start_date,
+    end_date: enrollment.end_date,
+    status: enrollment.status === "terminated" || enrollment.status === "completed" ? enrollment.status : "active",
+  };
+}
+
 // Статус записи на курс (enrollment.status) — раньше бейдж всегда был
 // зелёным ("Активен") независимо от реального значения, из-за чего
 // приостановленные/завершённые записи выглядели визуально "поплывшими"
@@ -291,7 +328,21 @@ export default function PeopleDirectory({ role }) {
         if (contract) {
           const contractEnrollments = pEnrollments.filter((e) => e.course_id === contract.course_id);
           rows.push({ p, contract, pEnrollments: contractEnrollments, activeEnrollments });
-        } else if (pContracts.length === 0 && !subjectFilter) {
+          return;
+        }
+
+        // Видимых этому филиалу договоров нет — но, возможно, есть
+        // enrollment (см. buildFallbackContract выше: иногородний/
+        // переданный ученик, договор которого выдал другой филиал).
+        const matchingEnrollmentsForFallback = subjectFilter
+          ? pEnrollments.filter((e) => coursesById[e.course_id]?.subject === subjectFilter)
+          : pEnrollments;
+        const fallbackSource = pickPriorityEnrollment(matchingEnrollmentsForFallback);
+        if (fallbackSource) {
+          const fallbackContract = buildFallbackContract(fallbackSource);
+          const contractEnrollments = pEnrollments.filter((e) => e.course_id === fallbackSource.course_id);
+          rows.push({ p, contract: fallbackContract, pEnrollments: contractEnrollments, activeEnrollments });
+        } else if (pContracts.length === 0 && pEnrollments.length === 0 && !subjectFilter) {
           rows.push({ p, contract: null, pEnrollments, activeEnrollments });
         }
         return;

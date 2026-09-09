@@ -153,7 +153,11 @@ export default function TeacherDetail({ role = "owner" }) {
         fetchLessons({ tutor_id: teacherId, date_from, date_to }),
         fetchLessons({ tutor_id: teacherId }),
         fetchSubgroups({ tutor_id: Number(teacherId) }),
-        isOwner ? fetchBranches().catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
+        // GET /branches доступен любой аутентифицированной роли (см.
+        // user-service/internal/app/app.go), поэтому загружаем его и для
+        // branch_owner — иначе branchNameById пуст и в шапке карточки
+        // вместо названия филиала показывается технический "Филиал #N".
+        fetchBranches().catch(() => ({ items: [] })),
         // Область видимости сужается на бэкенде по роли (owner — всё, branch_owner — свой филиал).
         fetchTests().catch(() => ({ items: [] })),
       ]);
@@ -166,7 +170,13 @@ export default function TeacherDetail({ role = "owner" }) {
       setLessons(lessonsRes?.items ?? []);
       setAllTeacherLessons(allLessonsRes?.items ?? []);
       setSubgroups(subgroupsRes?.items ?? []);
-      setBranches(branchesRes?.items ?? []);
+      // Фолбэк на случай сбоя запроса /branches — хотя бы свой филиал
+      // должен резолвиться в имя (см. FinanceDirectory.jsx, тот же паттерн).
+      let branchItems = branchesRes?.items ?? [];
+      if (!isOwner && branchItems.length === 0 && user?.branch_id) {
+        branchItems = [{ id: user.branch_id, name: user.branch_name || `Филиал #${user.branch_id}` }];
+      }
+      setBranches(branchItems);
       setTests(testsRes?.items ?? []);
 
       if (!foundTeacher) {
