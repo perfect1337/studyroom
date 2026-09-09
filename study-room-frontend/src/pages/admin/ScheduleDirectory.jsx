@@ -479,6 +479,12 @@ export default function ScheduleDirectory({ role }) {
   // кликом отменить нельзя (это не черновик), поэтому здесь лишний шаг
   // подтверждения важнее, чем при обычном создании одного занятия.
   const [pendingDuplicate, setPendingDuplicate] = useState(null);
+  // mobileActionsOpen — раскрыт ли на мобильном компактный список
+  // второстепенных действий ("Ещё действия"): на десктопе/планшете (sm+)
+  // все кнопки видны сразу в ряд, а на телефоне вертикальный список из
+  // 5-6 кнопок на всю ширину съедал весь экран над календарём — теперь
+  // там всего одна главная кнопка + переключатель этого списка.
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
 
   // При PATCH обновляем занятие локально, не дожидаясь перезагрузки месяца —
   // отзывчивее для пользователя.
@@ -1200,6 +1206,13 @@ export default function ScheduleDirectory({ role }) {
   }, [currentWeek, lessonsByDay]);
 
   const isWeekMode = viewMode === "week";
+
+  // Набор действий в мобильном меню "Ещё" зависит от режима (неделя/месяц —
+  // см. блок кнопок ниже), поэтому при переключении режима закрываем уже
+  // открытое меню, чтобы не показывать список, собранный для другого режима.
+  useEffect(() => {
+    setMobileActionsOpen(false);
+  }, [isWeekMode]);
   // Список занятий для панели деталей справа: в месячном виде — все
   // занятия выбранного дня (как раньше), в недельном — ровно одно кликнутое
   // занятие (см. selectedLesson) — там имя ученика видно только тут.
@@ -1249,8 +1262,9 @@ export default function ScheduleDirectory({ role }) {
         </p>
       </div>
 
-      {/* Фильтры */}
-      <div className="flex flex-wrap gap-3 mb-4">
+      {/* Фильтры — на телефоне сетка 2×N (компактнее построчного wrap),
+          на sm+ прежнее поведение: обычный ряд с переносом. */}
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-3 mb-4">
         <div className="relative">
           <select
             value={`${viewYear}-${viewMonth}`}
@@ -1258,7 +1272,7 @@ export default function ScheduleDirectory({ role }) {
               const [y, m] = e.target.value.split("-").map(Number);
               selectMonth(y, m);
             }}
-            className="appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+            className="w-full sm:w-auto appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
           >
             {monthOptions.map(({ year, month }) => (
               <option key={`${year}-${month}`} value={`${year}-${month}`}>
@@ -1273,7 +1287,7 @@ export default function ScheduleDirectory({ role }) {
             <select
               value={branchFilter}
               onChange={(e) => setBranchFilter(e.target.value)}
-              className="appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+              className="w-full sm:w-auto appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
             >
               <option value="">Все филиалы</option>
               {branches.map((b) => (
@@ -1290,7 +1304,7 @@ export default function ScheduleDirectory({ role }) {
             value={tutorFilter}
             onChange={(e) => setTutorFilter(e.target.value)}
             disabled={peopleLoading}
-            className="appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none disabled:opacity-60"
+            className="w-full sm:w-auto appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none disabled:opacity-60"
           >
             <option value="">Все преподаватели</option>
             {people.tutors.map((t) => (
@@ -1306,7 +1320,7 @@ export default function ScheduleDirectory({ role }) {
             value={studentFilter}
             onChange={(e) => setStudentFilter(e.target.value)}
             disabled={peopleLoading}
-            className="appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none disabled:opacity-60"
+            className="w-full sm:w-auto appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none disabled:opacity-60"
           >
             <option value="">Все ученики</option>
             {people.students.map((s) => (
@@ -1324,14 +1338,17 @@ export default function ScheduleDirectory({ role }) {
               setTutorFilter("");
               setStudentFilter("");
             }}
-            className="px-4 py-2 rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors border border-outline-variant"
+            className="col-span-2 sm:col-span-1 px-4 py-2 rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors border border-outline-variant"
           >
             Сбросить фильтры
           </button>
         )}
       </div>
 
-      <div className="flex flex-wrap justify-end gap-3 mb-4">
+      {/* Кнопки действий — десктоп/планшет (sm+): прежний ряд пилюль без
+          изменений. На телефоне это отдельный компактный блок ниже
+          (см. "Кнопки действий — мобильный"), а этот скрыт. */}
+      <div className="hidden sm:flex flex-wrap justify-end gap-3 mb-4">
         {isWeekMode && (
           <button
             type="button"
@@ -1400,6 +1417,104 @@ export default function ScheduleDirectory({ role }) {
               {copyingMonth ? "Отражение..." : "Отразить неделю на след. месяц"}
             </button>
           </>
+        )}
+      </div>
+
+      {/* Кнопки действий — телефон (до sm): одна главная кнопка + кнопка
+          "Ещё", раскрывающая компактный список второстепенных действий,
+          вместо 5-6 кнопок на всю ширину друг под другом. */}
+      <div className="sm:hidden mb-4">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => (isWeekMode ? setBulkCreateOpen(true) : setSingleCreateOpen(true))}
+            className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-full bg-primary text-on-primary font-label-md text-label-md shadow-sm active:scale-[0.98] transition-all duration-150"
+          >
+            <span className="material-symbols-outlined text-[18px]">add</span>
+            {isWeekMode ? "Добавить занятия" : "Добавить занятие"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileActionsOpen((v) => !v)}
+            aria-expanded={mobileActionsOpen}
+            aria-label="Ещё действия"
+            className="shrink-0 w-12 h-12 rounded-full border border-outline-variant flex items-center justify-center text-on-surface-variant active:bg-surface-container-high transition-colors"
+          >
+            <span className="material-symbols-outlined">{mobileActionsOpen ? "close" : "more_horiz"}</span>
+          </button>
+        </div>
+
+        {mobileActionsOpen && (
+          <div className="mt-2 rounded-2xl border border-outline-variant bg-surface-container-lowest shadow-sm divide-y divide-outline-variant/60 overflow-hidden">
+            {/* В режиме недели главная кнопка уже занята массовым добавлением
+                (см. выше), поэтому индивидуальное занятие уходит сюда; в
+                режиме месяца оно, наоборот, уже главная кнопка — тут не
+                дублируем. */}
+            {isWeekMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSingleCreateOpen(true);
+                  setMobileActionsOpen(false);
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left text-on-surface-variant font-label-md text-label-md active:bg-surface-container-high transition-colors"
+              >
+                <span className="material-symbols-outlined text-[18px]">person</span>
+                Добавить индивидуальное занятие
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setGroupCreateOpen(true);
+                setMobileActionsOpen(false);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-left text-on-surface-variant font-label-md text-label-md active:bg-surface-container-high transition-colors"
+            >
+              <span className="material-symbols-outlined text-[18px]">groups</span>
+              Добавить групповое занятие
+            </button>
+            {isWeekMode && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingDuplicate("week");
+                    setMobileActionsOpen(false);
+                  }}
+                  disabled={copyingMonth}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left text-on-surface-variant font-label-md text-label-md active:bg-surface-container-high transition-colors disabled:opacity-60"
+                >
+                  <span className="material-symbols-outlined text-[18px]">calendar_view_week</span>
+                  {copyingMonth ? "Дублирование..." : "Дублировать на след. неделю"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingDuplicate("month");
+                    setMobileActionsOpen(false);
+                  }}
+                  disabled={copyingMonth}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left text-on-surface-variant font-label-md text-label-md active:bg-surface-container-high transition-colors disabled:opacity-60"
+                >
+                  <span className="material-symbols-outlined text-[18px]">calendar_month</span>
+                  {copyingMonth ? "Отражение..." : "Отразить неделю на месяц"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingDuplicate("nextMonth");
+                    setMobileActionsOpen(false);
+                  }}
+                  disabled={copyingMonth}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left text-on-surface-variant font-label-md text-label-md active:bg-surface-container-high transition-colors disabled:opacity-60"
+                >
+                  <span className="material-symbols-outlined text-[18px]">calendar_add_on</span>
+                  {copyingMonth ? "Отражение..." : "Отразить неделю на след. месяц"}
+                </button>
+              </>
+            )}
+          </div>
         )}
       </div>
 
