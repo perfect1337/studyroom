@@ -47,6 +47,11 @@ const EMPTY_CONTRACT_FORM = {
   student_id: "",
   course_id: "",
   branch_id: "",
+  // service_branch_id — необязательный "филиал обучения", если ребёнок
+  // будет заниматься по этому договору не в том филиале, который его
+  // выдал (см. api-contracts.md 3.1). Пусто = обучение там же, где и
+  // договор — обычный случай.
+  service_branch_id: "",
   amount: "",
   start_date: "",
   end_date: "",
@@ -138,17 +143,18 @@ export default function FinanceDirectory({ role }) {
         fetchMyPeople(),
         fetchCourses().catch(() => ({ items: [] })),
       ]);
-      // Владелец сети сам выбирает филиал из полного списка сети (GET /branches,
-      // доступен только owner). Руководитель филиала работает только в рамках
-      // своего собственного филиала — берём его из профиля (user.branch_id/
-      // branch_name), отдельный запрос к /branches ему не нужен и недоступен.
-      const branchesRes = isOwner
-        ? await fetchBranches().catch(() => ({ items: [] }))
-        : {
-            items: user?.branch_id
-              ? [{ id: user.branch_id, name: user.branch_name || `Филиал #${user.branch_id}` }]
-              : [],
-          };
+      // GET /branches доступен любой аутентифицированной роли (см.
+      // user-service/internal/app/app.go). Руководителю филиала полный
+      // список нужен не для смены "своего" филиала договора (он всегда
+      // фиксирован), а для выбора отдельного "филиала обучения" —
+      // service_branch_id, см. openAddModal/handleAddContract — когда он
+      // передаёт ребёнка заниматься по этому договору в другой филиал.
+      let branchesRes = await fetchBranches().catch(() => ({ items: [] }));
+      if (!isOwner && (!branchesRes?.items || branchesRes.items.length === 0) && user?.branch_id) {
+        // Фолбэк на случай сбоя запроса — хотя бы свой филиал должен быть
+        // виден в форме (не для выбора, а для отображения текущего).
+        branchesRes = { items: [{ id: user.branch_id, name: user.branch_name || `Филиал #${user.branch_id}` }] };
+      }
       setContracts(contractsRes?.items ?? []);
       setPeople({ students: peopleRes?.students ?? [], parents: peopleRes?.parents ?? [] });
       setBranches(branchesRes?.items ?? []);
@@ -277,7 +283,9 @@ export default function FinanceDirectory({ role }) {
 
   function openAddModal() {
     setAddForm(
-      isOwner ? EMPTY_CONTRACT_FORM : { ...EMPTY_CONTRACT_FORM, branch_id: user?.branch_id ? String(user.branch_id) : "" }
+      isOwner
+        ? EMPTY_CONTRACT_FORM
+        : { ...EMPTY_CONTRACT_FORM, branch_id: user?.branch_id ? String(user.branch_id) : "" }
     );
     setAddStatus("");
     setAddFormError("");
@@ -375,7 +383,7 @@ export default function FinanceDirectory({ role }) {
     e.preventDefault();
     setAddFormError("");
     const {
-      student_id, parent_id, course_id, branch_id, amount, start_date, end_date,
+      student_id, parent_id, course_id, branch_id, service_branch_id, amount, start_date, end_date,
       new_student_last_name, new_student_first_name, new_student_patronymic,
       new_student_school, new_student_class_info,
     } = addForm;
@@ -420,6 +428,13 @@ export default function FinanceDirectory({ role }) {
         parent_id: Number(parent_id),
         course_id: Number(course_id),
         branch_id: Number(branch_id),
+        // Если выбран другой филиал обучения — передаём его отдельным
+        // полем, сам договор всё равно останется за branch_id (см.
+        // api-contracts.md 3.1 и подсказку рядом с полем в форме ниже).
+        service_branch_id:
+          service_branch_id && Number(service_branch_id) !== Number(branch_id)
+            ? Number(service_branch_id)
+            : undefined,
         amount: Number(amount),
         start_date,
         end_date,
@@ -671,9 +686,29 @@ export default function FinanceDirectory({ role }) {
                           <div className="text-xs text-on-surface-variant">{parent ? fullName(parent) : `Родитель #${c.parent_id}`}</div>
                         </td>
                         {isOwner && (
-                          <td className="px-6 py-4 font-body-md text-body-md text-on-surface-variant">{branchNameFor(c)}</td>
+                          <td className="px-6 py-4 font-body-md text-body-md text-on-surface-variant">
+                            {branchNameFor(c)}
+                            {c.service_branch_id != null && Number(c.service_branch_id) !== Number(c.branch_id) && (
+                              <div
+                                className="text-[11px] font-bold text-amber-700 mt-0.5"
+                                title="Ребёнок занимается по этому договору в другом филиале"
+                              >
+                                → {branchesById[c.service_branch_id]?.name ?? `Филиал #${c.service_branch_id}`} (переведён)
+                              </div>
+                            )}
+                          </td>
                         )}
-                        <td className="px-6 py-4 font-body-md text-body-md text-on-surface-variant">{courseNameFor(c)}</td>
+                        <td className="px-6 py-4 font-body-md text-body-md text-on-surface-variant">
+                          {courseNameFor(c)}
+                          {c.service_branch_id != null && Number(c.service_branch_id) !== Number(c.branch_id) && (
+                            <div
+                              className="text-[11px] font-bold text-amber-700 mt-0.5"
+                              title="Ученик переведён на этот курс в другой филиал: занятия ведёт и назначает он, договор остаётся у вас"
+                            >
+                              Переведён: {branchesById[c.service_branch_id]?.name ?? `Филиал #${c.service_branch_id}`}
+                            </div>
+                          )}
+                        </td>
                         <td className="px-6 py-4 font-body-md text-body-md text-on-surface-variant">{formatDate(c.start_date)} — {formatDate(c.end_date)}</td>
                         <td className="px-6 py-4 font-body-md text-body-md font-semibold text-on-surface">{formatMoney(c.amount)}</td>
                         <td className="px-6 py-4">
@@ -722,6 +757,14 @@ export default function FinanceDirectory({ role }) {
                       <span className="material-symbols-outlined text-[14px]">menu_book</span>
                       <span className="truncate">{courseNameFor(c)}</span>
                     </div>
+                    {c.service_branch_id != null && Number(c.service_branch_id) !== Number(c.branch_id) && (
+                      <div className="flex items-center gap-1 text-[11px] font-bold text-amber-700">
+                        <span className="material-symbols-outlined text-[14px]">sync_alt</span>
+                        <span className="truncate">
+                          Переведён: {branchesById[c.service_branch_id]?.name ?? `Филиал #${c.service_branch_id}`}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between text-[13px]">
                       <span className="text-on-surface-variant">{formatDate(c.start_date)} — {formatDate(c.end_date)}</span>
                       <span className="font-semibold text-on-surface">{formatMoney(c.amount)}</span>
@@ -966,6 +1009,40 @@ export default function FinanceDirectory({ role }) {
                       </div>
                     )}
                   </div>
+
+                  {/* Филиал обучения — если ребёнок будет заниматься по этому
+                      договору в ДРУГОМ филиале (например, дома нет нужного
+                      предмета/преподавателя). Сам договор всё равно останется
+                      за филиалом, указанным выше ("Филиал *") — там же его
+                      можно будет редактировать/расторгать/отмечать оплату.
+                      Ученик при этом появится во втором филиале с пометкой
+                      "Иногородний"/"передан", а его руководитель сможет
+                      назначать ему занятия по этому курсу. */}
+                  <div className="md:col-span-2">
+                    <label className="block text-[12px] font-bold text-on-surface-variant mb-1">
+                      Филиал обучения (если отличается)
+                    </label>
+                    <select
+                      value={addForm.service_branch_id}
+                      onChange={(e) => setAddForm((f) => ({ ...f, service_branch_id: e.target.value }))}
+                      className="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    >
+                      <option value="">Тот же, что и филиал договора</option>
+                      {branches
+                        .filter((b) => String(b.id) !== String(addForm.branch_id))
+                        .map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name || b.city}
+                          </option>
+                        ))}
+                    </select>
+                    <p className="text-[11px] text-on-surface-variant mt-1">
+                      Договор останется за филиалом, указанным выше. Если выбрать здесь другой филиал,
+                      именно он сможет назначать ученику занятия по этому курсу, а сам ученик появится
+                      в нём с пометкой «Иногородний».
+                    </p>
+                  </div>
+
                   <div className="md:col-span-2">
                     <label className="block text-[12px] font-bold text-on-surface-variant mb-1">Сумма, ₽ *</label>
                     <input

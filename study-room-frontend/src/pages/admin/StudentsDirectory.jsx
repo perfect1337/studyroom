@@ -229,6 +229,16 @@ export default function StudentsDirectory({ role }) {
                   const avg = studentEnrollments.length
                     ? Math.round(studentEnrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / studentEnrollments.length)
                     : 0;
+                  // "Иногородний"/переданный ученик — хотя бы одна запись на
+                  // курс (enrollment.branch_id, филиал ОКАЗАНИЯ УСЛУГИ) не
+                  // совпадает с домашним филиалом ученика (st.branch_id).
+                  // Это не зависит от того, кому виден сам договор (см.
+                  // contracts-service, service_branch_id) — enrollment уже
+                  // создан в правильном филиале независимо от этого.
+                  const allStudentEnrollments = enrollmentsByStudent[st.id] ?? [];
+                  const isVisiting =
+                    st?.branch_id != null &&
+                    allStudentEnrollments.some((e) => e.branch_id != null && Number(e.branch_id) !== Number(st.branch_id));
                   return (
                     <tr
                       key={contract ? `contract-${contract.id}` : `student-${st.id}`}
@@ -241,7 +251,17 @@ export default function StudentsDirectory({ role }) {
                             {initials(st)}
                           </div>
                           <div>
-                            <div className="font-bold text-on-surface">{fullName(st)}</div>
+                            <div className="font-bold text-on-surface flex items-center gap-2">
+                              {fullName(st)}
+                              {isVisiting && (
+                                <span
+                                  title="Домашний филиал ученика — другой; здесь он учится по договору на этот курс"
+                                  className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-700"
+                                >
+                                  Иногородний
+                                </span>
+                              )}
+                            </div>
                             <div className="text-[12px] text-on-surface-variant">{st.class_info || "—"}</div>
                           </div>
                         </div>

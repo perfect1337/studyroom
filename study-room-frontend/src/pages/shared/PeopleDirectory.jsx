@@ -328,16 +328,25 @@ export default function PeopleDirectory({ role }) {
 
   const { page, setPage, pageItems: pagedPeople } = usePagination(filteredPeople, PAGE_SIZE);
 
-  // "Иногородний" ученик — договор/зачисление оформлены в этом филиале
-  // (contract.branch_id / e.branch_id, т.е. филиал ОКАЗАНИЯ УСЛУГИ), но
-  // домашний филиал ученика (p.branch_id, User.BranchID) другой — например,
-  // в его домашнем филиале нет учителя по нужному предмету, и он ездит на
-  // этот предмет в другой филиал. Такого ученика branch_owner видит и может
-  // им управлять (сам выдал договор), но его не стоит путать со "своими"
-  // домашними учениками ни визуально, ни в статистике филиала.
-  function isVisiting(p, contract) {
-    if (!showContracts || !contract || p?.branch_id == null || contract.branch_id == null) return false;
-    return Number(contract.branch_id) !== Number(p.branch_id);
+  // "Иногородний"/переданный ученик — хотя бы одна из его записей на курс
+  // (enrollment.branch_id, т.е. филиал ОКАЗАНИЯ УСЛУГИ) относится к ЭТОМУ
+  // филиалу, а домашний филиал ученика (p.branch_id, User.BranchID) —
+  // другой. Раньше это сравнивалось через contract.branch_id, но договор
+  // теперь необязательно виден второму филиалу (см. contracts-service,
+  // ContractHandler.Create/service_branch_id): branch_owner филиала А
+  // может оформить договор на своё имя, а обучение (service_branch_id)
+  // указать в филиале Б — тогда сам договор branch_owner Б не видит и не
+  // администрирует, но enrollment (и, соответственно, право назначать
+  // занятия) достаётся именно ему. enrollment.branch_id в таком случае
+  // будет равен Б независимо от того, кто и где выдал договор — поэтому
+  // сравниваем по enrollments, а не по contract, это работает для обоих
+  // сценариев: и "owner вручную выдал договор в чужом филиале", и "передача
+  // ученика в другой филиал branch_owner'ом".
+  function isVisiting(p, enrollmentsForRow) {
+    if (!showContracts || p?.branch_id == null) return false;
+    return (enrollmentsForRow ?? []).some(
+      (e) => e.branch_id != null && Number(e.branch_id) !== Number(p.branch_id)
+    );
   }
 
   // Общие для десктопной таблицы и мобильных карточек вычисления по каждой
@@ -349,13 +358,18 @@ export default function PeopleDirectory({ role }) {
         const avg = pEnrollments.length
           ? Math.round(pEnrollments.reduce((s, e) => s + (e.progress_pct ?? 0), 0) / pEnrollments.length)
           : 0;
+        const effectiveActiveEnrollments = activeEnrollments ?? pEnrollments;
         return {
           p,
           pEnrollments,
           avg,
           contract,
-          activeEnrollments: activeEnrollments ?? pEnrollments,
-          visiting: isVisiting(p, contract),
+          activeEnrollments: effectiveActiveEnrollments,
+          // Смотрим по ВСЕМ активным записям ученика на курсы, а не только по
+          // курсу текущего договора — переданный/иногородний статус не должен
+          // зависеть от того, какой из нескольких договоров ученика оказался
+          // приоритетным для этой строки (см. isVisiting выше).
+          visiting: isVisiting(p, effectiveActiveEnrollments),
         };
       }),
     [pagedPeople]
@@ -365,7 +379,12 @@ export default function PeopleDirectory({ role }) {
   // иначе владелец филиала видел бы в "Всего учеников" чужих домашних
   // учеников, которых он временно ведёт по одному предмету.
   const visitingCount = useMemo(
-    () => (isBranchOwner ? filteredPeople.filter(({ p, contract }) => isVisiting(p, contract)).length : 0),
+    () =>
+      isBranchOwner
+        ? filteredPeople.filter(({ p, activeEnrollments, pEnrollments }) =>
+            isVisiting(p, activeEnrollments ?? pEnrollments)
+          ).length
+        : 0,
     [filteredPeople, isBranchOwner]
   );
 

@@ -116,6 +116,16 @@ export default function StudentDetail({ role = "parent" }) {
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
 
+  // Иногородний/переданный ученик в контексте текущего профиля: хотя бы
+  // одна его запись на курс (enrollment.branch_id) отличается от домашнего
+  // филиала (child.branch_id). Не привязано к тому, кто выдал договор
+  // (см. contracts-service, service_branch_id) — enrollment уже несёт
+  // правильный филиал ОКАЗАНИЯ УСЛУГИ независимо от видимости договора.
+  const isVisitingHere = useMemo(() => {
+    if (!child || child.branch_id == null) return false;
+    return enrollments.some((e) => e.branch_id != null && Number(e.branch_id) !== Number(child.branch_id));
+  }, [child, enrollments]);
+
   const canResetCredentials = role === "parent" || role === "owner";
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetStatus, setResetStatus] = useState("");
@@ -385,7 +395,17 @@ export default function StudentDetail({ role = "parent" }) {
             </div>
             <div className="flex-1 text-center md:text-left">
               <div className="flex flex-col md:flex-row md:items-end gap-2 mb-1">
-                <h2 className="font-headline-md text-headline-md text-on-surface">{child ? fullName(child) : "—"}</h2>
+                <h2 className="font-headline-md text-headline-md text-on-surface flex items-center gap-2 justify-center md:justify-start">
+                  {child ? fullName(child) : "—"}
+                  {isVisitingHere && (
+                    <span
+                      title="Домашний филиал ученика — другой; здесь он учится по договору на этот курс"
+                      className="px-2 py-0.5 rounded text-[11px] font-bold uppercase bg-amber-100 text-amber-700"
+                    >
+                      Иногородний
+                    </span>
+                  )}
+                </h2>
               </div>
               <p className="text-on-surface-variant font-body-md mb-4">
                 {[

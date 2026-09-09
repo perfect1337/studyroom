@@ -625,7 +625,30 @@ func canViewUser(r *http.Request, h *UserHandler, claims *auth.Claims, target *m
 		return true
 	}
 	if claims.Role == models.RoleBranchOwner {
-		return target.BranchID != nil && claims.BranchID != nil && *target.BranchID == *claims.BranchID
+		if target.BranchID != nil && claims.BranchID != nil && *target.BranchID == *claims.BranchID {
+			return true
+		}
+		// "Иногородний"/переданный ученик: домашний филиал (target.BranchID)
+		// другой, но у него есть active enrollment в филиале текущего
+		// branch_owner (тот же механизм, что и List/visitingStudents, см.
+		// academicclient.StudentIDsByBranch) — например, договор оформлен и
+		// хранится в его домашнем филиале, а заниматься по нему ребёнок
+		// будет здесь (contracts-service, service_branch_id). Без этой
+		// проверки branch_owner видел бы такого ученика в списке "Ученики",
+		// но не мог бы открыть его карточку/назначить занятие.
+		if target.Role == models.RoleStudent && h.academicClient != nil && claims.BranchID != nil {
+			bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+			if bearer != "" {
+				if ids, err := h.academicClient.StudentIDsByBranch(r.Context(), bearer, *claims.BranchID); err == nil {
+					for _, id := range ids {
+						if id == target.ID {
+							return true
+						}
+					}
+				}
+			}
+		}
+		return false
 	}
 	if claims.Role == models.RoleParent {
 		if target.Role == models.RoleStudent {
