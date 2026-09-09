@@ -117,6 +117,13 @@ export default function FinanceDirectory({ role }) {
   // branch_owner все договоры и так относятся к его единственному филиалу,
   // сервер сам это гарантирует, поэтому фильтр ему не нужен).
   const [branchFilter, setBranchFilter] = useState("");
+  // Остальные фильтры списка — статус договора, статус оплаты и курс —
+  // доступны и owner, и branch_owner одинаково (см. filteredContracts):
+  // список договоров каждый видит в своих границах (вся сеть/свой филиал),
+  // а сузить его по статусу/оплате/курсу полезно в обоих случаях.
+  const [statusFilter, setStatusFilter] = useState("");
+  const [paymentFilter, setPaymentFilter] = useState("");
+  const [courseFilter, setCourseFilter] = useState("");
 
   const [editContract, setEditContract] = useState(null);
   const [editForm, setEditForm] = useState(null);
@@ -204,8 +211,11 @@ export default function FinanceDirectory({ role }) {
       isOwner && branchFilter
         ? base.filter((c) => String(c.branch_id) === String(branchFilter))
         : base;
-    if (!query) return byBranch;
-    return byBranch.filter((c) => {
+    const byStatus = statusFilter ? byBranch.filter((c) => c.status === statusFilter) : byBranch;
+    const byPayment = paymentFilter ? byStatus.filter((c) => c.payment_status === paymentFilter) : byStatus;
+    const byCourse = courseFilter ? byPayment.filter((c) => String(c.course_id) === String(courseFilter)) : byPayment;
+    if (!query) return byCourse;
+    return byCourse.filter((c) => {
       const student = studentsById[c.student_id];
       const parent = parentsById[c.parent_id];
       const studentName = student ? fullName(student).toLowerCase() : "";
@@ -220,7 +230,35 @@ export default function FinanceDirectory({ role }) {
         `№${contractNo}`.includes(query)
       );
     });
-  }, [contracts, expiringContracts, search, showExpiringSoon, studentsById, parentsById, isOwner, branchFilter, branchesById]);
+  }, [
+    contracts,
+    expiringContracts,
+    search,
+    showExpiringSoon,
+    studentsById,
+    parentsById,
+    isOwner,
+    branchFilter,
+    branchesById,
+    statusFilter,
+    paymentFilter,
+    courseFilter,
+  ]);
+
+  // Есть ли хоть один активный фильтр/поиск — управляет видимостью кнопки
+  // "Сбросить фильтры" в шапке таблицы (см. ниже).
+  const hasActiveFilters = Boolean(
+    search.trim() || showExpiringSoon || branchFilter || statusFilter || paymentFilter || courseFilter
+  );
+
+  function resetFilters() {
+    setSearch("");
+    setShowExpiringSoon(false);
+    setBranchFilter("");
+    setStatusFilter("");
+    setPaymentFilter("");
+    setCourseFilter("");
+  }
 
   const { page: contractsPage, setPage: setContractsPage, pageItems: pagedContracts } = usePagination(
     filteredContracts,
@@ -235,7 +273,7 @@ export default function FinanceDirectory({ role }) {
   // чтобы не попадать на пустую страницу после сужения списка.
   useEffect(() => {
     setContractsPage(1);
-  }, [search, showExpiringSoon, branchFilter, setContractsPage]);
+  }, [search, showExpiringSoon, branchFilter, statusFilter, paymentFilter, courseFilter, setContractsPage]);
 
   function openAddModal() {
     setAddForm(
@@ -459,25 +497,40 @@ export default function FinanceDirectory({ role }) {
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           {/* Основная таблица со всеми договорами */}
           <div className="xl:col-span-2 bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(0,0,0,0.05)] border border-surface-container-high overflow-hidden">
-            <div className="p-6 border-b border-surface-container-high flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="font-headline-sm text-headline-sm text-on-surface">Все договоры</h4>
-                {showExpiringSoon && (
-                  <button
-                    type="button"
-                    onClick={() => setShowExpiringSoon(false)}
-                    className="flex items-center gap-1 text-xs font-bold text-warning bg-warning/20 px-2 py-1 rounded-full hover:bg-warning/30 transition-colors"
-                  >
-                    Истекают через {EXPIRING_DAYS_THRESHOLD} дней
-                    <span className="material-symbols-outlined text-[14px]">close</span>
-                  </button>
-                )}
+            <div className="p-6 border-b border-surface-container-high flex flex-col gap-3">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="font-headline-sm text-headline-sm text-on-surface">Все договоры</h4>
+                  {showExpiringSoon && (
+                    <button
+                      type="button"
+                      onClick={() => setShowExpiringSoon(false)}
+                      className="flex items-center gap-1 text-xs font-bold text-warning bg-warning/20 px-2 py-1 rounded-full hover:bg-warning/30 transition-colors"
+                    >
+                      Истекают через {EXPIRING_DAYS_THRESHOLD} дней
+                      <span className="material-symbols-outlined text-[14px]">close</span>
+                    </button>
+                  )}
+                </div>
+                <div className="relative w-full md:w-auto">
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">
+                    search
+                  </span>
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Поиск по ФИО или № договора..."
+                    className="bg-surface border border-outline-variant rounded-lg pl-9 pr-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none w-full md:w-72"
+                  />
+                </div>
               </div>
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
-                {/* Фильтр по филиалу — только у owner: у него один список
-                    договоров на всю сеть, поэтому нужен способ сузить его
-                    до конкретного филиала. У branch_owner фильтр скрыт —
-                    в его списке и так только договоры своего филиала. */}
+
+              {/* Фильтры списка: по филиалу (только owner — у branch_owner
+                  список и так ограничен своим филиалом сервером), курсу,
+                  статусу договора и статусу оплаты — доступны обеим ролям
+                  одинаково (см. filteredContracts). */}
+              <div className="flex flex-wrap items-center gap-2">
                 {isOwner && (
                   <div className="relative">
                     <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px] pointer-events-none">
@@ -486,7 +539,7 @@ export default function FinanceDirectory({ role }) {
                     <select
                       value={branchFilter}
                       onChange={(e) => setBranchFilter(e.target.value)}
-                      className="appearance-none bg-surface border border-outline-variant rounded-lg pl-9 pr-8 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none w-full sm:w-48"
+                      className="appearance-none bg-surface border border-outline-variant rounded-lg pl-9 pr-8 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none w-full sm:w-44"
                       style={{ appearance: "none", WebkitAppearance: "none", MozAppearance: "none", backgroundImage: "none" }}
                     >
                       <option value="">Все филиалы</option>
@@ -499,18 +552,77 @@ export default function FinanceDirectory({ role }) {
                     </span>
                   </div>
                 )}
-                <div className="relative w-full sm:w-auto">
-                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">
-                    search
+
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px] pointer-events-none">
+                    menu_book
                   </span>
-                  <input
-                    type="text"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Поиск по ФИО или № договора..."
-                    className="bg-surface border border-outline-variant rounded-lg pl-9 pr-4 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none w-full md:w-72"
-                  />
+                  <select
+                    value={courseFilter}
+                    onChange={(e) => setCourseFilter(e.target.value)}
+                    className="appearance-none bg-surface border border-outline-variant rounded-lg pl-9 pr-8 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none w-full sm:w-44"
+                    style={{ appearance: "none", WebkitAppearance: "none", MozAppearance: "none", backgroundImage: "none" }}
+                  >
+                    <option value="">Все курсы</option>
+                    {courses.map((c) => (
+                      <option key={c.id} value={c.id}>{c.title || c.subject}</option>
+                    ))}
+                  </select>
+                  <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px] pointer-events-none">
+                    expand_more
+                  </span>
                 </div>
+
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px] pointer-events-none">
+                    assignment_turned_in
+                  </span>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="appearance-none bg-surface border border-outline-variant rounded-lg pl-9 pr-8 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none w-full sm:w-44"
+                    style={{ appearance: "none", WebkitAppearance: "none", MozAppearance: "none", backgroundImage: "none" }}
+                  >
+                    <option value="">Любой статус</option>
+                    {Object.entries(CONTRACT_STATUS_LABEL).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                  <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px] pointer-events-none">
+                    expand_more
+                  </span>
+                </div>
+
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px] pointer-events-none">
+                    payments
+                  </span>
+                  <select
+                    value={paymentFilter}
+                    onChange={(e) => setPaymentFilter(e.target.value)}
+                    className="appearance-none bg-surface border border-outline-variant rounded-lg pl-9 pr-8 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none w-full sm:w-44"
+                    style={{ appearance: "none", WebkitAppearance: "none", MozAppearance: "none", backgroundImage: "none" }}
+                  >
+                    <option value="">Любая оплата</option>
+                    {Object.entries(PAYMENT_STATUS_LABEL).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                  <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px] pointer-events-none">
+                    expand_more
+                  </span>
+                </div>
+
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={resetFilters}
+                    className="flex items-center gap-1 text-label-md font-label-md text-on-surface-variant hover:text-error px-2 py-2 rounded-lg transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">filter_alt_off</span>
+                    Сбросить фильтры
+                  </button>
+                )}
               </div>
             </div>
             {/* Полная таблица показывается только там, где реально хватает
