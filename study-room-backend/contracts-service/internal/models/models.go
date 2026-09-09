@@ -50,21 +50,36 @@ const (
 // голое "2026-08-01" из примеров api-contracts.md — то же расхождение уже
 // есть в academic-service (Enrollment.StartDate) и здесь оставлено для
 // консистентности между сервисами, а не исправлено половинчато в одном месте.
+//
+// ServiceBranchID — "филиал обучения", если он отличается от BranchID
+// (филиала, который административно выдал и ведёт договор — оплата,
+// продление, расторжение). Например, branch_owner филиала А оформляет
+// договор на себя (BranchID=А), но ученик реально будет заниматься в
+// филиале Б (например, там есть нужный предмет/преподаватель) —
+// ServiceBranchID=Б. Именно ServiceBranchID (а не BranchID) уходит в
+// событие contract.created как branch_id создаваемого в Academic Service
+// enrollment (см. ContractHandler.Create, events.Publisher.ContractCreated)
+// — это и есть тот механизм, который решает право назначать занятия этому
+// ученику: оно достаётся владельцу филиала Б, а не А (см.
+// academic-service/internal/handlers/lesson_handler.go, branchOwnerCanTeach).
+// nil, если обучение проходит в том же филиале, что и сам договор
+// (обычный случай, ничего не "передано").
 type Contract struct {
-	ID             int64          `json:"id"`
-	ContractNumber string         `json:"contract_number"`
-	StudentID      int64          `json:"student_id"`
-	ParentID       int64          `json:"parent_id"`
-	CourseID       int64          `json:"course_id"`
-	BranchID       int64          `json:"branch_id"`
-	Amount         float64        `json:"amount"`
-	PaymentStatus  PaymentStatus  `json:"payment_status"`
-	Status         ContractStatus `json:"status"`
-	StartDate      time.Time      `json:"start_date"`
-	EndDate        time.Time      `json:"end_date"`
-	CreatedAt      time.Time      `json:"created_at"`
-	DeletedAt      *time.Time     `json:"deleted_at,omitempty"`
-	DeletedBy      *int64         `json:"deleted_by,omitempty"`
+	ID              int64          `json:"id"`
+	ContractNumber  string         `json:"contract_number"`
+	StudentID       int64          `json:"student_id"`
+	ParentID        int64          `json:"parent_id"`
+	CourseID        int64          `json:"course_id"`
+	BranchID        int64          `json:"branch_id"`
+	ServiceBranchID *int64         `json:"service_branch_id,omitempty"`
+	Amount          float64        `json:"amount"`
+	PaymentStatus   PaymentStatus  `json:"payment_status"`
+	Status          ContractStatus `json:"status"`
+	StartDate       time.Time      `json:"start_date"`
+	EndDate         time.Time      `json:"end_date"`
+	CreatedAt       time.Time      `json:"created_at"`
+	DeletedAt       *time.Time     `json:"deleted_at,omitempty"`
+	DeletedBy       *int64         `json:"deleted_by,omitempty"`
 }
 
 // ContractExpiry — облегчённая версия для 3.3a (branch_owner/parent):
@@ -81,23 +96,25 @@ type ContractExpiry struct {
 // показать управляющему филиалом даты и статус договора ученика
 // в общем списке, не открывая каждый договор по отдельности.
 type ContractSummary struct {
-	ID        int64          `json:"id"`
-	StudentID int64          `json:"student_id"`
-	CourseID  int64          `json:"course_id"`
-	BranchID  int64          `json:"branch_id"`
-	Status    ContractStatus `json:"status"`
-	StartDate time.Time      `json:"start_date"`
-	EndDate   time.Time      `json:"end_date"`
+	ID              int64          `json:"id"`
+	StudentID       int64          `json:"student_id"`
+	CourseID        int64          `json:"course_id"`
+	BranchID        int64          `json:"branch_id"`
+	ServiceBranchID *int64         `json:"service_branch_id,omitempty"`
+	Status          ContractStatus `json:"status"`
+	StartDate       time.Time      `json:"start_date"`
+	EndDate         time.Time      `json:"end_date"`
 }
 
 func NewContractSummary(c *Contract) ContractSummary {
 	return ContractSummary{
-		ID:        c.ID,
-		StudentID: c.StudentID,
-		CourseID:  c.CourseID,
-		BranchID:  c.BranchID,
-		Status:    c.Status,
-		StartDate: c.StartDate,
-		EndDate:   c.EndDate,
+		ID:              c.ID,
+		StudentID:       c.StudentID,
+		CourseID:        c.CourseID,
+		BranchID:        c.BranchID,
+		ServiceBranchID: c.ServiceBranchID,
+		Status:          c.Status,
+		StartDate:       c.StartDate,
+		EndDate:         c.EndDate,
 	}
 }

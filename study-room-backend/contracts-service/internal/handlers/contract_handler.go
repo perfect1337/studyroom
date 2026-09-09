@@ -36,6 +36,14 @@ type createContractRequest struct {
 	Amount    float64 `json:"amount"`
 	StartDate string  `json:"start_date"`
 	EndDate   string  `json:"end_date"`
+	// ServiceBranchID — "филиал обучения", если он отличается от BranchID
+	// (см. FinanceDirectory.jsx, поле "Филиал обучения (если отличается)" и
+	// models.Contract.ServiceBranchID). Разрешён и для branch_owner: сам
+	// договор всё равно останется за его собственным BranchID (это не даёт
+	// branch_owner административных прав над чужим филиалом), а вот право
+	// назначать занятия по этому договору перейдёт владельцу указанного
+	// здесь филиала — см. комментарий у h.events.ContractCreated ниже.
+	ServiceBranchID *int64 `json:"service_branch_id"`
 }
 
 // Create — POST /contracts (api-contracts.md 3.1), roles: owner (любой
@@ -95,19 +103,41 @@ func (h *ContractHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contract, err := h.repo.Create(r.Context(), req.StudentID, req.ParentID, req.CourseID, req.BranchID, req.Amount, startDate, endDate)
+	// service_branch_id имеет смысл только когда он реально ОТЛИЧАЕТСЯ от
+	// branch_id — иначе это тот же самый филиал и никакой "передачи" не
+	// происходит. Нормализуем здесь же (0 или равенство branch_id -> nil),
+	// чтобы дальше по коду (repo.Create, events.ContractCreated) не нужно
+	// было повторять эту проверку.
+	var serviceBranchID *int64
+	if req.ServiceBranchID != nil && *req.ServiceBranchID != 0 && *req.ServiceBranchID != req.BranchID {
+		v := *req.ServiceBranchID
+		serviceBranchID = &v
+	}
+
+	contract, err := h.repo.Create(r.Context(), req.StudentID, req.ParentID, req.CourseID, req.BranchID, serviceBranchID, req.Amount, startDate, endDate)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to create contract")
 		return
 	}
 
 	startStr, endStr := req.StartDate, req.EndDate
-	// contract.BranchID — филиал, выдавший договор (см. выше: для
-	// branch_owner принудительно = claims.BranchID, а не домашний филиал
-	// ученика). Именно это становится enrollments.branch_id в Academic
-	// Service, что и позволяет филиалу-исполнителю управлять зачислением,
-	// даже если ученик административно приписан к другому филиалу.
-	h.events.ContractCreated(contract.ID, contract.StudentID, contract.CourseID, nil, &startStr, &endStr, contract.BranchID)
+	// enrollmentBranchID — филиал, который попадёт в enrollments.branch_id
+	// в Academic Service (событие contract.created), а значит и получит
+	// право назначать занятия этому ученику по этому курсу (см.
+	// academic-service/internal/handlers/lesson_handler.go,
+	// branchOwnerCanTeach). По умолчанию это contract.BranchID — филиал,
+	// выдавший договор (см. выше: для branch_owner принудительно =
+	// claims.BranchID, а не домашний филиал ученика). Но если задан
+	// ServiceBranchID ("филиал обучения" отличается от филиала договора —
+	// см. models.Contract.ServiceBranchID), именно он становится
+	// enrollments.branch_id: сам договор (оплата/продление/расторжение)
+	// остаётся у филиала, который его выдал, а назначать занятия сможет
+	// только владелец филиала обучения.
+	enrollmentBranchID := contract.BranchID
+	if contract.ServiceBranchID != nil {
+		enrollmentBranchID = *contract.ServiceBranchID
+	}
+	h.events.ContractCreated(contract.ID, contract.StudentID, contract.CourseID, nil, &startStr, &endStr, enrollmentBranchID)
 
 	writeJSON(w, http.StatusCreated, contract)
 }

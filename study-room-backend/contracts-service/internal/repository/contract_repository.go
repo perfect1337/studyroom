@@ -19,12 +19,12 @@ func NewContractRepository(pool *pgxpool.Pool) *ContractRepository {
 	return &ContractRepository{pool: pool}
 }
 
-const contractColumns = `id, contract_number, student_id, parent_id, course_id, branch_id, amount, payment_status, status, start_date, end_date, created_at, deleted_at, deleted_by`
+const contractColumns = `id, contract_number, student_id, parent_id, course_id, branch_id, service_branch_id, amount, payment_status, status, start_date, end_date, created_at, deleted_at, deleted_by`
 
 func scanContract(row pgx.Row) (*models.Contract, error) {
 	var c models.Contract
 	err := row.Scan(
-		&c.ID, &c.ContractNumber, &c.StudentID, &c.ParentID, &c.CourseID, &c.BranchID,
+		&c.ID, &c.ContractNumber, &c.StudentID, &c.ParentID, &c.CourseID, &c.BranchID, &c.ServiceBranchID,
 		&c.Amount, &c.PaymentStatus, &c.Status, &c.StartDate, &c.EndDate, &c.CreatedAt, &c.DeletedAt, &c.DeletedBy,
 	)
 	if err != nil {
@@ -39,7 +39,9 @@ func scanContract(row pgx.Row) (*models.Contract, error) {
 // Create — POST /contracts (api-contracts.md 3.1). status=active,
 // payment_status=unpaid по умолчанию. contract_number генерируется сразу
 // после вставки (нужен id) в формате SR-{год start_date}-{4 цифры id}.
-func (r *ContractRepository) Create(ctx context.Context, studentID, parentID, courseID, branchID int64, amount float64, startDate, endDate time.Time) (*models.Contract, error) {
+// serviceBranchID — см. models.Contract.ServiceBranchID; nil, если обучение
+// проходит в том же филиале, что и сам договор.
+func (r *ContractRepository) Create(ctx context.Context, studentID, parentID, courseID, branchID int64, serviceBranchID *int64, amount float64, startDate, endDate time.Time) (*models.Contract, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -48,9 +50,9 @@ func (r *ContractRepository) Create(ctx context.Context, studentID, parentID, co
 
 	var id int64
 	err = tx.QueryRow(ctx, `
-		INSERT INTO contracts (contract_number, student_id, parent_id, course_id, branch_id, amount, start_date, end_date)
-		VALUES ('', $1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-		studentID, parentID, courseID, branchID, amount, startDate, endDate,
+		INSERT INTO contracts (contract_number, student_id, parent_id, course_id, branch_id, service_branch_id, amount, start_date, end_date)
+		VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+		studentID, parentID, courseID, branchID, serviceBranchID, amount, startDate, endDate,
 	).Scan(&id)
 	if err != nil {
 		return nil, err
