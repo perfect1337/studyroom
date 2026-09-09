@@ -13,8 +13,10 @@ function formatTime(iso) {
 /**
  * Реальный колокольчик уведомлений (см. api-contracts.md, раздел 5):
  * GET /notifications, PATCH /notifications/{id}/read.
- * Опрашивает список каждые 30с, показывает бейдж с числом непрочитанных,
- * по клику на уведомление отмечает его прочитанным.
+ * Опрашивает список каждые 15с (плюс сразу при возврате фокуса на вкладку
+ * и при открытии самого колокольчика — см. useEffect'ы ниже), показывает
+ * бейдж с числом непрочитанных, по клику на уведомление отмечает его
+ * прочитанным.
  */
 export default function NotificationBell() {
   const [open, setOpen] = useState(false);
@@ -41,8 +43,26 @@ export default function NotificationBell() {
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 30000);
+    // Раз в 15с (было 30с) — на глаз ощутимо быстрее видно новые
+    // уведомления, не слишком нагружая сервер лишними запросами.
+    const interval = setInterval(load, 15000);
     return () => clearInterval(interval);
+  }, [load]);
+
+  // Если пользователь был на другой вкладке (или сворачивал окно), к его
+  // возвращению могло накопиться новое уведомление, которое интервал ещё
+  // не успел подтянуть, — обновляем сразу по возврату фокуса на вкладку,
+  // а не ждём следующего тика setInterval.
+  useEffect(() => {
+    function onVisibilityChange() {
+      if (document.visibilityState === "visible") load();
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onVisibilityChange);
+    };
   }, [load]);
 
   useEffect(() => {
@@ -103,7 +123,16 @@ export default function NotificationBell() {
   return (
     <div className="relative" ref={containerRef}>
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setOpen((v) => {
+            const next = !v;
+            // Открытие колокольчика — момент, когда пользователь явно
+            // проверяет уведомления: подтягиваем самые свежие сразу, а не
+            // показываем то, что успел закэшировать предыдущий тик интервала.
+            if (next) load();
+            return next;
+          });
+        }}
         className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full hover:bg-surface-container text-on-surface-variant relative"
         aria-label="Уведомления"
       >
