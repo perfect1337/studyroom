@@ -18,6 +18,13 @@ const MONTH_NAMES = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
   "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
 ];
+// Короткие названия месяцев — используются только для мелкой подписи
+// "чей это день" у дней соседнего месяца в шапке недельной сетки (см.
+// currentWeekMeta в ScheduleDirectory ниже).
+const MONTH_SHORT_NAMES = [
+  "янв.", "февр.", "март", "апр.", "май", "июнь",
+  "июль", "авг.", "сент.", "окт.", "нояб.", "дек.",
+];
 function pad(n) {
   return String(n).padStart(2, "0");
 }
@@ -207,7 +214,7 @@ function WeekLessonChip({ info, problem, selected, onClick }) {
  * Дни, не входящие в текущий месяц (края первой/последней недели), в
  * weekDays приходят как null — просто показываем пустую колонку без даты.
  */
-function WeekGrid({ weekDays, weekTimes, lessonsByDay, todayDay, lessonShortInfo, selectedLesson, onSelectLesson }) {
+function WeekGrid({ weekDays, weekMeta, weekTimes, lessonsByDay, todayDay, lessonShortInfo, selectedLesson, onSelectLesson }) {
   const [mobileDayIdx, setMobileDayIdx] = useState(0);
 
   useEffect(() => {
@@ -317,12 +324,26 @@ function WeekGrid({ weekDays, weekTimes, lessonsByDay, todayDay, lessonShortInfo
           <thead>
             <tr>
               <th className="w-16" />
-              {weekDays.map((day, idx) => (
-                <th key={idx} className="text-center pb-2 font-label-md text-label-md text-outline">
-                  <div>{WEEKDAYS[idx]}</div>
-                  {day && <div className="text-[11px] font-bold text-on-surface-variant">{day}</div>}
-                </th>
-              ))}
+              {weekDays.map((day, idx) => {
+                const meta = weekMeta?.[idx];
+                return (
+                  <th key={idx} className="text-center pb-2 font-label-md text-label-md text-outline">
+                    <div>{WEEKDAYS[idx]}</div>
+                    {day ? (
+                      <div className="text-[11px] font-bold text-on-surface-variant">{day}</div>
+                    ) : meta?.monthShort ? (
+                      // День соседнего месяца (край первой/последней недели
+                      // текущего месяца) — сюда не попадают занятия (см.
+                      // комментарий у WeekGrid выше), но подпись показывает,
+                      // какое у него число и к какому месяцу он относится,
+                      // чтобы пустая колонка не выглядела как ошибка.
+                      <div className="text-[9px] font-medium text-on-surface-variant/60 whitespace-nowrap">
+                        {meta.day} {meta.monthShort}
+                      </div>
+                    ) : null}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -1084,6 +1105,32 @@ export default function ScheduleDirectory({ role }) {
 
   const currentWeek = monthWeeks[Math.min(weekIndex, monthWeeks.length - 1)] ?? [];
 
+  // currentWeekMeta — как currentWeek, но без обрезания дней соседнего
+  // месяца: для каждой из 7 колонок недели содержит фактическое число
+  // месяца, а для дней, которые в currentWeek обрезаны в null (края первой/
+  // последней недели месяца), — ещё и короткое название месяца, которому
+  // такой день принадлежит. Сами эти дни по-прежнему не участвуют в
+  // расписании (в currentWeek/lessonsByDay они остаются null) — meta нужна
+  // исключительно для мелкой подписи "28 сент." в шапке недельной сетки на
+  // ПК, чтобы было видно, что неделя частично относится к другому месяцу.
+  const currentWeekMeta = React.useMemo(() => {
+    const row = Math.min(weekIndex, monthWeeks.length - 1);
+    const prevMonthIndex = viewMonth === 0 ? 11 : viewMonth - 1;
+    const prevMonthYear = viewMonth === 0 ? viewYear - 1 : viewYear;
+    const daysInPrevMonth = new Date(prevMonthYear, prevMonthIndex + 1, 0).getDate();
+    const nextMonthIndex = viewMonth === 11 ? 0 : viewMonth + 1;
+    return Array.from({ length: 7 }, (_, c) => {
+      const rawDay = row * 7 + c - firstWeekday + 1;
+      if (rawDay >= 1 && rawDay <= daysInMonth) {
+        return { day: rawDay, monthShort: null };
+      }
+      if (rawDay < 1) {
+        return { day: daysInPrevMonth + rawDay, monthShort: MONTH_SHORT_NAMES[prevMonthIndex] };
+      }
+      return { day: rawDay - daysInMonth, monthShort: MONTH_SHORT_NAMES[nextMonthIndex] };
+    });
+  }, [weekIndex, monthWeeks.length, firstWeekday, daysInMonth, viewMonth, viewYear]);
+
   // pendingDuplicateInfo — заголовок/описание/сама функция для того из трёх
   // сценариев дублирования (см. pendingDuplicate выше), который сейчас
   // ожидает подтверждения в ConfirmToggleModal. Count пересчитывается на
@@ -1643,6 +1690,7 @@ export default function ScheduleDirectory({ role }) {
             {isWeekMode && (
               <WeekGrid
                 weekDays={currentWeek}
+                weekMeta={currentWeekMeta}
                 weekTimes={weekTimes}
                 lessonsByDay={lessonsByDay}
                 todayDay={todayDay}
