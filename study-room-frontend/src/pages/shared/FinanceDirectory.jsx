@@ -651,9 +651,7 @@ export default function FinanceDirectory({ role }) {
                   <tr className="bg-surface-container-low/50">
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">№</th>
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Ученик / Родитель</th>
-                    {isOwner && (
-                      <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Филиал</th>
-                    )}
+                    <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Филиал</th>
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Курс</th>
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Период</th>
                     <th className="px-6 py-4 font-label-md text-label-md text-on-surface-variant border-b border-surface-container-high">Сумма</th>
@@ -664,7 +662,7 @@ export default function FinanceDirectory({ role }) {
                 <tbody className="divide-y divide-surface-container-high">
                   {!loading && filteredContracts.length === 0 && (
                     <tr>
-                      <td colSpan={isOwner ? 8 : 7} className="px-6 py-8 text-center text-on-surface-variant">
+                      <td colSpan={8} className="px-6 py-8 text-center text-on-surface-variant">
                         {contracts.length === 0 ? "Договоров пока нет" : "Ничего не найдено"}
                       </td>
                     </tr>
@@ -685,19 +683,17 @@ export default function FinanceDirectory({ role }) {
                           </div>
                           <div className="text-xs text-on-surface-variant">{parent ? fullName(parent) : `Родитель #${c.parent_id}`}</div>
                         </td>
-                        {isOwner && (
-                          <td className="px-6 py-4 font-body-md text-body-md text-on-surface-variant">
-                            {branchNameFor(c)}
-                            {c.service_branch_id != null && Number(c.service_branch_id) !== Number(c.branch_id) && (
-                              <div
-                                className="text-[11px] font-bold text-amber-700 mt-0.5"
-                                title="Ребёнок занимается по этому договору в другом филиале"
-                              >
-                                → {branchesById[c.service_branch_id]?.name ?? `Филиал #${c.service_branch_id}`} (переведён)
-                              </div>
-                            )}
-                          </td>
-                        )}
+                        <td className="px-6 py-4 font-body-md text-body-md text-on-surface-variant">
+                          {branchNameFor(c)}
+                          {c.service_branch_id != null && Number(c.service_branch_id) !== Number(c.branch_id) && (
+                            <div
+                              className="text-[11px] font-bold text-amber-700 mt-0.5"
+                              title="Ребёнок занимается по этому договору в другом филиале"
+                            >
+                              → {branchesById[c.service_branch_id]?.name ?? `Филиал #${c.service_branch_id}`} (переведён)
+                            </div>
+                          )}
+                        </td>
                         <td className="px-6 py-4 font-body-md text-body-md text-on-surface-variant">
                           {courseNameFor(c)}
                           {c.service_branch_id != null && Number(c.service_branch_id) !== Number(c.branch_id) && (
@@ -747,12 +743,10 @@ export default function FinanceDirectory({ role }) {
                       </div>
                       <span className="shrink-0 text-xs text-on-surface-variant">№{c.id}</span>
                     </div>
-                    {isOwner && (
-                      <div className="flex items-center gap-1 text-[12px] text-on-surface-variant">
-                        <span className="material-symbols-outlined text-[14px]">storefront</span>
-                        <span className="truncate">{branchNameFor(c)}</span>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1 text-[12px] text-on-surface-variant">
+                      <span className="material-symbols-outlined text-[14px]">storefront</span>
+                      <span className="truncate">{branchNameFor(c)}</span>
+                    </div>
                     <div className="flex items-center gap-1 text-[12px] text-on-surface-variant">
                       <span className="material-symbols-outlined text-[14px]">menu_book</span>
                       <span className="truncate">{courseNameFor(c)}</span>
