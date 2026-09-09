@@ -1901,6 +1901,7 @@ export default function ScheduleDirectory({ role }) {
         tutors={people.tutors}
         courses={courses}
         canReassignTutor
+        isOwner={isOwner}
         onClose={() => setEditingLesson(null)}
         onSaved={handleLessonSaved}
         onCancelled={handleLessonCancelled}

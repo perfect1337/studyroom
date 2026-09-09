@@ -51,6 +51,7 @@ export default function EditLessonModal({
   tutors = [],
   courses = [],
   canReassignTutor = false,
+  isOwner = false,
   onClose,
   onSaved,
   onCancelled,
@@ -79,10 +80,50 @@ export default function EditLessonModal({
   const [selectedStudentId, setSelectedStudentId] = useState("");
 
   // В выборе преподавателя показываем только действующих сотрудников.
-  const availableTutors = useMemo(
+  const activeTutors = useMemo(
     () => (tutors ?? []).filter((t) => t && t.is_active === true),
     [tutors]
   );
+
+  // Та же логика, что и в CreateIndividualLessonModal/CreateGroupLessonModal
+  // при создании занятия: branch_owner может назначать занятие только по
+  // курсам, которые реально ведёт выбранный преподаватель (course.tutor_ids,
+  // таблица course_tutors), и наоборот — выбирать только тех преподавателей,
+  // что закреплены за выбранным курсом. Раньше эта модалка не знала про
+  // course_tutors вообще, и позволяла (в отличие от создания занятия)
+  // назначить занятие по курсу преподавателю, который его не ведёт. Owner
+  // (сеть филиалов целиком), как и при создании, видит полный список без
+  // ограничений — он и управляет самими назначениями course_tutors.
+  const availableCourses = useMemo(() => {
+    if (isOwner || !canReassignTutor || !form?.tutor_id) return courses;
+    const filtered = courses.filter((c) => (c.tutor_ids || []).some((id) => String(id) === String(form.tutor_id)));
+    // Если у уже сохранённого занятия курс и преподаватель не согласованы
+    // (легаси-данные, созданные до этой проверки) — не прячем текущий курс
+    // из списка молча, иначе форма выглядела бы так, будто выбор сбросился
+    // сам по себе. Сохранение при этом всё равно потребует явно привести
+    // пару в соответствие (см. проверку в handleSave), если тьютор/курс
+    // реально меняются.
+    if (form.course_id && !filtered.some((c) => String(c.id) === String(form.course_id))) {
+      const current = courses.find((c) => String(c.id) === String(form.course_id));
+      if (current) return [...filtered, current];
+    }
+    return filtered;
+  }, [courses, isOwner, canReassignTutor, form?.tutor_id, form?.course_id]);
+
+  const availableTutors = useMemo(() => {
+    if (isOwner || !form?.course_id) return activeTutors;
+    const course = courses.find((c) => String(c.id) === String(form.course_id));
+    if (!course) return activeTutors;
+    const ids = new Set((course.tutor_ids || []).map(String));
+    const filtered = activeTutors.filter((t) => ids.has(String(t.id)));
+    // Та же логика сохранения видимости текущего (возможно, легаси-невалидного)
+    // выбора, что и в availableCourses выше.
+    if (form.tutor_id && !filtered.some((t) => String(t.id) === String(form.tutor_id))) {
+      const current = activeTutors.find((t) => String(t.id) === String(form.tutor_id));
+      if (current) return [...filtered, current];
+    }
+    return filtered;
+  }, [activeTutors, isOwner, form?.course_id, form?.tutor_id, courses]);
 
   useEffect(() => {
     if (open && lesson) {
@@ -238,12 +279,38 @@ export default function EditLessonModal({
       // с новым курсом, как и при создании занятия.
       const nextCourse = courses.find((c) => String(c.id) === String(value));
       const nextGroupType = nextCourse?.format === "group" ? "group" : "individual";
-      setForm((f) => ({
-        ...f,
-        course_id: value,
-        group_type: nextGroupType,
-        topic: nextCourse?.title || nextCourse?.subject || f.topic,
-      }));
+      setForm((f) => {
+        const next = {
+          ...f,
+          course_id: value,
+          group_type: nextGroupType,
+          topic: nextCourse?.title || nextCourse?.subject || f.topic,
+        };
+        // Смена курса branch_owner'ом может сделать текущего выбранного
+        // преподавателя невалидным для нового курса (он его не ведёт) —
+        // сбрасываем выбор, чтобы нельзя было сохранить несовместимую пару
+        // course_id/tutor_id (та же защита, что и в CreateIndividualLessonModal).
+        if (!isOwner && canReassignTutor && value && f.tutor_id) {
+          const ids = new Set((nextCourse?.tutor_ids || []).map(String));
+          if (!ids.has(String(f.tutor_id))) next.tutor_id = "";
+        }
+        return next;
+      });
+      return;
+    }
+    if (field === "tutor_id") {
+      setForm((f) => {
+        const next = { ...f, tutor_id: value };
+        // Симметричная защита: смена преподавателя branch_owner'ом может
+        // сделать текущий выбранный курс невалидным (преподаватель его не
+        // ведёт) — сбрасываем курс, а не оставляем несовместимую пару.
+        if (!isOwner && canReassignTutor && value && f.course_id) {
+          const course = courses.find((c) => String(c.id) === String(f.course_id));
+          const ids = new Set((course?.tutor_ids || []).map(String));
+          if (!ids.has(String(value))) next.course_id = "";
+        }
+        return next;
+      });
       return;
     }
     setForm((f) => ({ ...f, [field]: value }));
@@ -296,9 +363,26 @@ export default function EditLessonModal({
         if (!form.tutor_id) {
           throw new Error("Выберите активного преподавателя");
         }
-        const selectedTutor = availableTutors.find((t) => String(t.id) === String(form.tutor_id));
-        if (!selectedTutor || selectedTutor.is_active !== true) {
+        const selectedTutor = activeTutors.find((t) => String(t.id) === String(form.tutor_id));
+        if (!selectedTutor) {
           throw new Error("Можно назначить только активного преподавателя");
+        }
+        // Та же защита, что и при создании занятия (см. CreateIndividualLessonModal):
+        // не даём сохранить пару курс/преподаватель, если выбранный
+        // преподаватель фактически не ведёт этот курс (course_tutors).
+        // Owner управляет самими назначениями course_tutors, поэтому для
+        // него это ограничение не действует. Проверяем только если
+        // тьютор и/или курс реально меняются этим сохранением — иначе
+        // легаси-занятие с уже несогласованной парой (созданное до этой
+        // проверки) нельзя было бы отредактировать вообще ни в чём.
+        const targetCourseId = patch.course_id ?? lesson.course_id;
+        const tutorOrCourseChanged =
+          String(form.tutor_id) !== String(lesson.tutor_id ?? "") || patch.course_id !== undefined;
+        if (!isOwner && tutorOrCourseChanged) {
+          const targetCourse = courses.find((c) => String(c.id) === String(targetCourseId));
+          if (targetCourse && !(targetCourse.tutor_ids || []).some((id) => String(id) === String(form.tutor_id))) {
+            throw new Error("Выбранный преподаватель не ведёт этот курс");
+          }
         }
         patch.tutor_id = Number(form.tutor_id);
       }
@@ -408,12 +492,15 @@ export default function EditLessonModal({
                   className="w-full px-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
                 >
                   <option value="">Выберите курс</option>
-                  {courses.map((c) => (
+                  {availableCourses.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.title || c.subject}
                     </option>
                   ))}
                 </select>
+                {!isOwner && canReassignTutor && form.tutor_id && availableCourses.length === 0 && (
+                  <span className="font-body-md text-[12px] text-error">У выбранного преподавателя нет курсов</span>
+                )}
                 {form.course_id && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-md text-[11px] w-fit">
                     <span className="material-symbols-outlined text-[13px]">
@@ -425,7 +512,7 @@ export default function EditLessonModal({
               </div>
             )}
 
-            {canReassignTutor && availableTutors.length > 0 && (
+            {canReassignTutor && (
               <div className="flex flex-col gap-stack-sm">
                 <label className="font-label-md text-label-md text-on-surface" htmlFor="edit-tutor">
                   Преподаватель
@@ -445,6 +532,9 @@ export default function EditLessonModal({
                     </option>
                   ))}
                 </select>
+                {!isOwner && form.course_id && availableTutors.length === 0 && (
+                  <span className="font-body-md text-[12px] text-error">На этот курс не назначен ни один преподаватель</span>
+                )}
               </div>
             )}
 
