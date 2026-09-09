@@ -76,6 +76,70 @@ func TestLessons_Create_BranchOwnerTutorMustBeInBranch(t *testing.T) {
 	e.mustOK(res, 201)
 }
 
+// TestLessons_Create_ForeignBranchContractStudent — если договор на курс
+// оформлен в чужом для ученика филиале (Enrollment.BranchID, унаследованный
+// от Contract.BranchID, не совпадает с домашним филиалом ученика), ставить
+// занятия этому ученику может только владелец того филиала, что выдал
+// договор, а не владелец домашнего филиала. И в расписании (GET /lessons)
+// такое занятие должно быть видно только "чужому" (по договору) владельцу
+// филиала, а не домашнему.
+func TestLessons_Create_ForeignBranchContractStudent(t *testing.T) {
+	e := getEnv(t)
+	owner := e.accessToken(1, models.RoleOwner, nil)
+	courseID := e.seedCourse("Физика", 2)
+
+	// Тьюторы обоих филиалов.
+	e.seedUserRef(15, "Тьютор филиала 1 (домашний)", models.RoleTutor, branchPtr(1))
+	e.seedUserRef(16, "Тьютор филиала 2 (по договору)", models.RoleTutor, branchPtr(2))
+	// Домашний филиал ученика — 1, но договор на этот курс (см.
+	// Contract.BranchID/Enrollment.BranchID) оформлен в филиале 2 —
+	// имитируем событие contract.created напрямую через POST /enrollments
+	// с явным branch_id, как это делает подписчик academic-service.
+	e.seedUserRef(100, "Ученик", models.RoleStudent, branchPtr(1))
+	res := e.do("POST", "/api/v1/academic/enrollments", map[string]any{
+		"student_id": 100, "course_id": courseID, "branch_id": 2,
+	}, owner)
+	e.mustOK(res, 201)
+
+	branchOwner1 := e.accessToken(2, models.RoleBranchOwner, branchPtr(1)) // домашний филиал ученика
+	branchOwner2 := e.accessToken(3, models.RoleBranchOwner, branchPtr(2)) // филиал, выдавший договор
+
+	body := map[string]any{
+		"course_id": courseID, "topic": "Механика",
+		"lesson_date": "2026-08-10", "start_time": "10:00", "end_time": "11:00",
+		"student_id": 100,
+	}
+
+	// Домашний владелец филиала (1) не может поставить занятие этому
+	// ученику своим же тьютором — договор на этот курс принадлежит
+	// филиалу 2, а не домашнему филиалу ученика.
+	body["tutor_id"] = 15
+	res = e.do("POST", "/api/v1/academic/lessons", body, branchOwner1)
+	if res.Status != 403 {
+		t.Fatalf("home branch_owner creating lesson for foreign-contract student: status=%d want=403", res.Status)
+	}
+
+	// Владелец филиала, выдавшего договор (2), может.
+	body["tutor_id"] = 16
+	res = e.do("POST", "/api/v1/academic/lessons", body, branchOwner2)
+	e.mustOK(res, 201)
+
+	// В расписании: у домашнего владельца (1) занятия нет, у владельца
+	// филиала-по-договору (2) — есть.
+	res = e.do("GET", "/api/v1/academic/lessons", nil, branchOwner1)
+	e.mustOK(res, 200)
+	if items, _ := res.Body["items"].([]any); len(items) != 0 {
+		t.Fatalf("home branch_owner schedule should be empty, got %d lessons", len(items))
+	}
+
+	res = e.do("GET", "/api/v1/academic/lessons", nil, branchOwner2)
+	e.mustOK(res, 200)
+	items, _ := res.Body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("contract branch_owner schedule should have exactly 1 lesson, got %d", len(items))
+	}
+}
+
 // TestLessons_List_RoleScoping — GET /lessons: tutor только свои занятия,
 // student/parent только свои/детские (api-contracts.md 2.7).
 func TestLessons_List_RoleScoping(t *testing.T) {

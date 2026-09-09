@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"studyroom/academic-service/internal/auth"
 	"studyroom/academic-service/internal/events"
 	"studyroom/academic-service/internal/middleware"
 	"studyroom/academic-service/internal/models"
@@ -206,6 +207,50 @@ func nonNilLessons(l []*models.Lesson) []*models.Lesson {
 	return l
 }
 
+// studentEnrollmentBranch — филиал ОКАЗАНИЯ УСЛУГИ (Enrollment.BranchID) для
+// конкретного ученика среди уже загруженных enrollments курса. Это тот же
+// филиал, что и у договора, из которого enrollment появился (см.
+// EnrollmentRepository.CreateFromContract) — а не домашний филиал ученика.
+// Если у ученика несколько записей на курс (например, старая terminated
+// вперемешку со свежей active после перевода в другой филиал), приоритет у
+// активной: именно она определяет, кто сейчас реально обслуживает ученика.
+// nil, если у ученика вообще нет enrollment на этот курс.
+func studentEnrollmentBranch(enrollments []*models.Enrollment, studentID int64) *int64 {
+	var fallback *int64
+	for _, e := range enrollments {
+		if e.StudentID != studentID {
+			continue
+		}
+		branchID := e.BranchID
+		if e.Status == models.EnrollmentActive {
+			return &branchID
+		}
+		if fallback == nil {
+			fallback = &branchID
+		}
+	}
+	return fallback
+}
+
+// branchOwnerCanTeach — true, если branch_owner имеет право ставить занятие
+// этому ученику: его enrollment на курс должен принадлежать ТОМУ ЖЕ филиалу,
+// что и сам branch_owner (claims.BranchID), а не домашнему филиалу ученика.
+// Это тот случай, когда договор на курс оформлен в чужом для ученика
+// филиале (см. Contract.BranchID/Enrollment.BranchID) — тогда управлять
+// занятиями по этому договору может только владелец филиала, который его
+// выдал, а не владелец домашнего филиала ученика. Для owner проверка не
+// нужна (он не привязан к филиалу и может всё).
+func branchOwnerCanTeach(claims *auth.Claims, enrollments []*models.Enrollment, studentID int64) bool {
+	if claims.Role != models.RoleBranchOwner {
+		return true
+	}
+	if claims.BranchID == nil {
+		return false
+	}
+	studentBranch := studentEnrollmentBranch(enrollments, studentID)
+	return studentBranch != nil && *studentBranch == *claims.BranchID
+}
+
 type createLessonRequest struct {
 	CourseID     int64               `json:"course_id"`
 	TutorID      int64               `json:"tutor_id"`
@@ -314,14 +359,18 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 		// Просроченный/завершённый договор не запрещает поставить занятие:
 		// такой день позже подсветится красным. Берём любого ученика,
-		// который когда-либо был записан на курс.
+		// который когда-либо был записан на курс — но, если ставит
+		// branch_owner, только из тех, чей договор на этот курс относится
+		// к его собственному филиалу (см. branchOwnerCanTeach): иначе он
+		// мог бы поставить занятие ученику, которого на этот курс записал
+		// договором владелец другого филиала.
 		activeOnCourse := make(map[int64]bool, len(enrollments))
 		for _, e := range enrollments {
 			activeOnCourse[e.StudentID] = true
 		}
 		participantIDs = make([]int64, 0, len(sg.StudentIDs))
 		for _, studentID := range sg.StudentIDs {
-			if activeOnCourse[studentID] {
+			if activeOnCourse[studentID] && branchOwnerCanTeach(claims, enrollments, studentID) {
 				participantIDs = append(participantIDs, studentID)
 			}
 		}
@@ -345,15 +394,26 @@ func (h *LessonHandler) Create(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student has no active enrollment on this course")
 			return
 		}
+		// Если договор на этот курс оформлен в чужом для branch_owner
+		// филиале (Enrollment.BranchID != claims.BranchID — ученик
+		// "приписан" по этому договору к другому филиалу), ставить занятие
+		// этому ученику может только владелец того, другого филиала —
+		// см. branchOwnerCanTeach.
+		if !branchOwnerCanTeach(claims, enrollments, *req.StudentID) {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "student is enrolled on this course through a contract from another branch")
+			return
+		}
 		participantIDs = []int64{*req.StudentID}
 	default:
 		// Ни ученика, ни подгруппы не передали — старое поведение для
 		// по-настоящему группового занятия на весь курс: участники это все
-		// активные enrollments.
+		// активные enrollments, отфильтрованные по тому же правилу филиала,
+		// что и выше (branch_owner не должен неявно захватить в групповое
+		// занятие ученика с договором из другого филиала).
 		participantIDs = make([]int64, 0, len(enrollments))
 		seen := make(map[int64]bool, len(enrollments))
 		for _, e := range enrollments {
-			if !seen[e.StudentID] {
+			if !seen[e.StudentID] && branchOwnerCanTeach(claims, enrollments, e.StudentID) {
 				seen[e.StudentID] = true
 				participantIDs = append(participantIDs, e.StudentID)
 			}
@@ -528,6 +588,15 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 		if req.GroupType != nil {
 			effectiveGroupType = *req.GroupType
 		}
+		// Загружаем enrollments целевого курса заранее и для individual, и
+		// для group веток: нужны обеим — чтобы не дать branch_owner через
+		// PATCH подставить в занятие ученика, чей договор на этот курс
+		// оформлен в другом филиале (см. branchOwnerCanTeach в Create).
+		courseEnrollments, err := h.enrollments.List(r.Context(), repository.EnrollmentFilter{CourseID: &targetCourseID})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course enrollments")
+			return
+		}
 		if effectiveGroupType == models.GroupIndividual {
 			studentID := req.StudentID
 			if studentID == nil && !courseChanged && len(oldParticipantIDs) == 1 {
@@ -537,16 +606,17 @@ func (h *LessonHandler) Update(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusBadRequest, "BAD_REQUEST", "student_id is required for an individual lesson")
 				return
 			}
-			newParticipantIDs = []int64{*studentID}
-		} else {
-			courseEnrollments, err := h.enrollments.List(r.Context(), repository.EnrollmentFilter{CourseID: &targetCourseID})
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to load course enrollments")
+			if !branchOwnerCanTeach(claims, courseEnrollments, *studentID) {
+				writeError(w, http.StatusForbidden, "FORBIDDEN", "student is enrolled on this course through a contract from another branch")
 				return
 			}
+			newParticipantIDs = []int64{*studentID}
+		} else {
 			active := make(map[int64]bool, len(courseEnrollments))
 			for _, e := range courseEnrollments {
-				active[e.StudentID] = true
+				if branchOwnerCanTeach(claims, courseEnrollments, e.StudentID) {
+					active[e.StudentID] = true
+				}
 			}
 			switch {
 			case req.SubgroupID != nil:
