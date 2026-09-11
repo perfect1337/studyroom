@@ -79,7 +79,15 @@ export default function () {
       "access_token присутствует": (r) => !!r.json("access_token"),
     });
     loginFailRate.add(!ok);
-    if (ok) token = res.json("access_token");
+    if (ok) {
+      token = res.json("access_token");
+    } else if (Math.random() < 0.02) {
+      // Логируем только ~2% упавших запросов, иначе при 90%+ failure rate
+      // вывод консоли утонет в повторах одной и той же ошибки.
+      console.error(
+        `login failed: status=${res.status} error=${res.error} body=${res.body ? res.body.slice(0, 200) : "<empty>"}`
+      );
+    }
   });
 
   if (!token) {
