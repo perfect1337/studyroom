@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { updateLesson, cancelLesson, deleteLesson, fetchSubgroups, fetchEnrollments } from "../../api/academic.js";
+import { updateLesson, cancelLesson, deleteLesson, fetchSubgroups, fetchEnrollments, updateSubgroup } from "../../api/academic.js";
 import { fetchMyPeople } from "../../api/users.js";
 import { fullName } from "../../utils/userDisplay.js";
 
@@ -10,6 +10,9 @@ function normalizeDateForInput(value) {
   const match = String(value).match(/^(\d{4}-\d{2}-\d{2})/);
   return match ? match[1] : "";
 }
+
+// Максимум учеников в одной группе (см. maxSubgroupSize в SubgroupHandler на бэкенде).
+const MAX_GROUP_SIZE = 7;
 
 function sortedIds(ids) {
   return [...new Set((ids ?? []).map(Number).filter(Number.isFinite))].sort((a, b) => a - b);
@@ -78,6 +81,23 @@ export default function EditLessonModal({
   const [manualParticipantIds, setManualParticipantIds] = useState([]);
   const [manualStudentQuery, setManualStudentQuery] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState("");
+
+  // Редактирование состава сохранённой группы (subgroup) прямо из этой
+  // модалки — та же панель, что и в CreateGroupLessonModal.jsx/
+  // TutorNewLesson.jsx. Меняет только subgroup_members (PATCH /subgroups/{id}
+  // -> SubgroupHandler.Update -> SetMembers), а НЕ участников уже созданных
+  // занятий: у каждого занятия свой собственный, снятый на момент создания
+  // список lesson_participants (см. 0001_init.up.sql), никак не связанный
+  // напрямую с subgroup_members. Поэтому прошлые занятия этой группы
+  // сохраняют старый состав, даже если группу потом переименовали или
+  // поменяли в ней учеников — меняется только то, кого предложат в новые/
+  // будущие занятия этой группы.
+  const [editingSubgroup, setEditingSubgroup] = useState(null);
+  const [editSubgroupName, setEditSubgroupName] = useState("");
+  const [editSubgroupStudentIds, setEditSubgroupStudentIds] = useState([]);
+  const [editSubgroupStudentQuery, setEditSubgroupStudentQuery] = useState("");
+  const [editSubgroupError, setEditSubgroupError] = useState("");
+  const [editSubgroupSubmitting, setEditSubgroupSubmitting] = useState(false);
 
   // В выборе преподавателя показываем только действующих сотрудников.
   const activeTutors = useMemo(
@@ -155,6 +175,12 @@ export default function EditLessonModal({
       setManualParticipantIds(sortedIds(lesson.participant_ids));
       setManualStudentQuery("");
       setSelectedStudentId(String(sortedIds(lesson.participant_ids)[0] ?? ""));
+      setEditingSubgroup(null);
+      setEditSubgroupName("");
+      setEditSubgroupStudentIds([]);
+      setEditSubgroupStudentQuery("");
+      setEditSubgroupError("");
+      setEditSubgroupSubmitting(false);
     }
   }, [open, lesson, tutors]);
 
@@ -172,6 +198,7 @@ export default function EditLessonModal({
     let cancelled = false;
     setRosterLoading(true);
     setRosterError("");
+    setEditingSubgroup(null);
     Promise.all([
       form.group_type === "group"
         ? fetchSubgroups({ course_id: courseId, tutor_id: tutorId })
@@ -261,6 +288,78 @@ export default function EditLessonModal({
     setManualParticipantIds((prev) =>
       prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId].sort((a, b) => a - b)
     );
+  }
+
+  // Пул учеников для редактирования состава группы — активные записи на
+  // курс этого занятия (courseRoster), тот же источник, что и для ручного
+  // набора участников выше и для courseStudents в CreateGroupLessonModal.jsx.
+  const editSubgroupFilteredStudents = (() => {
+    const q = editSubgroupStudentQuery.trim().toLowerCase();
+    if (!q) return courseRoster;
+    return courseRoster.filter(({ id, student }) => {
+      const name = student ? fullName(student) : `Ученик #${id}`;
+      return name.toLowerCase().includes(q);
+    });
+  })();
+
+  function openEditSubgroup() {
+    if (!selectedSubgroup) return;
+    setEditingSubgroup(selectedSubgroup);
+    setEditSubgroupName(selectedSubgroup.name ?? "");
+    setEditSubgroupStudentIds(sortedIds(selectedSubgroup.student_ids));
+    setEditSubgroupStudentQuery("");
+    setEditSubgroupError("");
+  }
+
+  function toggleEditSubgroupStudent(studentId) {
+    setEditSubgroupStudentIds((prev) => {
+      if (prev.includes(studentId)) return prev.filter((id) => id !== studentId);
+      if (prev.length >= MAX_GROUP_SIZE) {
+        setEditSubgroupError(`В группе не может быть больше ${MAX_GROUP_SIZE} учеников`);
+        return prev;
+      }
+      return [...prev, studentId].sort((a, b) => a - b);
+    });
+  }
+
+  // Сохраняет новое название/состав группы (PATCH /subgroups/{id}). Это
+  // отдельная сущность subgroup — правки затрагивают только subgroup_members
+  // (используется как шаблон для будущих занятий этой группы), а не
+  // lesson_participants уже созданных занятий, поэтому прошедшие занятия
+  // группы сохраняют свой прежний состав.
+  async function handleUpdateSubgroup() {
+    setEditSubgroupError("");
+    if (!editingSubgroup) return;
+    if (!editSubgroupName.trim()) {
+      setEditSubgroupError("Введите название группы");
+      return;
+    }
+    if (editSubgroupStudentIds.length === 0) {
+      setEditSubgroupError("Выберите хотя бы одного ученика");
+      return;
+    }
+    if (editSubgroupStudentIds.length > MAX_GROUP_SIZE) {
+      setEditSubgroupError(`В группе не может быть больше ${MAX_GROUP_SIZE} учеников`);
+      return;
+    }
+    setEditSubgroupSubmitting(true);
+    try {
+      const updated = await updateSubgroup(editingSubgroup.id, {
+        name: editSubgroupName.trim(),
+        student_ids: editSubgroupStudentIds.map(Number),
+      });
+      setCourseSubgroups((prev) =>
+        prev
+          .map((sg) => (String(sg.id) === String(updated?.id ?? editingSubgroup.id) ? { ...sg, ...(updated ?? {}) } : sg))
+          .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "ru"))
+      );
+      setEditingSubgroup(null);
+      setEditSubgroupStudentQuery("");
+    } catch (e) {
+      setEditSubgroupError(e.message || "Не удалось обновить группу");
+    } finally {
+      setEditSubgroupSubmitting(false);
+    }
   }
 
   if (!open || !lesson || !form) return null;
@@ -633,18 +732,125 @@ export default function EditLessonModal({
 
                 {!rosterLoading && !rosterError && (
                   <>
-                    <select
-                      value={participantsMode}
-                      onChange={(e) => setParticipantsMode(e.target.value)}
-                      className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
-                    >
-                      <option value="custom">Свой набор учеников (выбрать вручную)</option>
-                      {courseSubgroups.map((sg) => (
-                        <option key={sg.id} value={sg.id}>
-                          Группа «{sg.name}»
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={participantsMode}
+                        onChange={(e) => setParticipantsMode(e.target.value)}
+                        className="flex-1 px-3 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
+                      >
+                        <option value="custom">Выбор учеников на это занятие</option>
+                        {courseSubgroups.map((sg) => (
+                          <option key={sg.id} value={sg.id}>
+                            Группа «{sg.name}»
+                          </option>
+                        ))}
+                      </select>
+                      {selectedSubgroup && !editingSubgroup && (
+                        <button
+                          type="button"
+                          onClick={openEditSubgroup}
+                          className="shrink-0 px-3 py-2 rounded-lg font-label-md text-label-md text-primary border border-primary hover:bg-primary-container/20 transition-colors"
+                        >
+                          Изменить группу
+                        </button>
+                      )}
+                    </div>
+
+                    {editingSubgroup && (
+                      <div className="mt-1 p-3 bg-surface rounded-lg flex flex-col gap-2 border border-outline-variant">
+                        <p className="font-body-md text-[12px] text-on-surface-variant">
+                          Изменения состава группы «{editingSubgroup.name}» применятся к новым/будущим занятиям этой
+                          группы. Уже прошедшие и уже созданные занятия сохранят свой прежний состав участников.
+                        </p>
+                        <input
+                          type="text"
+                          placeholder="Название группы, например «Вторник 16:00»"
+                          value={editSubgroupName}
+                          onChange={(e) => setEditSubgroupName(e.target.value)}
+                          className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
+                        />
+                        {courseRoster.length > 0 && (
+                          <>
+                            <div className="relative">
+                              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant pointer-events-none">
+                                search
+                              </span>
+                              <input
+                                type="text"
+                                value={editSubgroupStudentQuery}
+                                onChange={(e) => setEditSubgroupStudentQuery(e.target.value)}
+                                placeholder="Поиск ученика по ФИО…"
+                                className="w-full pl-9 pr-3 py-2 bg-surface border border-outline-variant rounded-lg font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
+                              />
+                            </div>
+                            <div className="flex items-center justify-between px-1">
+                              <span className="font-body-md text-[12px] text-on-surface-variant">
+                                Выбрано: {editSubgroupStudentIds.length}/{MAX_GROUP_SIZE}
+                              </span>
+                              {editSubgroupStudentIds.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setEditSubgroupStudentIds([])}
+                                  className="font-body-md text-[12px] text-primary hover:underline"
+                                >
+                                  Снять выбор
+                                </button>
+                              )}
+                            </div>
+                          </>
+                        )}
+                        <div className="flex flex-col gap-1 max-h-48 overflow-y-auto border border-outline-variant rounded-lg p-2">
+                          {courseRoster.length === 0 ? (
+                            <p className="font-body-md text-body-md text-on-surface-variant italic px-2 py-1">
+                              На этом курсе нет учеников с активной записью
+                            </p>
+                          ) : editSubgroupFilteredStudents.length === 0 ? (
+                            <p className="font-body-md text-body-md text-on-surface-variant italic px-2 py-1">
+                              Никто не найден по запросу «{editSubgroupStudentQuery}»
+                            </p>
+                          ) : (
+                            editSubgroupFilteredStudents.map(({ id, student }) => {
+                              const name = student ? fullName(student) : `Ученик #${id}`;
+                              const isChecked = editSubgroupStudentIds.includes(id);
+                              const isDisabled = !isChecked && editSubgroupStudentIds.length >= MAX_GROUP_SIZE;
+                              return (
+                                <label
+                                  key={id}
+                                  className={`flex items-center gap-2 px-2 py-1 rounded-md hover:bg-surface-container ${isDisabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    disabled={isDisabled}
+                                    onChange={() => toggleEditSubgroupStudent(id)}
+                                    className="accent-primary"
+                                  />
+                                  <span className="font-body-md text-body-md text-on-surface">{name}</span>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+                        {editSubgroupError && <p className="font-body-md text-[12px] text-error">{editSubgroupError}</p>}
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingSubgroup(null)}
+                            className="px-4 py-2 rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors"
+                          >
+                            Отмена
+                          </button>
+                          <button
+                            type="button"
+                            disabled={editSubgroupSubmitting}
+                            onClick={handleUpdateSubgroup}
+                            className="px-4 py-2 rounded-lg font-label-md text-label-md bg-primary text-on-primary hover:bg-on-primary-fixed-variant transition-colors disabled:opacity-60"
+                          >
+                            {editSubgroupSubmitting ? "Сохраняем…" : "Сохранить группу"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {selectedSubgroup ? (
                       <div className="text-[13px] text-on-surface-variant">

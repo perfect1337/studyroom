@@ -28,6 +28,32 @@ const MONTH_SHORT_NAMES = [
 function pad(n) {
   return String(n).padStart(2, "0");
 }
+
+// viewMode ("week"/"month") запоминается в localStorage, чтобы выбор
+// owner/branch_owner не сбрасывался при обновлении страницы (F5) — раньше
+// переключатель всегда стартовал с "week" заново после рефреша, даже если
+// человек только что выбрал "Месяц". Ключ содержит role, чтобы owner и
+// branch_owner (общий компонент, см. AdminSchedule.jsx/BranchSchedule.jsx)
+// хранили свой выбор независимо друг от друга.
+const SCHEDULE_VIEW_MODE_STORAGE_KEY = "studyroom.schedule.viewMode";
+
+function loadStoredViewMode(role) {
+  try {
+    const raw = localStorage.getItem(`${SCHEDULE_VIEW_MODE_STORAGE_KEY}.${role}`);
+    return raw === "week" || raw === "month" ? raw : "week";
+  } catch {
+    return "week";
+  }
+}
+
+function saveStoredViewMode(role, mode) {
+  try {
+    localStorage.setItem(`${SCHEDULE_VIEW_MODE_STORAGE_KEY}.${role}`, mode);
+  } catch {
+    // localStorage недоступен (приватный режим и т.п.) — не критично,
+    // просто не запомним выбор между перезагрузками.
+  }
+}
 function toISODate(year, monthIndex, day) {
   return `${year}-${pad(monthIndex + 1)}-${pad(day)}`;
 }
@@ -450,7 +476,14 @@ export default function ScheduleDirectory({ role }) {
   // Только для owner/branch_owner (эта страница им и так ограничена — см.
   // AdminSchedule.jsx/BranchSchedule.jsx); у tutor/student/parent — свои
   // отдельные компоненты расписания, их этот переключатель не касается.
-  const [viewMode, setViewMode] = useState("week");
+  // Стартовое значение подтягивается из localStorage (см.
+  // loadStoredViewMode выше) — иначе выбор терялся при каждом рефреше
+  // страницы (F5), и человеку приходилось переключаться заново.
+  const [viewMode, setViewModeState] = useState(() => loadStoredViewMode(role));
+  function setViewMode(mode) {
+    setViewModeState(mode);
+    saveStoredViewMode(role, mode);
+  }
   // weekIndex — индекс строки календарной сетки месяца (см. monthWeeks
   // ниже), которая сейчас показана как "неделя". Недель получается 4-6 в
   // зависимости от того, на какой день недели падает 1-е число и сколько
@@ -605,7 +638,13 @@ export default function ScheduleDirectory({ role }) {
         }
       }
       setCopyProgress(`Создано ${created} занятий${failed.length ? `. Ошибок: ${failed.length}` : "."}`);
-      if (failed.length === 0) {
+      // Обновляем расписание, если создалось хоть одно занятие — даже если
+      // часть попыток упала с ошибкой (конфликт времени и т.п.), уже
+      // созданные занятия всё равно должны сразу появиться на экране, без
+      // ручного обновления страницы. Раньше здесь стояло `failed.length ===
+      // 0`, из-за чего при ЛЮБОЙ единственной ошибке среди множества
+      // занятий все успешно созданные занятия оставались невидимы до F5.
+      if (created > 0) {
         load({ silent: true });
       }
     } catch (e) {
@@ -704,7 +743,9 @@ export default function ScheduleDirectory({ role }) {
       }
       const skippedNote = skipped ? ` Уже было: ${skipped}.` : "";
       setCopyProgress(`Создано ${created} занятий.${skippedNote}${failed.length ? ` Ошибок: ${failed.length}` : ""}`);
-      if (failed.length === 0) {
+      // См. комментарий в handleDuplicateWeekToNextWeek выше — обновляем
+      // при любом created > 0, а не только когда вообще не было ошибок.
+      if (created > 0) {
         load({ silent: true });
       }
     } catch (e) {
@@ -780,7 +821,9 @@ export default function ScheduleDirectory({ role }) {
         }
       }
       setCopyProgress(`Создано ${created} занятий${failed.length ? `. Ошибок: ${failed.length}` : "."}`);
-      if (failed.length === 0) {
+      // См. комментарий в handleDuplicateWeekToNextWeek выше — обновляем
+      // при любом created > 0, а не только когда вообще не было ошибок.
+      if (created > 0) {
         load({ silent: true });
       }
     } catch (e) {

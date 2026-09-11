@@ -661,7 +661,12 @@ func canViewUser(r *http.Request, h *UserHandler, claims *auth.Claims, target *m
 		// нет, поэтому разрешаем по тому же принципу, что и student/tutor
 		// ниже: репетитор виден, если он работает в одном филиале хотя бы с
 		// одним из детей этого родителя.
-		if target.Role == models.RoleTutor {
+		// Помимо обычного tutor, репетитором ребёнка также может быть
+		// branch_owner, включивший себе "версию учителя" (см. IsTutor /
+		// SetTutorMode) — в этом случае target.Role == RoleBranchOwner, а не
+		// RoleTutor, но карточку такого преподавателя родителю всё равно нужно
+		// показывать (см. tutor_handler.go, тот же паттерн проверки).
+		if target.Role == models.RoleTutor || (target.Role == models.RoleBranchOwner && target.IsTutor) {
 			children, err := h.parentChild.ListChildren(r.Context(), claims.UserID, "")
 			if err != nil {
 				return false
@@ -677,7 +682,9 @@ func canViewUser(r *http.Request, h *UserHandler, claims *auth.Claims, target *m
 	if claims.Role == models.RoleTutor && target.Role == models.RoleStudent {
 		return target.BranchID != nil && claims.BranchID != nil && *target.BranchID == *claims.BranchID
 	}
-	if claims.Role == models.RoleStudent && target.Role == models.RoleTutor {
+	// Аналогично: ученик должен видеть карточку своего преподавателя, даже
+	// если тот на самом деле branch_owner с включённой "версией учителя".
+	if claims.Role == models.RoleStudent && (target.Role == models.RoleTutor || (target.Role == models.RoleBranchOwner && target.IsTutor)) {
 		return target.BranchID != nil && claims.BranchID != nil && *target.BranchID == *claims.BranchID
 	}
 	return false
