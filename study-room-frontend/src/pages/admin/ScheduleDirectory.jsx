@@ -20,7 +20,7 @@ const MONTH_NAMES = [
 ];
 // Короткие названия месяцев — используются только для мелкой подписи
 // "чей это день" у дней соседнего месяца в шапке недельной сетки (см.
-// currentWeekMeta в ScheduleDirectory ниже).
+// currentWeekDays в ScheduleDirectory ниже).
 const MONTH_SHORT_NAMES = [
   "янв.", "февр.", "март", "апр.", "май", "июнь",
   "июль", "авг.", "сент.", "окт.", "нояб.", "дек.",
@@ -30,6 +30,23 @@ function pad(n) {
 }
 function toISODate(year, monthIndex, day) {
   return `${year}-${pad(monthIndex + 1)}-${pad(day)}`;
+}
+// monthGridDateRange — полный диапазон дат календарной СЕТКИ месяца, включая
+// "хвостики" в начале первой и конце последней недели, которые физически
+// относятся к соседним месяцам, но показываются в тех же строках при
+// недельном виде (см. WeekGrid/currentWeekDays ниже). Раньше load() грузил
+// занятия строго с 1-го по последнее число viewMonth — из-за этого занятия
+// в "переходной" неделе на стыке двух месяцев (например, суббота, попавшая
+// уже в следующий месяц) не подгружались вообще, пока пользователь не
+// переключал viewMonth на этот следующий месяц.
+function monthGridDateRange(year, monthIndex, firstWeekday, daysInMonth) {
+  const rowCount = Math.ceil((firstWeekday + daysInMonth) / 7);
+  const gridStart = new Date(year, monthIndex, 1 - firstWeekday);
+  const gridEnd = new Date(year, monthIndex, 1 - firstWeekday + rowCount * 7 - 1);
+  return {
+    from: `${gridStart.getFullYear()}-${pad(gridStart.getMonth() + 1)}-${pad(gridStart.getDate())}`,
+    to: `${gridEnd.getFullYear()}-${pad(gridEnd.getMonth() + 1)}-${pad(gridEnd.getDate())}`,
+  };
 }
 function initials(person) {
   if (!person) return "?";
@@ -214,57 +231,61 @@ function WeekLessonChip({ info, problem, selected, onClick }) {
  * Дни, не входящие в текущий месяц (края первой/последней недели), в
  * weekDays приходят как null — просто показываем пустую колонку без даты.
  */
-function WeekGrid({ weekDays, weekMeta, weekTimes, lessonsByDay, todayDay, lessonShortInfo, selectedLesson, onSelectLesson }) {
+function WeekGrid({ weekDays, weekTimes, lessonsByDate, todayISO, lessonShortInfo, selectedLesson, onSelectLesson }) {
   const [mobileDayIdx, setMobileDayIdx] = useState(0);
 
   useEffect(() => {
-    const todayIdx = todayDay ? weekDays.indexOf(todayDay) : -1;
+    const todayIdx = todayISO ? weekDays.findIndex((d) => d.iso === todayISO) : -1;
     if (todayIdx >= 0) {
       setMobileDayIdx(todayIdx);
       return;
     }
-    const firstWithLessons = weekDays.findIndex((d) => d && (lessonsByDay[d] ?? []).length > 0);
+    const firstWithLessons = weekDays.findIndex((d) => (lessonsByDate[d.iso] ?? []).length > 0);
     setMobileDayIdx(firstWithLessons >= 0 ? firstWithLessons : 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekDays]);
 
   const mobileDay = weekDays[mobileDayIdx];
   const mobileDayLessons = mobileDay
-    ? (lessonsByDay[mobileDay] ?? [])
+    ? (lessonsByDate[mobileDay.iso] ?? [])
         .slice()
         .sort((a, b) => String(a.start_time ?? "").localeCompare(String(b.start_time ?? "")))
     : [];
 
   return (
     <div>
-      {/* Мобильный вид (включая планшеты — см. lessonsByDay ниже: с учётом
+      {/* Мобильный вид (включая планшеты — см. lessonsByDate ниже: с учётом
           постоянной боковой панели (256px, DashboardShell) реальной ширины
           на sm/md-планшетах недостаточно для таблицы "время x день", поэтому
-          компактный вид дней недели используется вплоть до lg). */}
+          компактный вид дней недели используется вплоть до lg). Каждая
+          колонка теперь несёт настоящую дату (d.iso) — включая дни соседнего
+          месяца на стыке недели, у них раньше не было занятий в принципе
+          (см. WeekGrid — старую версию — и currentWeekDays выше), теперь
+          есть, поэтому disabled-состояние для них убрано. */}
       <div className="lg:hidden">
         <div className="grid grid-cols-7 gap-1 mb-3">
-          {weekDays.map((day, idx) => (
+          {weekDays.map((d, idx) => (
             <button
               key={idx}
               type="button"
-              onClick={() => day && setMobileDayIdx(idx)}
-              disabled={!day}
+              onClick={() => setMobileDayIdx(idx)}
               className={`text-center py-2 rounded-lg font-label-md text-[11px] border transition-colors ${
                 idx === mobileDayIdx
                   ? "bg-primary text-on-primary border-primary"
-                  : day
-                    ? "bg-surface-container border-outline-variant text-on-surface-variant"
-                    : "bg-surface-container/40 border-outline-variant/30 text-on-surface-variant/40"
+                  : d.isOtherMonth
+                    ? "bg-surface-container/40 border-outline-variant/30 text-on-surface-variant/60"
+                    : "bg-surface-container border-outline-variant text-on-surface-variant"
               }`}
             >
               <div>{WEEKDAYS[idx]}</div>
-              {day && <div className="text-[10px] font-bold mt-0.5">{day}</div>}
+              <div className="text-[10px] font-bold mt-0.5">
+                {d.day}
+                {d.isOtherMonth && <div className="text-[8px] font-medium opacity-70">{d.monthShort}</div>}
+              </div>
             </button>
           ))}
         </div>
-        {!mobileDay ? (
-          <div className="text-sm text-on-surface-variant py-4 text-center">Нет данных за этот день</div>
-        ) : mobileDayLessons.length === 0 ? (
+        {mobileDayLessons.length === 0 ? (
           <div className="text-sm text-on-surface-variant py-4 text-center">Занятий нет</div>
         ) : (
           <div className="space-y-2">
@@ -324,26 +345,24 @@ function WeekGrid({ weekDays, weekMeta, weekTimes, lessonsByDay, todayDay, lesso
           <thead>
             <tr>
               <th className="w-16" />
-              {weekDays.map((day, idx) => {
-                const meta = weekMeta?.[idx];
-                return (
-                  <th key={idx} className="text-center pb-2 font-label-md text-label-md text-outline">
-                    <div>{WEEKDAYS[idx]}</div>
-                    {day ? (
-                      <div className="text-[11px] font-bold text-on-surface-variant">{day}</div>
-                    ) : meta?.monthShort ? (
+              {weekDays.map((d, idx) => (
+                <th key={idx} className="text-center pb-2 font-label-md text-label-md text-outline">
+                  <div>{WEEKDAYS[idx]}</div>
+                  <div
+                    className={`text-[11px] font-bold ${d.isOtherMonth ? "text-on-surface-variant/60" : "text-on-surface-variant"}`}
+                  >
+                    {d.day}
+                    {d.isOtherMonth && (
                       // День соседнего месяца (край первой/последней недели
-                      // текущего месяца) — сюда не попадают занятия (см.
-                      // комментарий у WeekGrid выше), но подпись показывает,
-                      // какое у него число и к какому месяцу он относится,
-                      // чтобы пустая колонка не выглядела как ошибка.
-                      <div className="text-[9px] font-medium text-on-surface-variant/60 whitespace-nowrap">
-                        {meta.day} {meta.monthShort}
-                      </div>
-                    ) : null}
-                  </th>
-                );
-              })}
+                      // текущего месяца) — раньше занятия сюда вообще не
+                      // попадали (см. комментарий у currentWeekDays выше),
+                      // теперь попадают как обычно, эта подпись — просто
+                      // уточнение, к какому месяцу относится число.
+                      <span className="ml-1 text-[9px] font-medium whitespace-nowrap">{d.monthShort}</span>
+                    )}
+                  </div>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -357,10 +376,8 @@ function WeekGrid({ weekDays, weekMeta, weekTimes, lessonsByDay, todayDay, lesso
               weekTimes.map((time) => (
                 <tr key={time}>
                   <td className="align-top pt-2 pr-2 text-[12px] font-bold text-on-surface-variant whitespace-nowrap">{time}</td>
-                  {weekDays.map((day, idx) => {
-                    const cellLessons = day
-                      ? (lessonsByDay[day] ?? []).filter((l) => l.start_time?.slice(0, 5) === time)
-                      : [];
+                  {weekDays.map((d, idx) => {
+                    const cellLessons = (lessonsByDate[d.iso] ?? []).filter((l) => l.start_time?.slice(0, 5) === time);
                     return (
                       <td key={idx} className="align-top border border-outline-variant/30 p-1.5 min-w-[100px]">
                         {cellLessons.map((l) => {
@@ -498,7 +515,7 @@ export default function ScheduleDirectory({ role }) {
   //
   // Раньше эти хендлеры трогали только `lessons`, а selectedLesson оставался
   // прежним объектом. В месячном виде это было незаметно, потому что
-  // detailLessons там берётся заново из lessonsByDay[selectedDay] (то есть
+  // detailLessons там берётся заново из lessonsByDate (то есть
   // из актуального `lessons`). А в недельном виде detailLessons — это ровно
   // `[selectedLesson]`, так что после удаления занятия карточка с ним
   // никуда не девалась: занятие пропадало из сетки недели, но "призрак"
@@ -545,7 +562,7 @@ export default function ScheduleDirectory({ role }) {
   // Вынесено отдельно, чтобы посчитать их количество и для превью в
   // подтверждении, и для самого дублирования — одной и той же логикой.
   function sourceWeekLessons() {
-    return currentWeek.filter((d) => d !== null).flatMap((day) => (lessonsByDay[day] ?? []));
+    return currentWeekISO.flatMap((iso) => lessonsByDate[iso] ?? []);
   }
 
   async function handleDuplicateWeekToNextWeek() {
@@ -614,9 +631,7 @@ export default function ScheduleDirectory({ role }) {
     setCopyingMonth(true);
     setCopyProgress("Загрузка занятий текущей недели...");
     try {
-      const sourceLessons = currentWeek
-        .filter((d) => d !== null)
-        .flatMap((day) => (lessonsByDay[day] ?? []));
+      const sourceLessons = currentWeekISO.flatMap((iso) => lessonsByDate[iso] ?? []);
       if (!sourceLessons.length) {
         setCopyProgress("На этой неделе занятий нет");
         setCopyingMonth(false);
@@ -703,9 +718,7 @@ export default function ScheduleDirectory({ role }) {
     setCopyingMonth(true);
     setCopyProgress("Загрузка занятий текущей недели...");
     try {
-      const sourceLessons = currentWeek
-        .filter((d) => d !== null)
-        .flatMap((day) => (lessonsByDay[day] ?? []));
+      const sourceLessons = currentWeekISO.flatMap((iso) => lessonsByDate[iso] ?? []);
       if (!sourceLessons.length) {
         setCopyProgress("На этой неделе занятий нет");
         setCopyingMonth(false);
@@ -864,8 +877,7 @@ export default function ScheduleDirectory({ role }) {
       if (!silent) setLoading(true);
       setError("");
       try {
-        const date_from = toISODate(viewYear, viewMonth, 1);
-        const date_to = toISODate(viewYear, viewMonth, daysInMonth);
+        const { from: date_from, to: date_to } = monthGridDateRange(viewYear, viewMonth, firstWeekday, daysInMonth);
 
         const [lessonsRes, coursesRes] = await Promise.all([
           fetchLessons({
@@ -930,7 +942,7 @@ export default function ScheduleDirectory({ role }) {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [viewYear, viewMonth, daysInMonth, tutorFilter, studentFilter, branchFilter, isOwner]
+    [viewYear, viewMonth, daysInMonth, firstWeekday, tutorFilter, studentFilter, branchFilter, isOwner]
   );
 
   useEffect(() => {
@@ -945,8 +957,7 @@ export default function ScheduleDirectory({ role }) {
   // без F5. Теперь подписываемся на тот же кэш-ключ, которым fetchLessons(...)
   // пользуется внутри cachedQuery, и тихо перезапрашиваем при invalidateQuery(["lessons"]).
   useEffect(() => {
-    const date_from = toISODate(viewYear, viewMonth, 1);
-    const date_to = toISODate(viewYear, viewMonth, daysInMonth);
+    const { from: date_from, to: date_to } = monthGridDateRange(viewYear, viewMonth, firstWeekday, daysInMonth);
     const key = [
       "lessons",
       {
@@ -961,7 +972,7 @@ export default function ScheduleDirectory({ role }) {
       if (reason === "invalidate") load({ silent: true });
     });
     return unsubscribe;
-  }, [viewYear, viewMonth, daysInMonth, tutorFilter, studentFilter, branchFilter, isOwner, load]);
+  }, [viewYear, viewMonth, daysInMonth, firstWeekday, tutorFilter, studentFilter, branchFilter, isOwner, load]);
 
   const coursesById = React.useMemo(() => {
     const map = {};
@@ -998,12 +1009,18 @@ export default function ScheduleDirectory({ role }) {
     return map;
   }, [lessons, studentsById]);
 
-  const lessonsByDay = React.useMemo(() => {
+  // lessonsByDate — раньше ключом было голое число месяца (day-of-month),
+  // что работало, только пока в `lessons` были данные строго ОДНОГО месяца.
+  // После расширения диапазона в load() (см. monthGridDateRange) сюда же
+  // попадают и "хвостики" соседних месяцев — а у них те же числа месяца
+  // могут совпадать с текущим (например, 30 августа и 30 сентября), так что
+  // ключом теперь служит полная ISO-дата, а не голое число.
+  const lessonsByDate = React.useMemo(() => {
     const map = {};
     for (const lesson of lessons) {
-      const day = Number(lesson.lesson_date?.slice(8, 10));
-      if (!day) continue;
-      (map[day] ??= []).push(lesson);
+      const iso = String(lesson.lesson_date ?? "").slice(0, 10);
+      if (!iso) continue;
+      (map[iso] ??= []).push(lesson);
     }
     // Сортируем занятия каждого дня по времени начала (раньше -> позже) —
     // и в мини-карточках месячного вида, и в недельной сетке (там порядок
@@ -1017,6 +1034,11 @@ export default function ScheduleDirectory({ role }) {
 
   const isCurrentMonthView = viewYear === today.getFullYear() && viewMonth === today.getMonth();
   const todayDay = isCurrentMonthView ? today.getDate() : null;
+  // todayISO — в отличие от todayDay (валиден только при isCurrentMonthView,
+  // это осознанно: месячная сетка всегда внутри текущего viewMonth), нужен
+  // для недельного вида, где "сегодня" может попасть в переходную неделю,
+  // отображаемую в контексте СОСЕДНЕГО месяца (см. WeekGrid/currentWeekDays).
+  const todayISO = toISODate(today.getFullYear(), today.getMonth(), today.getDate());
 
   // monthWeeks — строки той же сетки, что рисует месячный календарь: каждая
   // строка — 7 ячеек (Пн..Вс), где значение — число месяца либо null для
@@ -1109,46 +1131,49 @@ export default function ScheduleDirectory({ role }) {
     requestAnimationFrame(() => window.scrollTo(0, scrollY));
   }
 
-  const currentWeek = monthWeeks[Math.min(weekIndex, monthWeeks.length - 1)] ?? [];
+  const currentWeekRow = Math.min(weekIndex, monthWeeks.length - 1);
 
-  // currentWeekMeta — как currentWeek, но без обрезания дней соседнего
-  // месяца: для каждой из 7 колонок недели содержит фактическое число
-  // месяца, а для дней, которые в currentWeek обрезаны в null (края первой/
-  // последней недели месяца), — ещё и короткое название месяца, которому
-  // такой день принадлежит. Сами эти дни по-прежнему не участвуют в
-  // расписании (в currentWeek/lessonsByDay они остаются null) — meta нужна
-  // исключительно для мелкой подписи "28 сент." в шапке недельной сетки на
-  // ПК, чтобы было видно, что неделя частично относится к другому месяцу.
-  const currentWeekMeta = React.useMemo(() => {
-    const row = Math.min(weekIndex, monthWeeks.length - 1);
-    const prevMonthIndex = viewMonth === 0 ? 11 : viewMonth - 1;
-    const prevMonthYear = viewMonth === 0 ? viewYear - 1 : viewYear;
-    const daysInPrevMonth = new Date(prevMonthYear, prevMonthIndex + 1, 0).getDate();
-    const nextMonthIndex = viewMonth === 11 ? 0 : viewMonth + 1;
-    return Array.from({ length: 7 }, (_, c) => {
-      const rawDay = row * 7 + c - firstWeekday + 1;
-      if (rawDay >= 1 && rawDay <= daysInMonth) {
-        return { day: rawDay, monthShort: null };
-      }
-      if (rawDay < 1) {
-        return { day: daysInPrevMonth + rawDay, monthShort: MONTH_SHORT_NAMES[prevMonthIndex] };
-      }
-      return { day: rawDay - daysInMonth, monthShort: MONTH_SHORT_NAMES[nextMonthIndex] };
+  // currentWeekDays — 7 дней строки календарной сетки, которая сейчас
+  // показана в недельном виде. Раньше (currentWeek) это было "число месяца
+  // либо null для дней соседнего месяца" — из-за null-а дни на стыке
+  // месяцев физически не могли получить занятия (см. WeekGrid ниже и
+  // handleDuplicate*/handleReflect* выше — они брали занятия только по
+  // непустым дням currentWeek). Теперь здесь настоящая календарная дата
+  // (через реальную арифметику Date) для каждой из 7 колонок — включая те,
+  // что относятся к соседнему месяцу; такой день просто помечен
+  // isOtherMonth (для подписи в шапке "28 сент."), но данные для него
+  // ищутся и показываются как обычно, по iso-ключу в lessonsByDate.
+  const currentWeekDays = React.useMemo(() => {
+    const monday = new Date(viewYear, viewMonth, 1 - firstWeekday + currentWeekRow * 7);
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+      const isOtherMonth = d.getMonth() !== viewMonth || d.getFullYear() !== viewYear;
+      return {
+        day: d.getDate(),
+        iso: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+        isOtherMonth,
+        monthShort: isOtherMonth ? MONTH_SHORT_NAMES[d.getMonth()] : null,
+      };
     });
-  }, [weekIndex, monthWeeks.length, firstWeekday, daysInMonth, viewMonth, viewYear]);
+  }, [currentWeekRow, firstWeekday, viewYear, viewMonth]);
+
+  // currentWeekISO — те же 7 дней, только голыми iso-строками: используется
+  // там, где нужен просто список ключей для lessonsByDate (дублирование/
+  // отражение недели, подсчёт времён строк недельной сетки).
+  const currentWeekISO = React.useMemo(() => currentWeekDays.map((d) => d.iso), [currentWeekDays]);
 
   // pendingDuplicateInfo — заголовок/описание/сама функция для того из трёх
   // сценариев дублирования (см. pendingDuplicate выше), который сейчас
   // ожидает подтверждения в ConfirmToggleModal. Count пересчитывается на
-  // каждый рендер из текущего lessonsByDay — раз пользователь может успеть
+  // каждый рендер из текущего lessonsByDate — раз пользователь может успеть
   // подвигать неделю/месяц, пока диалог открыт, число в описании не должно
   // "залипать" на устаревшем значении.
   //
-  // ВАЖНО: этот блок должен идти ПОСЛЕ объявления currentWeek/lessonsByDay
+  // ВАЖНО: этот блок должен идти ПОСЛЕ объявления currentWeekISO/lessonsByDate
   // (см. sourceWeekLessons выше) — он сразу же вызывает sourceWeekLessons()
   // при построении объекта, а не только внутри обработчика клика. Если
   // разместить его раньше их объявления, вызов упадёт с ReferenceError
-  // "Cannot access 'currentWeek'/'lessonsByDay' before initialization"
+  // "Cannot access 'currentWeekISO'/'lessonsByDate' before initialization"
   // (TDZ) в тот момент, когда pendingDuplicate становится не-null.
   const pendingDuplicateInfo = pendingDuplicate
     ? {
@@ -1172,7 +1197,9 @@ export default function ScheduleDirectory({ role }) {
 
   function toggleExpandedWeek(day) {
     const week = monthWeeks.find((candidate) => candidate.includes(day)) ?? [];
-    const expandableDays = week.filter((weekDay) => (lessonsByDay[weekDay] ?? []).length > 3);
+    const expandableDays = week.filter(
+      (weekDay) => (lessonsByDate[toISODate(viewYear, viewMonth, weekDay)] ?? []).length > 3
+    );
     if (expandableDays.length === 0) return;
 
     const shouldExpand = !expandableDays.every((weekDay) => expandedMonthDays.has(weekDay));
@@ -1196,14 +1223,13 @@ export default function ScheduleDirectory({ role }) {
   // Время начала занятий этой недели, по возрастанию — строки недельной сетки.
   const weekTimes = React.useMemo(() => {
     const set = new Set();
-    currentWeek.forEach((day) => {
-      if (!day) return;
-      (lessonsByDay[day] ?? []).forEach((l) => {
+    currentWeekISO.forEach((iso) => {
+      (lessonsByDate[iso] ?? []).forEach((l) => {
         if (l.start_time) set.add(String(l.start_time).slice(0, 5));
       });
     });
     return [...set].sort();
-  }, [currentWeek, lessonsByDay]);
+  }, [currentWeekISO, lessonsByDate]);
 
   const isWeekMode = viewMode === "week";
 
@@ -1223,7 +1249,7 @@ export default function ScheduleDirectory({ role }) {
     : selectedLesson
       ? [selectedLesson]
       : selectedDay
-        ? lessonsByDay[selectedDay] ?? []
+        ? lessonsByDate[toISODate(viewYear, viewMonth, selectedDay)] ?? []
         : [];
   const detailPageCount = Math.max(1, Math.ceil(detailLessons.length / LESSONS_PAGE_SIZE));
   const safeDetailPage = Math.min(detailPage, detailPageCount - 1);
@@ -1612,7 +1638,7 @@ export default function ScheduleDirectory({ role }) {
             <div className="lg:hidden grid grid-cols-1 md:grid-cols-2 gap-2">
               {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day = i + 1;
-                const dayLessons = lessonsByDay[day] ?? [];
+                const dayLessons = lessonsByDate[toISODate(viewYear, viewMonth, day)] ?? [];
                 const isToday = day === todayDay;
                 const isSelected = day === selectedDay;
                 const isExpanded = expandedMonthDays.has(day);
@@ -1716,7 +1742,7 @@ export default function ScheduleDirectory({ role }) {
               ))}
               {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day = i + 1;
-                const dayLessons = lessonsByDay[day] ?? [];
+                const dayLessons = lessonsByDate[toISODate(viewYear, viewMonth, day)] ?? [];
                 const isToday = day === todayDay;
                 const isSelected = day === selectedDay;
                 const isExpanded = expandedMonthDays.has(day);
@@ -1804,11 +1830,10 @@ export default function ScheduleDirectory({ role }) {
 
             {isWeekMode && (
               <WeekGrid
-                weekDays={currentWeek}
-                weekMeta={currentWeekMeta}
+                weekDays={currentWeekDays}
                 weekTimes={weekTimes}
-                lessonsByDay={lessonsByDay}
-                todayDay={todayDay}
+                lessonsByDate={lessonsByDate}
+                todayISO={todayISO}
                 lessonShortInfo={lessonShortInfo}
                 selectedLesson={selectedLesson}
                 onSelectLesson={(l) => {
