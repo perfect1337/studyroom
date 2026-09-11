@@ -105,6 +105,14 @@ type applicationReceivedEvent struct {
 	Name        string `json:"name"`
 }
 
+// userDeletedEvent — соответствует events.UserDeletedEvent из User Service
+// (публикуется при физическом удалении пользователя, см.
+// user-service/internal/events/publisher.go). Notification Service читает
+// только id — этого достаточно, чтобы почистить локальную копию.
+type userDeletedEvent struct {
+	ID int64 `json:"id"`
+}
+
 func (s *Subscriber) Start(ctx context.Context) error {
 	handlers := map[string]nats.MsgHandler{
 		"user.created":             s.handleUserCreated,
@@ -116,6 +124,7 @@ func (s *Subscriber) Start(ctx context.Context) error {
 		"lesson.daily_digest":      s.handleDailyDigest,
 		"attendance.marked_absent": s.handleAttendanceAbsent,
 		"application.received":     s.handleApplicationReceived,
+		"user.deleted":             s.handleUserDeleted,
 	}
 
 	for subject, handler := range handlers {
@@ -458,6 +467,28 @@ func (s *Subscriber) handleApplicationReceived(msg *nats.Msg) {
 	// техническая деталь, не нужная получателю уведомления, поэтому убрали.
 	message := "Новая заявка от " + evt.Name
 	s.send(evt.OwnerUserID, "new_application", message, "")
+}
+
+// handleUserDeleted — пользователь физически удалён в User Service (owner
+// удалил семью родителя вместе с детьми, либо ученик выпустился — см.
+// UserHandler.Delete / promotion.Service). Удаляем локальную копию из
+// users_ref: без этого удаление аккаунта было неполным (след пользователя
+// оставался в Notification Service вместе с его привязками к Telegram/MAX),
+// а при повторной регистрации на тот же email GetByEmail мог найти именно
+// эту устаревшую строку и отправить уведомление на уже удалённый аккаунт
+// вместо нового — см. подробности в userref_repository.go, Delete/GetByEmail.
+func (s *Subscriber) handleUserDeleted(msg *nats.Msg) {
+	var evt userDeletedEvent
+	if err := json.Unmarshal(msg.Data, &evt); err != nil {
+		log.Printf("events: bad user.deleted payload: %v", err)
+		return
+	}
+	if evt.ID == 0 {
+		return
+	}
+	if err := s.usersRef.Delete(context.Background(), evt.ID); err != nil {
+		log.Printf("events: delete users_ref %d error: %v", evt.ID, err)
+	}
 }
 
 func (s *Subscriber) send(userID int64, notifType, message, emailOverride string) {

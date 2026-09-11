@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { fetchLessons, fetchCourses, fetchHomework, fetchEnrollments } from "../../api/academic.js";
+import { fetchLessons, fetchCourses, fetchEnrollments } from "../../api/academic.js";
 import { fetchParentChildren, fetchUserById } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
@@ -254,7 +254,6 @@ export default function ParentSchedule() {
   const [courses, setCourses] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
   const [tutorsById, setTutorsById] = useState({});
-  const [homework, setHomework] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedDay, setSelectedDay] = useState(null); // day number in current month, or null
@@ -371,10 +370,9 @@ export default function ParentSchedule() {
         const date_from = toISODate(viewYear, viewMonth, 1);
         const date_to = toISODate(viewYear, viewMonth, daysInMonth);
 
-        const [lessonsRes, coursesRes, homeworkRes, enrollRes] = await Promise.all([
+        const [lessonsRes, coursesRes, enrollRes] = await Promise.all([
           fetchLessons({ date_from, date_to }),
           fetchCourses(),
-          fetchHomework(),
           fetchEnrollments(),
         ]);
         if (cancelled) return;
@@ -382,7 +380,6 @@ export default function ParentSchedule() {
         const lessonItems = lessonsRes?.items ?? [];
         setLessons(lessonItems);
         setCourses(coursesRes?.items ?? []);
-        setHomework(homeworkRes?.items ?? []);
         setEnrollments(enrollRes?.items ?? []);
         setSelectedDay(null);
 
@@ -457,11 +454,6 @@ export default function ParentSchedule() {
       return courseIds ? courseIds.has(l.course_id) : false;
     });
   }, [lessons, courseIdsByChild, selectedChildId]);
-
-  const childHomework = useMemo(() => {
-    if (!selectedChildId) return homework;
-    return homework.filter((hw) => hw.student_id === selectedChildId);
-  }, [homework, selectedChildId]);
 
   const lessonsByDay = useMemo(() => {
     const map = {};
@@ -915,25 +907,6 @@ export default function ParentSchedule() {
                 }}
               />
             )}
-          </div>
-
-          {/* Homework list (не привязаны к конкретному занятию в API — показываем отдельным списком) */}
-          <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-6">
-            <h4 className="font-label-md font-bold mb-4">Домашние задания</h4>
-            {childHomework.length === 0 && (
-              <p className="text-on-surface-variant font-body-md text-body-md">Заданий пока нет</p>
-            )}
-            <div className="space-y-2">
-              {childHomework.map((hw) => (
-                <div key={hw.id} className="flex items-center justify-between gap-3 p-2 hover:bg-surface-container rounded transition-all">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="material-symbols-outlined text-primary shrink-0">link</span>
-                    <span className="font-label-md text-on-surface-variant truncate">{hw.link_url}</span>
-                  </div>
-                  <StatusBadge status={hw.status === "viewed" ? "Выполнено" : "Ожидание"} />
-                </div>
-              ))}
-            </div>
           </div>
         </div>
 

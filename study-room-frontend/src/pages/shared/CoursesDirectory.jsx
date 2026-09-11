@@ -90,6 +90,21 @@ export default function CoursesDirectory({ role }) {
     return map;
   }, [tutors]);
 
+  // Курс общий на всю сеть, поэтому c.tutor_ids может содержать
+  // преподавателей из ДРУГИХ филиалов. Для branch_owner список
+  // преподавателей (tutors/tutorNameById) сервер уже ограничил только его
+  // филиалом (см. UserHandler.List, case RoleBranchOwner) — раньше это
+  // просто использовалось для подписи имени, а сам чужой id всё равно
+  // отображался как безликий бейдж "#id". Теперь для branch_owner чужих
+  // преподавателей в списке не показываем вовсе — ему незачем видеть даже
+  // факт, что на курсе есть кто-то не из его филиала. Owner видит сеть
+  // целиком, поэтому для него список не фильтруется.
+  const visibleTutorIds = useMemo(() => {
+    if (isOwner) return (c) => c.tutor_ids ?? [];
+    const ownBranchIds = new Set(tutors.map((t) => t.id));
+    return (c) => (c.tutor_ids ?? []).filter((id) => ownBranchIds.has(id));
+  }, [isOwner, tutors]);
+
   function openAddModal() {
     setAddForm(EMPTY_FORM);
     setAddStatus("");
@@ -247,9 +262,9 @@ export default function CoursesDirectory({ role }) {
                       <td className="px-6 py-4">
                         {isOwner ? (
                           <span className="font-bold text-on-surface">{c.tutor_ids?.length ?? 0}</span>
-                        ) : c.tutor_ids?.length ? (
+                        ) : visibleTutorIds(c).length ? (
                           <div className="flex flex-wrap gap-1">
-                            {c.tutor_ids.map((id) => (
+                            {visibleTutorIds(c).map((id) => (
                               <span
                                 key={id}
                                 className="inline-block whitespace-nowrap bg-surface-container-high px-2 py-0.5 rounded-full text-[12px]"
@@ -343,9 +358,9 @@ export default function CoursesDirectory({ role }) {
                 <div className="text-[12px] text-on-surface-variant border-t border-outline-variant/40 pt-2">
                   <span className="block mb-1">Преподаватели{isOwner ? ` (${c.tutor_ids?.length ?? 0})` : ""}</span>
                   {!isOwner &&
-                    (c.tutor_ids?.length ? (
+                    (visibleTutorIds(c).length ? (
                       <div className="flex flex-wrap gap-1">
-                        {c.tutor_ids.map((id) => (
+                        {visibleTutorIds(c).map((id) => (
                           <span key={id} className="inline-block whitespace-nowrap bg-surface-container-high px-2 py-0.5 rounded-full text-[12px]">
                             {tutorNameById[id] || `#${id}`}
                           </span>

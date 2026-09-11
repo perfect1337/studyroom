@@ -31,6 +31,14 @@ type UserEvent struct {
 	ClassInfo *string `json:"class_info,omitempty"`
 }
 
+// UserDeletedEvent — соответствует events.UserDeletedEvent из User Service
+// (публикуется при физическом удалении пользователя, см.
+// user-service/internal/events/publisher.go). CRM Service читает только id —
+// остальные поля ей не нужны, чтобы удалить локальную копию.
+type UserDeletedEvent struct {
+	ID int64 `json:"id"`
+}
+
 func Connect(url string) (*nats.Conn, error) {
 	return nats.Connect(
 		url,
@@ -64,7 +72,35 @@ func (s *Subscriber) Start(ctx context.Context) error {
 	if _, err := s.nc.QueueSubscribe("user.updated", "crm-service", s.handleUserEvent(ctx)); err != nil {
 		return err
 	}
+	if _, err := s.nc.QueueSubscribe("user.deleted", "crm-service", s.handleUserDeleted(ctx)); err != nil {
+		return err
+	}
 	return nil
+}
+
+// handleUserDeleted — пользователь физически удалён в User Service (владелец
+// удалил семью родителя вместе с детьми, либо ученик выпустился — см.
+// UserHandler.Delete / promotion.Service). Удаляем локальную копию из
+// user_refs: без этого удалённый branch_owner/owner навсегда оставался бы
+// "видимым" для FindBranchOwner/FindAnyOwner (см. userref_repository.go) —
+// новые заявки продолжали бы резолвиться на несуществующий аккаунт вместо
+// актуального владельца/руководителя филиала, и уведомление о заявке либо
+// падало бы в никуда, либо (что хуже) уходило совсем на другой, случайно
+// оставшийся первым по user_id, аккаунт.
+func (s *Subscriber) handleUserDeleted(ctx context.Context) nats.MsgHandler {
+	return func(msg *nats.Msg) {
+		var ev UserDeletedEvent
+		if err := json.Unmarshal(msg.Data, &ev); err != nil {
+			log.Printf("[events] user.deleted unmarshal error: %v", err)
+			return
+		}
+		if ev.ID == 0 {
+			return
+		}
+		if err := s.userRefRepo.Delete(ctx, ev.ID); err != nil {
+			log.Printf("[events] delete user_ref %d error: %v", ev.ID, err)
+		}
+	}
 }
 
 func (s *Subscriber) handleUserEvent(ctx context.Context) nats.MsgHandler {

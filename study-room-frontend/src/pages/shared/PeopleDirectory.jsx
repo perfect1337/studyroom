@@ -8,7 +8,7 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople, fetchBranches, createStudent } from "../../api/users.js";
 import { fetchCourses, fetchEnrollments, fetchLessons, fetchTests } from "../../api/academic.js";
 import { fetchContracts, createContract } from "../../api/contracts.js";
-import { fetchApplications, createApplication } from "../../api/crm.js";
+import { fetchApplications } from "../../api/crm.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 
 const PAGE_SIZE = 10;
@@ -493,7 +493,13 @@ export default function PeopleDirectory({ role }) {
     if (!addForm.last_name || !addForm.first_name || !addForm.branch_id || !addForm.class_info) return;
     setAddStatus("saving");
     try {
-      const student = await createStudent({
+      // Добавление ребёнка — это просто создание ученика в личном кабинете
+      // родителя, а не запись на курс, поэтому заявку (CRM) здесь создавать
+      // не нужно: раньше это приводило к лишнему уведомлению
+      // branch_owner/owner о "новой заявке" на каждого добавленного ребёнка.
+      // Настоящая заявка создаётся отдельно, формой "Записаться на новый
+      // курс" (см. createApplication в ParentOverview.jsx/api/crm.js).
+      await createStudent({
         last_name: addForm.last_name,
         first_name: addForm.first_name,
         patronymic: addForm.patronymic || undefined,
@@ -501,18 +507,6 @@ export default function PeopleDirectory({ role }) {
         class_info: String(addForm.class_info),
         parent_id: user.id,
       });
-      // Создаём заявку в CRM и уведомляем branch owner
-      try {
-        await createApplication({
-          student_id: student?.id,
-          branch_id: Number(addForm.branch_id),
-          name: `${addForm.last_name} ${addForm.first_name}`,
-          parent_name: user?.last_name && user?.first_name ? `${user.last_name} ${user.first_name}` : undefined,
-          phone: user?.phone,
-        });
-      } catch {
-        // Не блокируем создание ученика если CRM недоступен
-      }
       setAddStatus("done");
       // Обновляем только список детей без полной перезагрузки всех данных
       try {

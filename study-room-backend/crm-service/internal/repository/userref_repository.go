@@ -38,6 +38,19 @@ func (r *UserRefRepository) Upsert(ctx context.Context, u *models.UserRef) error
 	return err
 }
 
+// Delete — удаляет запись из локального кэша user_refs при физическом
+// удалении пользователя в User Service (см. events/subscriber.go,
+// handleUserDeleted). Без этого удалённый owner/branch_owner навсегда
+// оставался бы "видимым" для FindBranchOwner/FindAnyOwner (см. ниже) —
+// заявки продолжали бы уходить на аккаунт, которого уже не существует,
+// вместо реального текущего владельца/руководителя филиала. Именно в этом
+// и заключался баг с уведомлениями: удаление пользователя нигде не
+// приводило к очистке этого кэша.
+func (r *UserRefRepository) Delete(ctx context.Context, userID int64) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM user_refs WHERE user_id = $1`, userID)
+	return err
+}
+
 func (r *UserRefRepository) GetByID(ctx context.Context, id int64) (*models.UserRef, error) {
 	row := r.pool.QueryRow(ctx,
 		`SELECT user_id, full_name, role, branch_id, class_info FROM user_refs WHERE user_id = $1`, id)

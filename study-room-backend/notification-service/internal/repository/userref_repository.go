@@ -88,8 +88,18 @@ func (r *UserRefRepository) GetByID(ctx context.Context, id int64) (*models.User
 }
 
 func (r *UserRefRepository) GetByEmail(ctx context.Context, email string) (*models.UserRef, error) {
+	// ORDER BY id DESC LIMIT 1 — если по одному email когда-то существовало
+	// несколько записей (старый аккаунт удалили, затем кто-то
+	// зарегистрировался заново на тот же email — User Service не запрещает
+	// повторно использовать email после физического удаления), нужно
+	// однозначно брать САМУЮ СВЕЖУЮ (наибольший id), а не первую попавшуюся
+	// в произвольном порядке сканирования. Раньше запрос без ORDER BY мог
+	// вернуть строку удалённого аккаунта, и уведомление уходило "не туда" —
+	// см. handleUserDeleted в events/subscriber.go, который теперь чистит
+	// такие записи, но этот ORDER BY остаётся подстраховкой на случай
+	// задержки/потери события user.deleted.
 	row := r.pool.QueryRow(ctx,
-		`SELECT id, email, first_name, last_name, parent_id, phone, telegram_id, max_id, whatsapp_id FROM users_ref WHERE LOWER(email) = LOWER($1)`, email)
+		`SELECT id, email, first_name, last_name, parent_id, phone, telegram_id, max_id, whatsapp_id FROM users_ref WHERE LOWER(email) = LOWER($1) ORDER BY id DESC LIMIT 1`, email)
 
 	var u models.UserRef
 	err := row.Scan(&u.ID, &u.Email, &u.FirstName, &u.LastName, &u.ParentID, &u.Phone, &u.TelegramID, &u.MaxID, &u.WhatsAppID)
@@ -115,5 +125,26 @@ func (r *UserRefRepository) ClearTelegramID(ctx context.Context, userID int64) e
 // NotificationHandler.UnlinkMax). Аналог ClearTelegramID.
 func (r *UserRefRepository) ClearMaxID(ctx context.Context, userID int64) error {
 	_, err := r.pool.Exec(ctx, `UPDATE users_ref SET max_id = '', updated_at = now() WHERE id = $1`, userID)
+	return err
+}
+
+// Delete — удаляет запись из users_ref при физическом удалении пользователя
+// в User Service (см. events/subscriber.go, handleUserDeleted). telegram_users
+// и max_users ссылаются на users_ref(id) ON DELETE CASCADE (см. миграции
+// 0005_telegram_bind.up.sql, 0008_max_bind.up.sql), поэтому привязки ботов
+// удаляются автоматически вместе с этой строкой — отдельно их чистить не
+// нужно. notification_settings по user_id намеренно не трогаем: там нет
+// PII, а таблица маленькая и просто перестанет использоваться для этого id.
+//
+// Без этого метода запись о удалённом пользователе оставалась в users_ref
+// навсегда: (1) само удаление аккаунта было неполным — след пользователя
+// оставался в Notification Service; (2) если позже кто-то регистрировался
+// заново с тем же email (User Service не запрещает переиспользовать email
+// после физического удаления), в users_ref оказывалось две строки с
+// одинаковым email и разными id, и GetByEmail мог вернуть СТАРУЮ
+// (удалённую) запись — из-за этого, например, уведомление о создании
+// аккаунта ученика уходило не новому родителю, а на уже удалённый аккаунт.
+func (r *UserRefRepository) Delete(ctx context.Context, userID int64) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM users_ref WHERE id = $1`, userID)
 	return err
 }
