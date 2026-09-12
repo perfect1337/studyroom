@@ -305,6 +305,32 @@ export default function TeacherDetail({ role = "owner" }) {
     return new Set(courses.filter((c) => (c.tutor_ids ?? []).includes(teacherIdNum)).map((c) => c.id));
   }, [courses, teacherId]);
 
+  // Специализация в шапке карточки — та же логика, что уже используется в
+  // общем списке "Преподаватели" (см. TeachersDirectory.jsx,
+  // specializationsByTutor): предметы реально назначенных сейчас курсов
+  // (course_tutors), а не статичное поле teacher.specialization. Это поле
+  // заполняется только один раз при создании преподавателя (снимок предметов
+  // курсов, выбранных в форме добавления, см. TeachersDirectory.jsx,
+  // handleAddTeacher) и не обновляется при последующем назначении/снятии
+  // курсов через чек-лист ниже на этой же странице ("Курсы преподавателя") —
+  // из-за этого здесь показывалось "Специализация не указана" даже при
+  // фактически назначенных курсах. Раз в courses уже есть tutor_ids, берём
+  // специализацию из них, со откатом на статичное поле, если курсов нет
+  // вовсе (например, ещё не назначили ни одного).
+  const displaySpecialization = useMemo(() => {
+    const teacherIdNum = Number(teacherId);
+    const fromCourses = [
+      ...new Set(
+        courses
+          .filter((c) => (c.tutor_ids ?? []).includes(teacherIdNum))
+          .map((c) => c.subject)
+          .filter(Boolean)
+      ),
+    ];
+    if (fromCourses.length) return fromCourses.join(", ");
+    return teacher?.specialization || "";
+  }, [courses, teacherId, teacher]);
+
   // Реальные ученики этого преподавателя (для счётчика "Учеников: N" и
   // списка ниже) — те же, кого показывает сам преподаватель себе на
   // /tutor/students (см. PeopleDirectory.jsx, role=tutor): участник хотя бы
@@ -550,7 +576,7 @@ export default function TeacherDetail({ role = "owner" }) {
                     {isFired && <StatusBadge status="Уволен" color="red" />}
                   </div>
                   <div className="text-on-surface-variant font-body-md mb-1 flex flex-wrap items-center justify-center md:justify-start gap-x-1 gap-y-1">
-                    <span>{teacher.specialization || "Специализация не указана"}</span>
+                    <span>{displaySpecialization || "Специализация не указана"}</span>
                     <span>·</span>
                     {isOwner && !isFired ? (
                       <select

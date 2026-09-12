@@ -6,6 +6,7 @@ import Pagination from "../../components/ui/Pagination.jsx";
 import { usePagination } from "../../utils/usePagination.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchMyPeople } from "../../api/users.js";
+import { fetchCourses } from "../../api/academic.js";
 import { fetchApplications, updateApplication } from "../../api/crm.js";
 import { fetchContracts } from "../../api/contracts.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
@@ -79,6 +80,7 @@ export default function OverviewDirectory({ role }) {
 
   const [students, setStudents] = useState([]);
   const [tutors, setTutors] = useState([]);
+  const [courses, setCourses] = useState([]);
   const [applications, setApplications] = useState([]);
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -106,7 +108,7 @@ export default function OverviewDirectory({ role }) {
     setLoading(true);
     setError("");
     try {
-      const [peopleRes, applicationsRes, contractsRes] = await Promise.all([
+      const [peopleRes, applicationsRes, contractsRes, coursesRes] = await Promise.all([
         fetchMyPeople(),
         // Без фильтра status — тянем все заявки разом: раздел "Новые заявки"
         // ниже сам отфильтрует status === "new", а "История заявок" —
@@ -114,11 +116,18 @@ export default function OverviewDirectory({ role }) {
         // historyApplications).
         fetchApplications().catch(() => ({ items: [] })),
         fetchContracts().catch(() => ({ items: [] })),
+        // Нужны для актуальной "специализации" преподавателя ниже (по
+        // реально назначенным курсам, см. specializationsByTutor) — то же
+        // самое поле teacher.specialization, что хранится в БД, обновляется
+        // только один раз при создании учителя и не синхронизируется с
+        // последующим назначением/снятием курсов (см. TeacherDetail.jsx).
+        fetchCourses().catch(() => ({ items: [] })),
       ]);
       setStudents(peopleRes?.students ?? []);
       setTutors(peopleRes?.tutors ?? []);
       setApplications(applicationsRes?.items ?? []);
       setContracts(contractsRes?.items ?? []);
+      setCourses(coursesRes?.items ?? []);
     } catch (e) {
       setError(e.message || "Не удалось загрузить данные");
     } finally {
@@ -215,6 +224,25 @@ export default function OverviewDirectory({ role }) {
       setApplicationActionStatus(err.message || "Не удалось обновить заявку");
     }
   }
+
+  // Специализация в таблице/списке учителей — по реально назначенным
+  // курсам (tutor_ids), а не по статичному teacher.specialization (не
+  // обновляется при последующем назначении/снятии курсов, см. тот же
+  // приём в TeachersDirectory.jsx/TeacherDetail.jsx).
+  const specializationsByTutor = useMemo(() => {
+    const map = {};
+    tutors.forEach((t) => {
+      const fromCourses = courses
+        .filter((c) => (c.tutor_ids ?? []).includes(Number(t.id)))
+        .map((c) => c.subject || c.title)
+        .filter(Boolean);
+      const fallback = t.specialization
+        ? String(t.specialization).split(/[,;]\s*/).map((v) => v.trim()).filter(Boolean)
+        : [];
+      map[t.id] = Array.from(new Set(fromCourses.length ? fromCourses : fallback));
+    });
+    return map;
+  }, [tutors, courses]);
 
   const { page: teachersPage, setPage: setTeachersPage, pageItems: pagedTutors } = usePagination(tutors, TEACHERS_PAGE_SIZE);
   const { page: applicationsPage, setPage: setApplicationsPage, pageItems: pagedApplications } = usePagination(
@@ -373,7 +401,7 @@ export default function OverviewDirectory({ role }) {
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-label-md font-label-md">{t.specialization ?? "—"}</td>
+                    <td className="px-6 py-4 text-label-md font-label-md">{(specializationsByTutor[t.id] ?? []).join(", ") || "—"}</td>
                     <td className="px-6 py-4">
                       <StatusBadge status={TUTOR_STATUS_LABEL[t.tutor_status] ?? "Активен"} />
                     </td>
@@ -398,7 +426,7 @@ export default function OverviewDirectory({ role }) {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="font-bold truncate">{fullName(t)}</p>
-                    <p className="text-[12px] text-outline">{t.specialization ?? "—"}</p>
+                    <p className="text-[12px] text-outline">{(specializationsByTutor[t.id] ?? []).join(", ") || "—"}</p>
                   </div>
                   <StatusBadge status={TUTOR_STATUS_LABEL[t.tutor_status] ?? "Активен"} />
                 </div>
