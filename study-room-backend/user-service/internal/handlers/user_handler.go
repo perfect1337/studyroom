@@ -680,7 +680,29 @@ func canViewUser(r *http.Request, h *UserHandler, claims *auth.Claims, target *m
 		return false
 	}
 	if claims.Role == models.RoleTutor && target.Role == models.RoleStudent {
-		return target.BranchID != nil && claims.BranchID != nil && *target.BranchID == *claims.BranchID
+		if target.BranchID != nil && claims.BranchID != nil && *target.BranchID == *claims.BranchID {
+			return true
+		}
+		// "Иногородний" ученик тьютора: домашний филиал (target.BranchID)
+		// другой, но у него есть активный enrollment именно у этого тьютора
+		// (tutor_id = claims.UserID) — тот же принцип, что и у branch_owner
+		// выше (StudentIDsByBranch), только по тьютору, а не по филиалу.
+		// Без этой проверки такие ученики видны в виджете "Все ученики"
+		// (TutorOverview.jsx, uniqueActiveStudents из enrollments), но их
+		// карточку открыть было нельзя (403).
+		if h.academicClient != nil {
+			bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+			if bearer != "" {
+				if ids, err := h.academicClient.StudentIDsByTutor(r.Context(), bearer, claims.UserID); err == nil {
+					for _, id := range ids {
+						if id == target.ID {
+							return true
+						}
+					}
+				}
+			}
+		}
+		return false
 	}
 	// Аналогично: ученик должен видеть карточку своего преподавателя, даже
 	// если тот на самом деле branch_owner с включённой "версией учителя".

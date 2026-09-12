@@ -293,6 +293,15 @@ export default function TutorSchedule() {
   // выборку по tutor_id = свой, student_id лишь дополнительно сужает её
   // (см. academic-service LessonHandler.List, case RoleTutor).
   const [studentFilter, setStudentFilter] = useState("");
+  // Id учеников, у которых есть хотя бы одно занятие (в любом месяце, не
+  // только в текущем просматриваемом) с этим тьютором — сужает опции
+  // выпадающего фильтра выше (myStudents из fetchMyPeople включает всех
+  // "своих" учеников тьютора вообще, в т.ч. тех, с кем ни одного занятия
+  // ещё не создавалось, например только назначенных на курс). Список
+  // независим от studentFilter/просматриваемого месяца — без date_from/
+  // date_to fetchLessons отдаёт вообще все занятия тьютора (тот же приём,
+  // что и в TutorHomework.jsx/TutorTests.jsx/TeacherDetail.jsx).
+  const [studentIdsWithLessons, setStudentIdsWithLessons] = useState(null);
   // Панель подробностей выбранного дня (справа на десктопе, снизу — на
   // телефонах и планшетах). detailPanelRef + scrollToDetailsOnMobile — тот же
   // приём, что и в расписании управляющего филиалом/владельца сети (см.
@@ -475,6 +484,36 @@ export default function TutorSchedule() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Отдельно (независимо от studentFilter/просматриваемого месяца) считаем,
+  // у кого из "своих" учеников тьютора есть хотя бы одно занятие вообще —
+  // без date_from/date_to fetchLessons отдаёт все занятия этого тьютора за
+  // всё время. Результат используется только для сужения опций выпадающего
+  // списка ниже, на сами занятия в календаре не влияет.
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    const loadStudentIdsWithLessons = () =>
+      fetchLessons({ tutor_id: user.id })
+        .then((res) => {
+          if (cancelled) return;
+          const ids = new Set();
+          (res?.items ?? []).forEach((l) => (l.participant_ids ?? []).forEach((id) => ids.add(id)));
+          setStudentIdsWithLessons(ids);
+        })
+        .catch(() => {
+          if (!cancelled) setStudentIdsWithLessons(new Set());
+        });
+    loadStudentIdsWithLessons();
+    const unsubscribe = subscribeQuery(["lessons", { tutor_id: user.id, student_id: undefined, branch_id: undefined, date_from: undefined, date_to: undefined }], (reason) => {
+      if (reason === "invalidate") loadStudentIdsWithLessons();
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [user?.id]);
+
   useEffect(() => {
     if (!deepLinkDate) return;
     const [year, month, day] = deepLinkDate.split("-").map(Number);
@@ -553,6 +592,20 @@ export default function TutorSchedule() {
       map[`${e.student_id}:${e.course_id}`] = e;
     });
     return map;
+  }, [enrollments]);
+
+  // Id учеников с хотя бы одним АКТИВНЫМ зачислением (enrollment.status ===
+  // "active", т.е. действующий договор) у этого тьютора — enrollments уже
+  // приходит отфильтрованным по tutor_id: user.id (см. load() выше), без
+  // ограничения по месяцу. Ученик с истёкшим/расторгнутым/приостановленным
+  // договором, но с историей прошлых занятий, не должен оставаться в
+  // фильтре как будто он всё ещё "активный" ученик тьютора.
+  const studentIdsWithActiveContract = useMemo(() => {
+    const ids = new Set();
+    enrollments.forEach((e) => {
+      if (e.status === "active") ids.add(e.student_id);
+    });
+    return ids;
   }, [enrollments]);
 
   // Ученики конкретного занятия — берём напрямую из participant_ids, которые
@@ -721,11 +774,14 @@ export default function TutorSchedule() {
             className="appearance-none bg-surface-container-lowest border border-outline-variant rounded-lg pl-4 pr-9 py-2 text-label-md font-label-md focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
           >
             <option value="">Все ученики</option>
-            {myStudents.map((s) => (
-              <option key={s.id} value={s.id}>
-                {fullName(s)}
-              </option>
-            ))}
+            {myStudents
+              .filter((s) => !studentIdsWithLessons || studentIdsWithLessons.has(s.id))
+              .filter((s) => studentIdsWithActiveContract.has(s.id))
+              .map((s) => (
+                <option key={s.id} value={s.id}>
+                  {fullName(s)}
+                </option>
+              ))}
           </select>
         </div>
         {studentFilter && (

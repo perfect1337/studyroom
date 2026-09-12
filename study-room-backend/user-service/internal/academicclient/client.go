@@ -19,11 +19,13 @@ type cachedBranch struct {
 }
 
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
-	cacheMu    sync.RWMutex
-	cache      map[int64]cachedBranch
-	cacheTTL   time.Duration
+	baseURL      string
+	httpClient   *http.Client
+	cacheMu      sync.RWMutex
+	cache        map[int64]cachedBranch
+	tutorCacheMu sync.RWMutex
+	tutorCache   map[int64]cachedBranch
+	cacheTTL     time.Duration
 }
 
 func New(baseURL string) *Client {
@@ -31,6 +33,7 @@ func New(baseURL string) *Client {
 		baseURL:    baseURL,
 		httpClient: &http.Client{Timeout: 3 * time.Second},
 		cache:      map[int64]cachedBranch{},
+		tutorCache: map[int64]cachedBranch{},
 		cacheTTL:   30 * time.Second,
 	}
 }
@@ -97,4 +100,65 @@ func (c *Client) cacheBranch(branchID int64, ids []int64) {
 		ids:       ids,
 	}
 	c.cacheMu.Unlock()
+}
+
+// StudentIDsByTutor возвращает список student IDs с активным enrollment у
+// указанного тьютора, независимо от домашнего филиала ученика. Тот же
+// принцип, что и StudentIDsByBranch выше, только для "иногородних"
+// учеников репетитора, а не branch_owner'а (см. canViewUser в
+// user_handler.go).
+func (c *Client) StudentIDsByTutor(ctx context.Context, bearerToken string, tutorID int64) ([]int64, error) {
+	if ids, ok := c.cachedTutor(tutorID); ok {
+		return ids, nil
+	}
+
+	url := fmt.Sprintf("%s/api/v1/academic/enrollments/tutor/%d/students", c.baseURL, tutorID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+bearerToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("call academic-service: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("academic-service returned status %d", resp.StatusCode)
+	}
+
+	var body struct {
+		StudentIDs []int64 `json:"student_ids"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("decode academic-service response: %w", err)
+	}
+
+	ids := body.StudentIDs
+	if ids == nil {
+		ids = []int64{}
+	}
+	c.cacheTutorIDs(tutorID, ids)
+	return ids, nil
+}
+
+func (c *Client) cachedTutor(tutorID int64) ([]int64, bool) {
+	c.tutorCacheMu.RLock()
+	entry, ok := c.tutorCache[tutorID]
+	c.tutorCacheMu.RUnlock()
+	if !ok || time.Now().After(entry.expiresAt) {
+		return nil, false
+	}
+	return entry.ids, true
+}
+
+func (c *Client) cacheTutorIDs(tutorID int64, ids []int64) {
+	c.tutorCacheMu.Lock()
+	c.tutorCache[tutorID] = cachedBranch{
+		expiresAt: time.Now().Add(c.cacheTTL),
+		ids:       ids,
+	}
+	c.tutorCacheMu.Unlock()
 }

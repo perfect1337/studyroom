@@ -319,8 +319,8 @@ func (s *Subscriber) handleContractExpiring(msg *nats.Msg) {
 	}
 
 	message := fmt.Sprintf(
-		"Договор по вашему ребёнку %s истекает %s. Не забудьте оплатить продление, если оно требуется.",
-		studentName, dateStr,
+		"Договор №%s по вашему ребёнку %s истекает %s. Не забудьте оплатить продление, если оно требуется.",
+		evt.Contract, studentName, dateStr,
 	)
 
 	if evt.BranchOwnerEmail != "" {

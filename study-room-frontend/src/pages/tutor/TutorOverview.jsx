@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import DashboardShell from "../../components/layout/DashboardShell.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { fetchLessons, fetchEnrollments, fetchCourses, fetchAttendance, assignHomework } from "../../api/academic.js";
-import { fetchMyPeople } from "../../api/users.js";
+import { fetchMyPeople, fetchUserById } from "../../api/users.js";
 import { toSidebarUser, fullName } from "../../utils/userDisplay.js";
 import Pagination from "../../components/ui/Pagination.jsx";
 import TelegramConnectBanner from "../../components/notifications/TelegramConnectBanner.jsx";
@@ -34,6 +34,13 @@ export default function TutorOverview() {
   const [enrollments, setEnrollments] = useState([]);
   const [courses, setCourses] = useState([]);
   const [studentsById, setStudentsById] = useState({});
+  // "Иногородние" ученики тьютора (домашний филиал отличается от филиала
+  // тьютора) — их нет в fetchMyPeople (тот ограничен своим филиалом), но
+  // раз у них активный enrollment у этого тьютора, backend теперь разрешает
+  // репетитору открыть их карточку (см. user_handler.go, canViewUser +
+  // academicclient.StudentIDsByTutor). Дотягиваем такие профили отдельно по
+  // id — тот же приём, что и в TutorSchedule.jsx/StudentDetail.jsx.
+  const [extraStudentsById, setExtraStudentsById] = useState({});
   const [attendanceByLesson, setAttendanceByLesson] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -70,6 +77,23 @@ export default function TutorOverview() {
         (peopleRes?.students ?? []).forEach((s) => (byId[s.id] = s));
         setStudentsById(byId);
 
+        // Иногородние ученики: есть в enrollments (активны у этого тьютора),
+        // но отсутствуют в byId — дотягиваем их профили по id отдельно.
+        const activeEnrollments = (enrollRes?.items ?? []).filter((e) => e.status === "active");
+        const missingIds = [...new Set(activeEnrollments.map((e) => e.student_id))].filter((id) => !byId[id]);
+        if (missingIds.length) {
+          const fetched = await Promise.all(missingIds.map((id) => fetchUserById(id).catch(() => null)));
+          if (!cancelled) {
+            const extra = {};
+            fetched.forEach((s, i) => {
+              if (s) extra[missingIds[i]] = s;
+            });
+            setExtraStudentsById(extra);
+          }
+        } else {
+          setExtraStudentsById({});
+        }
+
         // Для прошедших сегодняшних занятий подтягиваем посещаемость, чтобы показать отсутствующих.
         const now = nowHHMM();
         const pastLessons = lessonItems.filter((l) => l.end_time && l.end_time <= now);
@@ -102,13 +126,28 @@ export default function TutorOverview() {
     return map;
   }, [courses]);
 
+  // Объединённая карта: "домашние" ученики (studentsById, свой филиал) +
+  // иногородние, которых репетитору теперь разрешено видеть по активному
+  // enrollment (extraStudentsById, см. загрузку выше).
+  const allStudentsById = useMemo(
+    () => ({ ...extraStudentsById, ...studentsById }),
+    [studentsById, extraStudentsById]
+  );
+
+  // "Все ученики" на дашборде — только те из активных enrollments, кого
+  // репетитор реально может увидеть и открыть (allStudentsById: свой филиал
+  // из fetchMyPeople + иногородние, дотянутые отдельно по id, см. выше и
+  // user_handler.go/canViewUser + academicclient.StudentIDsByTutor). Раньше
+  // (до этой донагрузки) иногородние ученики показывались пустой карточкой
+  // ("Ученик #id" вместо ФИО), а переход на /tutor/students/{id} упирался в
+  // 403 — теперь и то, и другое исправлено.
   const uniqueActiveStudents = useMemo(() => {
     const seen = new Map();
     enrollments.forEach((e) => {
-      if (!seen.has(e.student_id)) seen.set(e.student_id, e);
+      if (!seen.has(e.student_id) && allStudentsById[e.student_id]) seen.set(e.student_id, e);
     });
     return Array.from(seen.values());
-  }, [enrollments]);
+  }, [enrollments, allStudentsById]);
 
   const STUDENTS_PAGE_SIZE = 6;
   const pagedEnrollments = useMemo(
@@ -201,7 +240,7 @@ export default function TutorOverview() {
                           <div key={r.student_id}>
                             <div className="flex items-center gap-2 text-error font-medium text-label-md">
                               <span className="material-symbols-outlined text-body-md">person_off</span>
-                              Отсутствовал: {studentsById[r.student_id] ? fullName(studentsById[r.student_id]) : `Ученик #${r.student_id}`}
+                              Отсутствовал: {allStudentsById[r.student_id] ? fullName(allStudentsById[r.student_id]) : `Ученик #${r.student_id}`}
                             </div>
                             {r.absence_reason && (
                               <div className="text-label-md text-on-surface-variant italic">Причина отсутствия: {r.absence_reason}</div>
@@ -237,7 +276,7 @@ export default function TutorOverview() {
                 <p className="text-on-surface-variant font-body-md text-sm">Пока нет закреплённых учеников.</p>
               )}
               {pagedEnrollments.map((e) => {
-                const student = studentsById[e.student_id];
+                const student = allStudentsById[e.student_id];
                 const course = coursesById[e.course_id];
                 return (
                   <div

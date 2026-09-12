@@ -542,3 +542,30 @@ func (r *EnrollmentRepository) StudentIDsByBranch(ctx context.Context, branchID 
 	}
 	return ids, rows.Err()
 }
+
+// StudentIDsByTutor возвращает student ID со статусом enrollment 'active' у
+// указанного тьютора — независимо от домашнего филиала ученика. Используется
+// user-service (см. academicclient.StudentIDsByTutor), чтобы разрешить
+// репетитору открыть карточку "иногороднего" ученика, который записан на
+// его курс, но домашний филиал у него другой (тот же принцип, что и
+// StudentIDsByBranch выше для branch_owner).
+func (r *EnrollmentRepository) StudentIDsByTutor(ctx context.Context, tutorID int64) ([]int64, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT DISTINCT e.student_id FROM enrollments e
+		 WHERE e.tutor_id = $1 AND e.status = 'active'
+		 ORDER BY e.student_id`, tutorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}

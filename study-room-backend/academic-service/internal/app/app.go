@@ -102,6 +102,9 @@ func NewRouter(d *Deps) http.Handler {
 			// Вспомогательный endpoint для user-service: получить student IDs
 			// по филиалу (для поддержки иногородних учеников в справочнике).
 			r.Get("/enrollments/branch/{branchID}/students", enrollHandler.StudentsByBranch)
+			// Аналогично, но по тьютору — для поддержки "иногородних" учеников
+			// в карточке репетитора (см. enrollment_handler.go, StudentsByTutor).
+			r.Get("/enrollments/tutor/{tutorID}/students", enrollHandler.StudentsByTutor)
 
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRoles(models.RoleOwner))

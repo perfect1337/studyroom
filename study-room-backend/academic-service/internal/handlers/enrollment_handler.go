@@ -399,6 +399,45 @@ func (h *EnrollmentHandler) StudentsByBranch(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, map[string]any{"student_ids": studentIDs})
 }
 
+// StudentsByTutor — GET /enrollments/tutor/{tutorID}/students
+// Возвращает student IDs с активным enrollment у указанного тьютора,
+// независимо от домашнего филиала ученика. Используется user-service
+// (см. academicclient.StudentIDsByTutor) — тот же принцип, что и
+// StudentsByBranch выше, только "иногородний" здесь означает "домашний
+// филиал ученика отличается от филиала самого тьютора", а не branch_owner'а.
+// Доступ: owner — любой tutorID; tutor — только про самого себя (иначе один
+// репетитор мог бы узнать состав учеников другого, просто подставив чужой id).
+func (h *EnrollmentHandler) StudentsByTutor(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.FromContext(r.Context())
+
+	id, err := parseIntPath(chi.URLParam(r, "tutorID"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid tutorID")
+		return
+	}
+
+	switch claims.Role {
+	case models.RoleOwner:
+		// разрешено
+	case models.RoleTutor:
+		if claims.UserID != id {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "tutor can only query own students")
+			return
+		}
+	default:
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only owner or tutor can access")
+		return
+	}
+
+	studentIDs, err := h.repo.StudentIDsByTutor(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list students")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"student_ids": studentIDs})
+}
+
 func bearerToken(r *http.Request) string {
 	return strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 }
